@@ -65,7 +65,7 @@ enum McFlags : uint32_t {
 };
 
 struct McState {
-	char magic[4]; // "PCM2"
+	char magic[4]; // "PCM3"
 	uint32_t seq;
 	uint32_t flags;       // McFlags
 	uint32_t teleportAck; // last HostState.teleportSeq Minecraft has applied
@@ -74,13 +74,17 @@ struct McState {
 	uint8_t onGround;
 	uint8_t sneaking;
 	uint8_t holdingPortalGun;
-	uint8_t pad;
+	uint8_t cameraMode; // Minecraft's F5 view: 0 first person, 1 third person behind, 2 third person in front
 	// Minecraft's last two physics steps (20 Hz), host units. The host interpolates between them
 	// on its own clock, starting when a new tickSeq arrives (sent the moment the tick ends), so the
 	// player moves the same amount every host tick instead of whatever the last render frame had.
 	Vec3 tickPrevious;
 	Vec3 tickCurrent;
 	uint32_t tickSeq;
+	// PCM3: in third person, how far Minecraft's own camera gets before its blocks or the host's
+	// walls stop it (host units; Camera.getMaxZoom). The host's camera stops at the nearer of this
+	// and its own trace, so it never passes into blocks Steve placed (which the host can't trace).
+	float cameraDistance;
 };
 
 struct Command {
@@ -161,6 +165,14 @@ struct OverlayHeader {
 //
 // PCW2 appended its fields to WorldHeader and its regions after the block mesh slots: every PCW1
 // offset is unchanged.
+//
+// PCW3 adds the player's own avatar (Steve, posed, with what he holds) for third person (F5): five
+// more ranges after the four entity ranges in each entity slot, avatarSkin (the skin texture, alpha
+// tested) and then the same block/item atlas split as the entity ranges. Avatar vertices are
+// RELATIVE to the player's feet (host units, already rotated to the world): the host adds the
+// position it renders its own player at, so the body never lags or leads the camera. The skin is a
+// third texture, written like the atlases (size, pixels, then skinSeq):
+//   [kWorldSkinOffset, + kWorldSkinBytes)             the player's skin, RGBA8, rows TOP-DOWN, skinWidth x skinHeight
 constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
 constexpr uint32_t kWorldAtlasMaxW = 2048;
 constexpr uint32_t kWorldAtlasMaxH = 2048;
@@ -181,7 +193,12 @@ constexpr uint32_t kWorldItemAtlasBytes = kWorldItemAtlasMaxPixels * 4;
 constexpr uint32_t kWorldEntityMaxVertices = 65536;
 constexpr uint32_t kWorldEntityOffset = kWorldItemAtlasOffset + kWorldItemAtlasBytes;
 constexpr uint32_t kWorldEntitySlotBytes = kWorldEntityMaxVertices * 24;
-constexpr uint32_t kWorldBytes = kWorldEntityOffset + 2 * kWorldEntitySlotBytes;
+constexpr uint32_t kWorldPcw2Bytes = kWorldEntityOffset + 2 * kWorldEntitySlotBytes;
+constexpr uint32_t kWorldSkinMaxW = 256; // 64x64 vanilla; room for HD skins
+constexpr uint32_t kWorldSkinMaxH = 256;
+constexpr uint32_t kWorldSkinOffset = kWorldPcw2Bytes;
+constexpr uint32_t kWorldSkinBytes = kWorldSkinMaxW * kWorldSkinMaxH * 4;
+constexpr uint32_t kWorldBytes = kWorldSkinOffset + kWorldSkinBytes;
 
 struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 	float x, y, z;  // host world space, Source units
@@ -190,7 +207,7 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 };
 
 struct WorldHeader {
-	char magic[4];            // "PCW2", written by the host
+	char magic[4];            // "PCW3", written by the host
 	uint32_t atlasWidth;      // Minecraft
 	uint32_t atlasHeight;
 	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
@@ -210,12 +227,28 @@ struct WorldHeader {
 	uint32_t entityBlockTranslucent[2]; // then block-atlas blended
 	uint32_t entityItemSolid[2];        // then item-atlas alpha tested
 	uint32_t entityItemTranslucent[2];  // then item-atlas blended
+	// ---- PCW3: the player's avatar (third person) ----
+	uint32_t skinWidth; // Minecraft
+	uint32_t skinHeight;
+	volatile uint32_t skinSeq;          // bumped by Minecraft after the skin pixels are written; 0 = none
+	uint32_t avatarSkin[2];             // after the entity ranges: skin-textured, alpha tested
+	uint32_t avatarBlockSolid[2];       // then held block-atlas items, alpha tested
+	uint32_t avatarBlockTranslucent[2]; // then block-atlas blended
+	uint32_t avatarItemSolid[2];        // then item-atlas alpha tested
+	uint32_t avatarItemTranslucent[2];  // then item-atlas blended
 };
 
 #pragma pack(pop)
 
 static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
-static_assert(sizeof(WorldHeader) == 100, "WorldHeader layout");
+static_assert(sizeof(WorldHeader) == 152, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, skinWidth) == 100, "WorldHeader PCW2 offsets unchanged");
+static_assert(offsetof(WorldHeader, skinSeq) == 108, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarSkin) == 112, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarBlockSolid) == 120, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarBlockTranslucent) == 128, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarItemSolid) == 136, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarItemTranslucent) == 144, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, slotTranslucent) == 36, "WorldHeader PCW1 offsets unchanged");
 static_assert(offsetof(WorldHeader, itemAtlasWidth) == 44, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, itemAtlasSeq) == 52, "WorldHeader layout");
@@ -231,11 +264,12 @@ static_assert(kWorldMeshOffset == 16781312 && kWorldSlotBytes == 4718592, "PCW1 
 static_assert(kWorldItemAtlasOffset == 26218496, "world layout"); // where the PCW1 mapping ended
 static_assert(kWorldEntityOffset == 30412800, "world layout");
 static_assert(kWorldEntitySlotBytes == 1572864, "world layout");
-static_assert(kWorldBytes == 33558528, "world layout"); // 32.0 MB
+static_assert(kWorldPcw2Bytes == 33558528, "world layout"); // where the PCW2 mapping ended
+static_assert(kWorldBytes == 33820672, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 228, "HostState layout");
-static_assert(sizeof(McState) == 72, "McState layout");
+static_assert(sizeof(McState) == 76, "McState layout");
 
 } // namespace pcproto

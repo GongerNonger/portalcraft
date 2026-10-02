@@ -23,7 +23,8 @@ ITEM_ATLAS_BYTES = 1024 * 1024 * 4
 ENTITY_OFFSET = ITEM_ATLAS_OFFSET + ITEM_ATLAS_BYTES
 ENTITY_MAX_VERTICES = 65536
 ENTITY_SLOT_BYTES = ENTITY_MAX_VERTICES * 24
-TOTAL = ENTITY_OFFSET + 2 * ENTITY_SLOT_BYTES
+SKIN_OFFSET = ENTITY_OFFSET + 2 * ENTITY_SLOT_BYTES
+TOTAL = SKIN_OFFSET + 256 * 256 * 4
 VERTEX = struct.Struct("<3fI2f")
 # WorldHeader offsets
 ATLAS_SEQ, MESH_SEQ, FRONT, READING, SLOT_SOLID, SLOT_TRANSLUCENT = 12, 16, 20, 24, 28, 36
@@ -78,8 +79,8 @@ def main():
     ap.add_argument("--entity", action="store_true", help="publish into the entity mesh (block-atlas solid range)")
     a = ap.parse_args()
     m = mmap.mmap(-1, TOTAL, tagname=MAPPING)
-    if m[0:4] != b"PCW2":
-        print(f"Portal's world mapping isn't there or isn't PCW2 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
+    if m[0:4] != b"PCW3":
+        print(f"Portal's world mapping isn't there or isn't PCW3 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
         return
     size, pixels = atlas_pixels()
     struct.pack_into("<II", m, 4, size, size)

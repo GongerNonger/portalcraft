@@ -30,7 +30,13 @@ public final class WorldFormat {
 	public static final int ENTITY_MAX_VERTICES = 65536; // kWorldEntityMaxVertices
 	public static final long ENTITY_OFFSET = ITEM_ATLAS_OFFSET + ITEM_ATLAS_BYTES; // kWorldEntityOffset
 	public static final long ENTITY_SLOT_BYTES = (long) ENTITY_MAX_VERTICES * VERTEX_BYTES; // kWorldEntitySlotBytes
-	public static final long TOTAL_BYTES = ENTITY_OFFSET + SLOTS * ENTITY_SLOT_BYTES; // kWorldBytes
+	/** Where the PCW2 mapping ended; the PCW3 skin follows. */
+	public static final long PCW2_BYTES = ENTITY_OFFSET + SLOTS * ENTITY_SLOT_BYTES; // kWorldPcw2Bytes
+	public static final int SKIN_MAX_W = 256; // kWorldSkinMaxW
+	public static final int SKIN_MAX_H = 256; // kWorldSkinMaxH
+	public static final long SKIN_OFFSET = PCW2_BYTES; // kWorldSkinOffset
+	public static final long SKIN_BYTES = (long) SKIN_MAX_W * SKIN_MAX_H * 4;
+	public static final long TOTAL_BYTES = SKIN_OFFSET + SKIN_BYTES; // kWorldBytes
 	public static final int NO_SLOT = 0xFFFFFFFF;
 
 	// WorldHeader field offsets (static_asserts in the protocol header)
@@ -39,7 +45,12 @@ public final class WorldFormat {
 	public static final long H_ITEM_ATLAS_W = 44, H_ITEM_ATLAS_H = 48, H_ITEM_ATLAS_SEQ = 52, H_ENTITY_SEQ = 56, H_ENTITY_FRONT = 60,
 		H_ENTITY_READING = 64, H_ENTITY_BLOCK_SOLID = 68, H_ENTITY_BLOCK_TRANSLUCENT = 76, H_ENTITY_ITEM_SOLID = 84,
 		H_ENTITY_ITEM_TRANSLUCENT = 92;
-	public static final long HEADER_STRUCT_BYTES = 100; // sizeof(WorldHeader)
+	public static final long H_SKIN_W = 100, H_SKIN_H = 104, H_SKIN_SEQ = 108, H_AVATAR_SKIN = 112, H_AVATAR_BLOCK_SOLID = 120,
+		H_AVATAR_BLOCK_TRANSLUCENT = 128, H_AVATAR_ITEM_SOLID = 136, H_AVATAR_ITEM_TRANSLUCENT = 144;
+	/** Every per-slot count array of the entity slot, in the order its ranges sit in the slot. */
+	public static final long[] H_ENTITY_RANGES = {H_ENTITY_BLOCK_SOLID, H_ENTITY_BLOCK_TRANSLUCENT, H_ENTITY_ITEM_SOLID, H_ENTITY_ITEM_TRANSLUCENT,
+		H_AVATAR_SKIN, H_AVATAR_BLOCK_SOLID, H_AVATAR_BLOCK_TRANSLUCENT, H_AVATAR_ITEM_SOLID, H_AVATAR_ITEM_TRANSLUCENT};
+	public static final long HEADER_STRUCT_BYTES = 152; // sizeof(WorldHeader)
 
 	/** ItemEntityRenderer.ITEM_MIN_HOVER_HEIGHT: how far a dropped item's model floats off the ground. */
 	public static final float ITEM_MIN_HOVER = 0.0625F;
@@ -80,6 +91,11 @@ public final class WorldFormat {
 	public static boolean itemAtlasFits(int width, int height) {
 		return width > 0 && height > 0 && width <= ITEM_ATLAS_MAX_W && height <= ITEM_ATLAS_MAX_H
 			&& (long) width * height <= ITEM_ATLAS_MAX_PIXELS;
+	}
+
+	/** True if a skin of this size fits the skin region. */
+	public static boolean skinFits(int width, int height) {
+		return width > 0 && height > 0 && width <= SKIN_MAX_W && height <= SKIN_MAX_H;
 	}
 
 	/** A dropped item's bob height in blocks, as ItemEntityRenderer.submit computes it. */

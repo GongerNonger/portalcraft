@@ -35,6 +35,7 @@ public final class WorldLink {
 		SLOT_SOLID = WorldFormat.H_SLOT_SOLID, SLOT_TRANSLUCENT = WorldFormat.H_SLOT_TRANSLUCENT;
 	private static final ValueLayout.OfInt INT = JAVA_INT.withByteAlignment(4);
 	private static final ValueLayout.OfInt INT_UNALIGNED = ValueLayout.JAVA_INT_UNALIGNED;
+	private static final int MAGIC_PCW3 = 'P' | 'C' << 8 | 'W' << 16 | '3' << 24;
 	private static final int MAGIC_PCW2 = 'P' | 'C' << 8 | 'W' << 16 | '2' << 24;
 	private static final int MAGIC_PCW1 = 'P' | 'C' << 8 | 'W' << 16 | '1' << 24;
 
@@ -87,7 +88,7 @@ public final class WorldLink {
 			}
 			MemorySegment v = (MemorySegment) MAP.invokeExact(h, FILE_MAP_ALL_ACCESS, 0, 0, WorldFormat.TOTAL_BYTES);
 			if (v.equals(MemorySegment.NULL)) {
-				// The usual cause: a PCW1 plugin made a smaller (25 MB) mapping than this mod's.
+				// The usual cause: an older plugin (PCW1/PCW2) made a smaller mapping than this mod's.
 				if (!warnedMagic) {
 					warnedMagic = true;
 					LOG.warn("PortalCraft: can't map {} bytes of the world mapping: the Portal plugin is probably older than this mod "
@@ -98,11 +99,12 @@ public final class WorldLink {
 			}
 			v = v.reinterpret(WorldFormat.TOTAL_BYTES);
 			int magic = v.get(INT, MAGIC);
-			if (magic != MAGIC_PCW2) {
+			if (magic != MAGIC_PCW3) {
 				if (!warnedMagic) {
 					warnedMagic = true;
-					LOG.warn(magic == MAGIC_PCW1 ? "PortalCraft: the Portal plugin speaks PCW1 (an older build; rerun setup with Portal closed); retrying every 2 s"
-						: "PortalCraft: world mapping has no PCW2 magic yet; retrying every 2 s");
+					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2
+						? "PortalCraft: the Portal plugin speaks an older world format (rerun setup with Portal closed); retrying every 2 s"
+						: "PortalCraft: world mapping has no PCW3 magic yet; retrying every 2 s");
 				}
 				int ignored = (int) UNMAP.invokeExact(v);
 				ignored = (int) CLOSE.invokeExact(h);
@@ -211,17 +213,31 @@ public final class WorldLink {
 	}
 
 	/**
-	 * Makes entity {@code slot} the newest: its four range counts (in slot order), then
-	 * {@code entityFront}, then {@code entitySeq}.
+	 * Writes the player's skin into its region, like {@link #writeAtlas}: size, pixels, then
+	 * {@code skinSeq}.
 	 */
-	public static void publishEntities(int slot, int blockSolid, int blockTranslucent, int itemSolid, int itemTranslucent) {
-		if (!isOpen() || slot < 0 || slot >= WorldFormat.SLOTS) {
+	public static void writeSkin(int width, int height, int[] rgba) {
+		if (!isOpen() || !WorldFormat.skinFits(width, height) || rgba.length < width * height) {
 			return;
 		}
-		view.set(INT, WorldFormat.H_ENTITY_BLOCK_SOLID + slot * 4L, blockSolid);
-		view.set(INT, WorldFormat.H_ENTITY_BLOCK_TRANSLUCENT + slot * 4L, blockTranslucent);
-		view.set(INT, WorldFormat.H_ENTITY_ITEM_SOLID + slot * 4L, itemSolid);
-		view.set(INT, WorldFormat.H_ENTITY_ITEM_TRANSLUCENT + slot * 4L, itemTranslucent);
+		view.set(INT, WorldFormat.H_SKIN_W, width);
+		view.set(INT, WorldFormat.H_SKIN_H, height);
+		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.SKIN_OFFSET, width * height);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_SKIN_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_SKIN_SEQ)));
+	}
+
+	/**
+	 * Makes entity {@code slot} the newest: its nine range counts (in slot order, as
+	 * {@link WorldFormat#H_ENTITY_RANGES}), then {@code entityFront}, then {@code entitySeq}.
+	 */
+	public static void publishEntities(int slot, int[] counts) {
+		if (!isOpen() || slot < 0 || slot >= WorldFormat.SLOTS || counts.length != WorldFormat.H_ENTITY_RANGES.length) {
+			return;
+		}
+		for (int i = 0; i < counts.length; i++) {
+			view.set(INT, WorldFormat.H_ENTITY_RANGES[i] + slot * 4L, counts[i]);
+		}
 		VarHandle.releaseFence();
 		view.set(INT, WorldFormat.H_ENTITY_FRONT, slot);
 		VarHandle.releaseFence();

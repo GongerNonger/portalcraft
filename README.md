@@ -67,6 +67,8 @@ How it fits together:
 | Portals | fires and renders its real ones; teleports the player | follows each teleport (seq/ack) |
 | Keys | reads WASD etc. while its window has focus | replays them as its own input |
 | Clicks | fires its gun while Steve holds the portal gun | otherwise attacks/places/picks; aims at the map's walls too, and a block placed against a wall goes in the cell in front of it (to the nearer half-cell, since walls don't sit on the block grid) |
+| Body | hides Chell (render mode) | in third person (F5) sends Steve, posed, with his skin and what he holds; Portal draws him at its player's feet |
+| F5 | moves its camera behind/in front of the player (client-mode `OverrideView` hook, no cheats), stopped by its walls | cycles the view as usual; sends how far its own camera gets, so the host's stops at placed blocks too |
 
 Link: UDP on 127.0.0.1 ports 27515/27516, layout in `protocol/portalcraft_protocol.h`.
 Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.log`.
@@ -81,7 +83,9 @@ bobs. `play-portal.cmd` launches Portal with `+cl_updaterate 66 +cl_cmdrate 66 +
 
 Known gaps: moving and dynamic models (chamber doors, the elevator, cubes) aren't solid,
 moving brushes (func_door, func_tracktrain) aren't followed, Minecraft's placed blocks aren't
-drawn in Portal yet, and Minecraft screens (inventory) get no mouse.
+drawn in Portal yet, and Minecraft screens (inventory) get no mouse. Steve isn't drawn in the
+views through portals yet (Chell is hidden there, so you see no one), and F5 also takes a Portal
+screenshot unless you unbind it in Portal (`unbind F5`).
 
 ## Host-game bridges
 

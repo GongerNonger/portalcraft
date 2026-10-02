@@ -14,6 +14,7 @@ import dev.portalcraft.host.HostLink;
 import dev.portalcraft.host.LiveEntities;
 import dev.portalcraft.host.Proto;
 import dev.portalcraft.host.Units;
+import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.input.KeyEvent;
@@ -22,8 +23,10 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.sdl.SDLKeyboard;
 import org.slf4j.Logger;
@@ -184,9 +187,45 @@ public final class HostDriver {
 			vel = Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo));
 		}
 		HostLink.send(Proto.writeMcState(++seq, ready ? Proto.MC_READY : 0, teleportAck, pos, vel,
-			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN),
-			tickPrevious, tickCurrent, tickSeq));
+			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
+			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F));
 		return ready;
+	}
+
+	/** Minecraft's third-person distance, before blocks or walls get in the way (Camera.setup). */
+	private static final float CAMERA_DISTANCE = 4.0F;
+
+	/**
+	 * McState.cameraDistance: how far back (or, in front view, forward) the third-person camera
+	 * gets before something stops it, in host units: Camera.getMaxZoom's eight jittered clips,
+	 * which see Steve's blocks and (ClipContextMixin) the host's walls.
+	 */
+	private static float cameraDistance(Minecraft minecraft, LocalPlayer player) {
+		CameraType type = minecraft.options.getCameraType();
+		if (type.isFirstPerson() || minecraft.level == null) {
+			return 0.0F;
+		}
+		float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+		Vec3 eye = player.getEyePosition(partial);
+		Vec3 dir = player.getViewVector(partial).scale(type.isMirrored() ? CAMERA_DISTANCE : -CAMERA_DISTANCE);
+		double best = CAMERA_DISTANCE;
+		for (int i = 0; i < 8; i++) {
+			Vec3 from = eye.add(((i & 1) * 2 - 1) * 0.1, ((i >> 1 & 1) * 2 - 1) * 0.1, ((i >> 2 & 1) * 2 - 1) * 0.1);
+			HitResult hit = minecraft.level.clip(new ClipContext(from, from.add(dir), ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, player));
+			if (hit.getType() != HitResult.Type.MISS) {
+				best = Math.min(best, hit.getLocation().distanceTo(eye));
+			}
+		}
+		return (float) (best * Units.PER_BLOCK);
+	}
+
+	/** McState.cameraMode: 0 first person, 1 third person behind (F5), 2 third person in front. */
+	private static int cameraMode(Minecraft minecraft) {
+		return switch (minecraft.options.getCameraType()) {
+			case FIRST_PERSON -> 0;
+			case THIRD_PERSON_BACK -> 1;
+			case THIRD_PERSON_FRONT -> 2;
+		};
 	}
 
 	/**

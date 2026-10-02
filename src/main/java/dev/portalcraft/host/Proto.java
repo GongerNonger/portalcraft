@@ -11,7 +11,7 @@ public final class Proto {
 	public static final int HOST_PORT = 27515;
 	public static final int MC_PORT = 27516;
 	public static final int HOST_STATE_SIZE = 228;
-	public static final int MC_STATE_SIZE = 72;
+	public static final int MC_STATE_SIZE = 76;
 
 	public static final int HOST_IN_GAME = 1;
 	public static final int HOST_FOREGROUND = 1 << 1;
@@ -120,16 +120,17 @@ public final class Proto {
 	}
 
 	public static ByteBuffer writeMcState(int seq, int flags, int teleportAck, Vec3 origin, Vec3 velocity, boolean onGround,
-		boolean sneaking, boolean holdingGun, Vec3 tickPrevious, Vec3 tickCurrent, int tickSeq) {
+		boolean sneaking, boolean holdingGun, int cameraMode, Vec3 tickPrevious, Vec3 tickCurrent, int tickSeq, float cameraDistance) {
 		ByteBuffer b = ByteBuffer.allocate(MC_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'M').put((byte) '2');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'M').put((byte) '3');
 		b.putInt(seq).putInt(flags).putInt(teleportAck);
 		putVec(b, origin);
 		putVec(b, velocity);
-		b.put((byte) (onGround ? 1 : 0)).put((byte) (sneaking ? 1 : 0)).put((byte) (holdingGun ? 1 : 0)).put((byte) 0);
+		b.put((byte) (onGround ? 1 : 0)).put((byte) (sneaking ? 1 : 0)).put((byte) (holdingGun ? 1 : 0)).put((byte) cameraMode);
 		putVec(b, tickPrevious);
 		putVec(b, tickCurrent);
 		b.putInt(tickSeq);
+		b.putFloat(cameraDistance);
 		return b.flip();
 	}
 

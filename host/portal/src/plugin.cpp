@@ -20,6 +20,7 @@
 #include <intrin.h>
 
 #include "../../../protocol/portalcraft_protocol.h"
+#include "camera.h"
 #include "overlay.h"
 #include "worldrender.h"
 #include "sdk.h"
@@ -192,7 +193,7 @@ void linkPoll() {
 		if (n <= 0) {
 			return;
 		}
-		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM2", 4) == 0) {
+		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM3", 4) == 0) {
 			bool wasReady = mcReady();
 			std::memcpy(&g_mc, buf, sizeof g_mc);
 			g_mcTime = GetTickCount();
@@ -739,6 +740,44 @@ void logSolidNear(const Vector& at) {
 	}
 }
 
+// ---- Chell -> Steve ---------------------------------------------------------------------
+// While Minecraft drives the player, Portal's own player model (Chell, seen through portals and in
+// third person) is switched off with its networked render mode: kRenderNone makes the client skip
+// drawing it entirely (C_BaseEntity::ShouldDraw), shadow included. Steve is drawn by worldrender.
+
+constexpr uint8_t kRenderNormal = 0, kRenderNone = 10;
+int g_renderModeOffset = -2; // -2 unresolved, -1 not found
+bool g_chellHidden = false;
+
+void setChellHidden(bool hide) {
+	void* e = edictAt(1);
+	if (!g_edicts || !edictInUse(e)) {
+		return;
+	}
+	auto* ent = static_cast<uint8_t*>(sdk::networkableBaseEntity(sdk::edictNetworkable(e)));
+	if (!ent) {
+		return;
+	}
+	if (g_renderModeOffset == -2) {
+		auto* sc = static_cast<sdk::ServerClass*>(sdk::networkableServerClass(sdk::edictNetworkable(e)));
+		g_renderModeOffset = sc && sc->table ? findProp(sc->table, "m_nRenderMode", 0) : -1;
+		logf("player m_nRenderMode at %d (%s)", g_renderModeOffset, sc ? sc->name : "?");
+	}
+	if (g_renderModeOffset < 0) {
+		return;
+	}
+	uint8_t want = hide ? kRenderNone : kRenderNormal;
+	uint8_t& mode = ent[g_renderModeOffset];
+	if (mode != want && (mode == kRenderNormal || mode == kRenderNone)) { // leave a map's own render effects alone
+		mode = want;
+		*static_cast<int*>(e) |= 1 | (1 << 8); // FL_EDICT_CHANGED | FL_FULL_EDICT_CHANGED: resend it
+		if (hide != g_chellHidden) {
+			logf(hide ? "Chell hidden (Steve drawn instead)" : "Chell shown again");
+		}
+	}
+	g_chellHidden = hide;
+}
+
 // ---- per-frame state out --------------------------------------------------------------
 
 void sendState() {
@@ -830,6 +869,8 @@ public:
 	}
 	virtual void Unload() {
 		logf("Unload");
+		camera::shutdown();
+		setChellHidden(false);
 	}
 	virtual void Pause() {}
 	virtual void UnPause() {}
@@ -846,6 +887,8 @@ public:
 		g_colState = 0;
 		g_entityCount = 0;
 		std::memset(g_lastEntityOrigin, 0, sizeof g_lastEntityOrigin);
+		g_renderModeOffset = -2;
+		g_chellHidden = false;
 		logf("LevelInit %s", g_map);
 	}
 	virtual void ServerActivate(void* edictList, int edictCount, int clientMax) {
@@ -869,9 +912,12 @@ public:
 		}
 		linkPoll();
 		sendState();
+		camera::init(&logf);
+		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		if (g_inLevel && g_edicts) {
 			checkCollideableLayout();
 			sendEntities();
+			setChellHidden(mcReady());
 		}
 	}
 	virtual void LevelShutdown() {

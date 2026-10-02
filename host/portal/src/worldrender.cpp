@@ -6,6 +6,9 @@
 // before the view model and HUD: the device's render target and depth buffer still hold the scene,
 // so blocks and items are hidden behind Portal's walls and in front of nothing they shouldn't be.
 // The camera comes from IVEngineClient::WorldToScreenMatrix.
+//
+// In third person (Minecraft's F5, see camera.cpp) the player's avatar is drawn too: its vertices
+// are relative to the player's feet, and we place them where Portal draws its player this frame.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -16,6 +19,7 @@
 #include <cstring>
 
 #include "../../../protocol/portalcraft_protocol.h"
+#include "camera.h"
 #include "overlay.h"
 #include "sdk.h"
 #include "worldrender.h"
@@ -34,6 +38,9 @@ IDirect3DTexture9* g_atlas = nullptr;
 uint32_t g_atlasSeq = 0;
 IDirect3DTexture9* g_itemAtlas = nullptr;
 uint32_t g_itemAtlasSeq = 0;
+IDirect3DTexture9* g_skin = nullptr;
+uint32_t g_skinSeq = 0;
+bool g_loggedAvatar = false;
 IDirect3DStateBlock9* g_state = nullptr;
 
 using SceneEndFn = void(__thiscall*)(void* self);
@@ -101,6 +108,13 @@ void uploadAtlases(IDirect3DDevice9* dev) {
 		if (w != 0 && h != 0 && w <= pcproto::kWorldItemAtlasMaxW && h <= pcproto::kWorldItemAtlasMaxH
 			&& uint64_t(w) * h <= pcproto::kWorldItemAtlasMaxPixels) {
 			uploadAtlas(dev, &g_itemAtlas, g_shm + pcproto::kWorldItemAtlasOffset, w, h, "item");
+		}
+	}
+	if (g_header->skinSeq != g_skinSeq) {
+		g_skinSeq = g_header->skinSeq;
+		uint32_t w = g_header->skinWidth, h = g_header->skinHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldSkinMaxW && h <= pcproto::kWorldSkinMaxH) {
+			uploadAtlas(dev, &g_skin, g_shm + pcproto::kWorldSkinOffset, w, h, "skin");
 		}
 	}
 }
@@ -187,10 +201,13 @@ void draw(IDirect3DDevice9* dev) {
 		}
 	}
 
-	// The entity mesh: block-atlas solid, block-atlas translucent, item-atlas solid, item-atlas translucent.
+	// The entity mesh: block-atlas solid, block-atlas translucent, item-atlas solid, item-atlas
+	// translucent, then the avatar: skin, and its own block/item ranges in the same order.
 	const pcproto::WorldVertex* entities = nullptr; // == the block-atlas ranges
 	const pcproto::WorldVertex* eItems = nullptr;   // the item-atlas ranges
+	const pcproto::WorldVertex* avatar = nullptr;   // the avatar's skin range, then its block and item ranges
 	uint32_t eBlockSolid = 0, eBlockTranslucent = 0, eItemSolid = 0, eItemTranslucent = 0;
+	uint32_t aSkin = 0, aBlockSolid = 0, aBlockTranslucent = 0, aItemSolid = 0, aItemTranslucent = 0;
 	if (g_header->entitySeq != 0) {
 		uint32_t slot = claimSlot(g_header->entityFront, g_header->entityReading);
 		if (slot != kNoSlot) {
@@ -198,23 +215,48 @@ void draw(IDirect3DDevice9* dev) {
 			eBlockTranslucent = g_header->entityBlockTranslucent[slot];
 			eItemSolid = g_header->entityItemSolid[slot];
 			eItemTranslucent = g_header->entityItemTranslucent[slot];
-			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent;
+			aSkin = g_header->avatarSkin[slot];
+			aBlockSolid = g_header->avatarBlockSolid[slot];
+			aBlockTranslucent = g_header->avatarBlockTranslucent[slot];
+			aItemSolid = g_header->avatarItemSolid[slot];
+			aItemTranslucent = g_header->avatarItemTranslucent[slot];
+			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent + aSkin + aBlockSolid + aBlockTranslucent +
+				aItemSolid + aItemTranslucent;
 			if (total == 0 || total > pcproto::kWorldEntityMaxVertices) {
 				eBlockSolid = eBlockTranslucent = eItemSolid = eItemTranslucent = 0;
+				aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
 				g_header->entityReading = kNoSlot;
 			} else {
 				entities = reinterpret_cast<const pcproto::WorldVertex*>(
 					g_shm + pcproto::kWorldEntityOffset + size_t(slot) * pcproto::kWorldEntitySlotBytes);
 				eItems = entities + eBlockSolid + eBlockTranslucent;
+				avatar = eItems + eItemSolid + eItemTranslucent;
 			}
 		}
 	}
+	// The avatar only while Portal's camera is out of the player's head, placed on the player.
+	sdk::Vector feet{};
+	const pcproto::WorldVertex* aBlocks = avatar ? avatar + aSkin : nullptr;
+	const pcproto::WorldVertex* aItems = aBlocks ? aBlocks + aBlockSolid + aBlockTranslucent : nullptr;
+	if (!avatar || !camera::thirdPerson() || !camera::playerFeet(&feet)) {
+		aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
+	}
+	if (!g_skin) {
+		aSkin = 0;
+	}
 	if (!g_atlas) { // the entity ranges that need it can't draw either
 		eBlockSolid = eBlockTranslucent = 0;
+		aBlockSolid = aBlockTranslucent = 0;
 	}
 	if (!g_itemAtlas) {
 		eItemSolid = eItemTranslucent = 0;
+		aItemSolid = aItemTranslucent = 0;
 	}
+	D3DMATRIX atFeet = {};
+	atFeet._11 = atFeet._22 = atFeet._33 = atFeet._44 = 1.0f;
+	atFeet._41 = feet.x;
+	atFeet._42 = feet.y;
+	atFeet._43 = feet.z;
 	auto release = [] {
 		g_header->reading = kNoSlot;
 		g_header->entityReading = kNoSlot;
@@ -288,7 +330,17 @@ void draw(IDirect3DDevice9* dev) {
 		dev->SetTexture(0, g_itemAtlas);
 		drawTriangles(dev, eItems, eItemSolid);
 	}
-	if (translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3) {
+	if (aSkin || aBlockSolid || aItemSolid) {
+		dev->SetTransform(D3DTS_WORLD, &atFeet);
+		dev->SetTexture(0, g_skin);
+		drawTriangles(dev, avatar, aSkin);
+		dev->SetTexture(0, g_atlas);
+		drawTriangles(dev, aBlocks, aBlockSolid);
+		dev->SetTexture(0, g_itemAtlas);
+		drawTriangles(dev, aItems, aItemSolid);
+		dev->SetTransform(D3DTS_WORLD, &identity);
+	}
+	if (translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3) {
 		setTranslucent(dev);
 		dev->SetTexture(0, g_atlas);
 		if (blocks) {
@@ -301,6 +353,13 @@ void draw(IDirect3DDevice9* dev) {
 			dev->SetTexture(0, g_itemAtlas);
 			drawTriangles(dev, eItems + eItemSolid, eItemTranslucent);
 		}
+		if (aBlockTranslucent || aItemTranslucent) {
+			dev->SetTransform(D3DTS_WORLD, &atFeet);
+			dev->SetTexture(0, g_atlas);
+			drawTriangles(dev, aBlocks + aBlockSolid, aBlockTranslucent);
+			dev->SetTexture(0, g_itemAtlas);
+			drawTriangles(dev, aItems + aItemSolid, aItemTranslucent);
+		}
 	}
 
 	g_state->Apply();
@@ -308,6 +367,11 @@ void draw(IDirect3DDevice9* dev) {
 	if (!g_loggedDraw && blocks && g_log) {
 		g_loggedDraw = true;
 		g_log("world: drawing %u solid + %u translucent vertices", solid, translucent);
+	}
+	if (!g_loggedAvatar && aSkin && g_log) {
+		g_loggedAvatar = true;
+		g_log("world: drawing the avatar: %u skin + %u held vertices at feet (%.1f %.1f %.1f)", aSkin,
+			aBlockSolid + aBlockTranslucent + aItemSolid + aItemTranslucent, feet.x, feet.y, feet.z);
 	}
 	if (!g_loggedEntities && entities && g_log) {
 		g_loggedEntities = true;
@@ -351,8 +415,13 @@ void releaseDeviceObjects() {
 		g_itemAtlas->Release();
 		g_itemAtlas = nullptr;
 	}
+	if (g_skin) {
+		g_skin->Release();
+		g_skin = nullptr;
+	}
 	g_atlasSeq = 0; // upload them again after the reset
 	g_itemAtlasSeq = 0;
+	g_skinSeq = 0;
 }
 
 bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
@@ -366,7 +435,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	g_header = reinterpret_cast<pcproto::WorldHeader*>(g_shm);
 	g_header->reading = kNoSlot;
 	g_header->entityReading = kNoSlot;
-	std::memcpy(g_header->magic, "PCW2", 4);
+	std::memcpy(g_header->magic, "PCW3", 4);
 
 	g_engineClient = engineFactory("VEngineClient013", nullptr);
 	void* renderView = engineFactory("VEngineRenderView014", nullptr);

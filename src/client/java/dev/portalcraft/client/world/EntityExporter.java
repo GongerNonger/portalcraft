@@ -3,7 +3,9 @@ package dev.portalcraft.client.world;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import dev.portalcraft.PortalCraft;
 import net.minecraft.client.Minecraft;
@@ -11,11 +13,14 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.MovingBlockRenderState;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
+import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.ItemEntityRenderer;
+import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.ItemEntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
@@ -24,6 +29,8 @@ import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.renderer.texture.UvMapping;
@@ -33,6 +40,7 @@ import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.data.AtlasIds;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
@@ -64,6 +72,11 @@ import org.slf4j.LoggerFactory;
  * <p>Items whose model is a special renderer (chests, shields, heads, banners) fall back to a flat
  * quad of their particle sprite. Lighting is face shading only, matching the blocks (J8).
  *
+ * <p>In third person (F5) the player's own avatar goes in too, in its own ranges: Steve posed by
+ * his AvatarRenderer (walk cycle, head turn, sneak, arm swing) with the skin as a third texture,
+ * and what he holds. Those vertices are relative to his feet; the host adds where it draws its
+ * player, so the body sits exactly under the host's camera. Armour and capes aren't sent yet.
+ *
  * <p>Adapted in part from SkyCraft's {@code WorldExporter.exportEntities/addItem/iconUv}
  * (chasmlol/SkyCraft, MIT): which entities to take, the interpolation, the icon fallback.
  */
@@ -85,6 +98,12 @@ public final class EntityExporter {
 	private static boolean failureLogged;
 	private static boolean atlasTooBigLogged;
 	private static int publishes;
+	private static final CameraRenderState AVATAR_CAMERA = new CameraRenderState();
+	/** The skin texture last sent, and into which mapping. */
+	private static Identifier sentSkin;
+	private static int sentSkinGeneration = Integer.MIN_VALUE;
+	private static boolean avatarFailureLogged;
+	private static boolean avatarLogged;
 
 	private record Near(double distance2, ItemEntity item) {
 	}
@@ -143,6 +162,7 @@ public final class EntityExporter {
 			}
 			taken++;
 		}
+		addAvatar(minecraft, partial);
 		publish(taken);
 	}
 
@@ -204,6 +224,103 @@ public final class EntityExporter {
 		}
 	}
 
+	/**
+	 * The player himself, when Minecraft's camera is in third person: run through his own
+	 * AvatarRenderer into the avatar ranges, relative to his feet.
+	 */
+	private static void addAvatar(Minecraft minecraft, float partial) {
+		LocalPlayer player = minecraft.player;
+		if (minecraft.options.getCameraType().isFirstPerson() || player == null) {
+			return;
+		}
+		try {
+			EntityRenderer<? super LocalPlayer, ?> renderer = minecraft.getEntityRenderDispatcher().getRenderer(player);
+			if (!(renderer instanceof AvatarRenderer<?> avatarRenderer)) {
+				return;
+			}
+			if (!sendSkin(minecraft, player.getSkin().body().texturePath())) {
+				return;
+			}
+			@SuppressWarnings({"unchecked", "rawtypes"})
+			EntityRenderer<LocalPlayer, EntityRenderState> raw = (EntityRenderer) renderer;
+			EntityRenderState state = raw.createRenderState(player, partial);
+			Vec3 offset = raw.getRenderOffset(state); // the sneak drop
+			PoseStack pose = new PoseStack();
+			pose.translate(offset.x, offset.y, offset.z);
+			int[] before = CAPTURE.counts();
+			CAPTURE.beginAvatar(avatarRenderer.getModel());
+			raw.submit(state, pose, CAPTURE, AVATAR_CAMERA);
+			CAPTURE.endAvatar();
+			if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
+				CAPTURE.truncate(before);
+			}
+			if (!avatarLogged) {
+				avatarLogged = true;
+				int[] c = CAPTURE.counts();
+				LOG.info("PortalCraft: third person: avatar mesh {} skin + {} held vertices", c[4], c[5] + c[6] + c[7] + c[8]);
+			}
+		} catch (RuntimeException e) {
+			CAPTURE.endAvatar();
+			if (!avatarFailureLogged) {
+				avatarFailureLogged = true;
+				LOG.error("PortalCraft: avatar export failed (logged once)", e);
+			}
+		}
+	}
+
+	/** Sends the player's skin when it, or the mapping, is new. False if it can't be read. */
+	private static boolean sendSkin(Minecraft minecraft, Identifier texture) {
+		if (texture.equals(sentSkin) && sentSkinGeneration == WorldLink.generation()) {
+			return true;
+		}
+		NativeImage image = null;
+		boolean owned = false;
+		AbstractTexture loaded = minecraft.getTextureManager().getTexture(texture);
+		if (loaded instanceof DynamicTexture dynamic && dynamic.getPixels() != null) {
+			image = dynamic.getPixels(); // a downloaded skin
+		} else {
+			Resource resource = minecraft.getResourceManager().getResource(texture).orElse(null);
+			if (resource != null) {
+				try (var in = resource.open()) {
+					image = NativeImage.read(in);
+					owned = true;
+				} catch (java.io.IOException e) {
+					LOG.warn("PortalCraft: can't read the skin {}: {}", texture, e.toString());
+				}
+			}
+		}
+		if (image == null) {
+			if (!texture.equals(sentSkin)) {
+				sentSkin = texture;
+				sentSkinGeneration = Integer.MIN_VALUE;
+				LOG.warn("PortalCraft: no pixels for the skin {}; third person shows no body", texture);
+			}
+			return false;
+		}
+		try {
+			int w = image.getWidth(), h = image.getHeight();
+			if (!WorldFormat.skinFits(w, h)) {
+				LOG.warn("PortalCraft: skin {} is {}x{}, bigger than the mapping's skin region", texture, w, h);
+				return false;
+			}
+			int[] pixels = new int[w * h];
+			for (int y = 0; y < h; y++) {
+				for (int x = 0; x < w; x++) {
+					pixels[y * w + x] = WorldFormat.argbToRgba(image.getPixel(x, y));
+				}
+			}
+			WorldLink.writeSkin(w, h, pixels);
+			sentSkin = texture;
+			sentSkinGeneration = WorldLink.generation();
+			LOG.info("PortalCraft: sent the {}x{} skin {} to the host", w, h, texture);
+			return true;
+		} finally {
+			if (owned) {
+				image.close();
+			}
+		}
+	}
+
 	/** Writes the captured mesh into the free entity slot and makes it the newest. */
 	private static void publish(int items) {
 		int total = CAPTURE.total();
@@ -219,8 +336,7 @@ public final class EntityExporter {
 			WorldLink.writeEntityVertices(slot, at, range.data(), range.count());
 			at += range.count();
 		}
-		WorldLink.publishEntities(slot, CAPTURE.blockSolid.count(), CAPTURE.blockTranslucent.count(), CAPTURE.itemSolid.count(),
-			CAPTURE.itemTranslucent.count());
+		WorldLink.publishEntities(slot, CAPTURE.counts());
 		publishedEmpty = total == 0;
 		if (total > 0 && (++publishes <= 3 || publishes % 2000 == 0)) {
 			LOG.info("PortalCraft: entity mesh #{}: {} items, {} + {} block-atlas and {} + {} item-atlas vertices (slot {})", publishes, items,
@@ -230,19 +346,39 @@ public final class EntityExporter {
 
 	/**
 	 * A submit collector that turns item submits into vertices in host space, split by atlas and
-	 * by blending, and ignores everything else (models with entity textures, text, shadows).
+	 * by blending, and ignores everything else (models with entity textures, text, shadows). While
+	 * an avatar is being captured, items go to the avatar ranges and the avatar's own model is
+	 * kept too, skin-textured.
 	 */
 	private static final class ItemCapture implements SubmitNodeCollector {
 		final WorldFormat.Vertices blockSolid = new WorldFormat.Vertices(4096);
 		final WorldFormat.Vertices blockTranslucent = new WorldFormat.Vertices(256);
 		final WorldFormat.Vertices itemSolid = new WorldFormat.Vertices(8192);
 		final WorldFormat.Vertices itemTranslucent = new WorldFormat.Vertices(256);
-		/** In slot order. */
-		final WorldFormat.Vertices[] ranges = {this.blockSolid, this.blockTranslucent, this.itemSolid, this.itemTranslucent};
+		final WorldFormat.Vertices avatarSkin = new WorldFormat.Vertices(2048);
+		final WorldFormat.Vertices avatarBlockSolid = new WorldFormat.Vertices(256);
+		final WorldFormat.Vertices avatarBlockTranslucent = new WorldFormat.Vertices(64);
+		final WorldFormat.Vertices avatarItemSolid = new WorldFormat.Vertices(1024);
+		final WorldFormat.Vertices avatarItemTranslucent = new WorldFormat.Vertices(64);
+		/** In slot order (WorldFormat.H_ENTITY_RANGES). */
+		final WorldFormat.Vertices[] ranges = {this.blockSolid, this.blockTranslucent, this.itemSolid, this.itemTranslucent, this.avatarSkin,
+			this.avatarBlockSolid, this.avatarBlockTranslucent, this.avatarItemSolid, this.avatarItemTranslucent};
 		private final Vector3f p = new Vector3f();
 		private final Vector3f n = new Vector3f();
+		private final SkinQuads skinQuads = new SkinQuads();
 		private double ox, oy, oz;
 		private boolean captured;
+		/** The avatar's body model while one is being captured, else null. */
+		private @Nullable Model<?> avatarModel;
+
+		void beginAvatar(Model<?> model) {
+			this.begin(Vec3.ZERO); // relative to the feet
+			this.avatarModel = model;
+		}
+
+		void endAvatar() {
+			this.avatarModel = null;
+		}
 
 		void clear() {
 			for (WorldFormat.Vertices r : this.ranges) {
@@ -259,7 +395,11 @@ public final class EntityExporter {
 		}
 
 		int[] counts() {
-			return new int[] {this.blockSolid.count(), this.blockTranslucent.count(), this.itemSolid.count(), this.itemTranslucent.count()};
+			int[] counts = new int[this.ranges.length];
+			for (int i = 0; i < counts.length; i++) {
+				counts[i] = this.ranges[i].count();
+			}
+			return counts;
 		}
 
 		void truncate(int[] counts) {
@@ -282,11 +422,12 @@ public final class EntityExporter {
 
 		private WorldFormat.Vertices range(TextureAtlasSprite sprite, boolean translucent) {
 			Identifier atlas = sprite.atlasLocation();
+			boolean avatar = this.avatarModel != null;
 			if (atlas.equals(TextureAtlas.LOCATION_BLOCKS)) {
-				return translucent ? this.blockTranslucent : this.blockSolid;
+				return avatar ? (translucent ? this.avatarBlockTranslucent : this.avatarBlockSolid) : translucent ? this.blockTranslucent : this.blockSolid;
 			}
 			if (atlas.equals(TextureAtlas.LOCATION_ITEMS)) {
-				return translucent ? this.itemTranslucent : this.itemSolid;
+				return avatar ? (translucent ? this.avatarItemTranslucent : this.avatarItemSolid) : translucent ? this.itemTranslucent : this.itemSolid;
 			}
 			return null; // another atlas: the host doesn't have it
 		}
@@ -339,6 +480,86 @@ public final class EntityExporter {
 			}
 		}
 
+		/**
+		 * Model cubes arrive as quads of four posed vertices (ModelPart.Cube.compile); each becomes
+		 * two triangles, face-shaded like the items. Origin is the avatar's feet.
+		 */
+		private static final class SkinQuads implements VertexConsumer {
+			WorldFormat.Vertices out;
+			private final float[] xyz = new float[12], uv = new float[8];
+			private int corner, color = -1;
+			private float nx, ny, nz;
+
+			@Override
+			public void addVertex(float x, float y, float z, int color, float u, float v, int overlayCoords, int lightCoords, float nx, float ny,
+				float nz) {
+				this.addVertex(x, y, z).setColor(color).setUv(u, v).setNormal(nx, ny, nz);
+			}
+
+			@Override
+			public VertexConsumer addVertex(float x, float y, float z) {
+				int c = this.corner;
+				this.xyz[c * 3] = x;
+				this.xyz[c * 3 + 1] = y;
+				this.xyz[c * 3 + 2] = z;
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setColor(int r, int g, int b, int a) {
+				return this.setColor(a << 24 | r << 16 | g << 8 | b);
+			}
+
+			@Override
+			public VertexConsumer setColor(int color) {
+				this.color = color;
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv(float u, float v) {
+				this.uv[this.corner * 2] = u;
+				this.uv[this.corner * 2 + 1] = v;
+				return this;
+			}
+
+			/** The last attribute of each vertex: completes it, and every fourth one a quad. */
+			@Override
+			public VertexConsumer setNormal(float x, float y, float z) {
+				this.nx = x;
+				this.ny = y;
+				this.nz = z;
+				if (++this.corner == 4) {
+					this.corner = 0;
+					int shaded = WorldFormat.d3dColor(WorldFormat.shadeArgb(this.color, WorldFormat.shade(this.nx, this.ny, this.nz)), false);
+					for (int k : WorldFormat.QUAD_TRIANGLES) {
+						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], shaded, this.uv[k * 2], this.uv[k * 2 + 1]);
+					}
+				}
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv1(int u, int v) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv2(int u, int v) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv3(float u, float v) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setLineWidth(float width) {
+				return this;
+			}
+		}
+
 		// ---- everything else is ignored ----
 		@Override
 		public OrderedSubmitNodeCollector order(int order) {
@@ -372,9 +593,16 @@ public final class EntityExporter {
 		public void submitLeash(PoseStack poseStack, EntityRenderState.LeashState leashState) {
 		}
 
+		/** Keeps the avatar's body (skin-textured); other models (armour, cape, parrots) aren't sent. */
 		@Override
 		public <S> void submitModel(Model<? super S> model, S state, PoseStack poseStack, RenderType renderType, int lightCoords, int overlayCoords,
 			int tintedColor, @Nullable UvMapping uvMapping, int outlineColor) {
+			if (this.avatarModel == null || model != this.avatarModel || outlineColor != 0) {
+				return;
+			}
+			model.setupAnim(state);
+			this.skinQuads.out = this.avatarSkin;
+			model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
 		}
 
 		@Override

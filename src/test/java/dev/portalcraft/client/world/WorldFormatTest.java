@@ -25,8 +25,10 @@ class WorldFormatTest {
 		assertEquals(1024L * 1024 * 4, WorldFormat.ITEM_ATLAS_BYTES); // kWorldItemAtlasBytes
 		assertEquals(30412800L, WorldFormat.ENTITY_OFFSET); // kWorldEntityOffset
 		assertEquals(65536L * 24, WorldFormat.ENTITY_SLOT_BYTES); // kWorldEntitySlotBytes
-		assertEquals(33558528L, WorldFormat.TOTAL_BYTES); // kWorldBytes
-		assertEquals(WorldFormat.ENTITY_OFFSET + 2 * WorldFormat.ENTITY_SLOT_BYTES, WorldFormat.TOTAL_BYTES);
+		assertEquals(33558528L, WorldFormat.PCW2_BYTES); // kWorldPcw2Bytes
+		assertEquals(WorldFormat.ENTITY_OFFSET + 2 * WorldFormat.ENTITY_SLOT_BYTES, WorldFormat.PCW2_BYTES);
+		assertEquals(33558528L, WorldFormat.SKIN_OFFSET); // kWorldSkinOffset
+		assertEquals(33820672L, WorldFormat.TOTAL_BYTES); // kWorldBytes
 	}
 
 	@Test
@@ -48,8 +50,13 @@ class WorldFormatTest {
 		assertEquals(76, WorldFormat.H_ENTITY_BLOCK_TRANSLUCENT);
 		assertEquals(84, WorldFormat.H_ENTITY_ITEM_SOLID);
 		assertEquals(92, WorldFormat.H_ENTITY_ITEM_TRANSLUCENT);
-		assertEquals(100, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
-		assertEquals(WorldFormat.H_ENTITY_ITEM_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
+		// PCW3 fields
+		assertEquals(100, WorldFormat.H_SKIN_W);
+		assertEquals(108, WorldFormat.H_SKIN_SEQ);
+		assertEquals(112, WorldFormat.H_AVATAR_SKIN);
+		assertEquals(144, WorldFormat.H_AVATAR_ITEM_TRANSLUCENT);
+		assertEquals(152, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
+		assertEquals(WorldFormat.H_AVATAR_ITEM_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
 		assertTrue(WorldFormat.HEADER_STRUCT_BYTES <= WorldFormat.HEADER_BYTES);
 	}
 
