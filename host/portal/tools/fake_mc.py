@@ -35,6 +35,8 @@ def main():
     ap.add_argument("--mc", action="append", help="dev: run a Minecraft command as the server (repeatable), e.g. \"give @p tnt 64\"")
     ap.add_argument("--lights", help="dev: Minecraft lights in Portal: exponent,units-per-level (e.g. 1,22)")
     ap.add_argument("--exposure", type=float, help="dev: how bright Portal's lighting makes Minecraft's blocks (0 = off)")
+    ap.add_argument("--blast", help="test a Minecraft explosion in Portal: x,y,z,radius,damage (host units), e.g. --blast=0,0,64,320,120")
+    ap.add_argument("--hit", help="test a Minecraft hit on a Portal entity: index,x,y,z,fx,fy,fz,damage")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
@@ -63,6 +65,13 @@ def main():
         return
     if a.trace:
         sock.sendto(b"PCT1" + struct.pack("<i", a.trace), HOST)
+        return
+    if a.blast:
+        sock.sendto(b"PCB1" + struct.pack("<5f", *map(float, a.blast.split(","))), HOST)
+        return
+    if a.hit:
+        v = a.hit.split(",")
+        sock.sendto(b"PCI1" + struct.pack("<I7f", int(v[0]), *map(float, v[1:8])), HOST)
         return
     if a.keys is not None and a.keys != "":
         bits = bytearray(32)

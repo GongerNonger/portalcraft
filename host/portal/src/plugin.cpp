@@ -266,6 +266,104 @@ bool devMode() {
 	return dev == 1;
 }
 
+// ---- Minecraft's blasts and hits on Portal's props ----------------------------------------
+// Through IServerTools (VSERVERTOOLS002 in server.dll; slots checked in its vtable: 28
+// ClearMultiDamage, 29 ApplyMultiDamage, 30 AddMultiDamage(info, entity), 31 RadiusDamage(info, src,
+// radius, classIgnore, ignore)), the same calls Portal's own explosions and weapons make: physics
+// props get the push, turrets tip over, and the player (whom Minecraft hurts itself) is left out.
+
+// CTakeDamageInfo as SP2013's server.dll has it (92 bytes; zero padding past it is harmless).
+struct DamageInfo {
+	Vector force, position, reported;
+	uint32_t inflictor, attacker, weapon; // EHANDLEs
+	float damage, maxDamage, baseDamage;
+	int32_t damageType, custom, stats, ammoType, damagedOtherPlayers, penetration;
+	float bonus;
+	bool forceFriendlyFire;
+	uint8_t pad[35];
+};
+static_assert(offsetof(DamageInfo, damage) == 48 && offsetof(DamageInfo, forceFriendlyFire) == 88, "CTakeDamageInfo layout");
+
+constexpr int DMG_CLUB = 1 << 7, DMG_BLAST = 1 << 6;
+void* g_serverTools = nullptr;
+
+// The player as attacker (Steve's doing) and as the entity a blast leaves out. Null between levels.
+void* playerBase() {
+	void* e = edictAt(1);
+	return edictInUse(e) ? sdk::networkableBaseEntity(sdk::edictNetworkable(e)) : nullptr;
+}
+
+DamageInfo damageInfo(float damage, int type) {
+	DamageInfo info{};
+	info.inflictor = info.attacker = info.weapon = 0xFFFFFFFFu; // INVALID_EHANDLE_INDEX
+	if (void* unknown = edictInUse(edictAt(1)) ? sdk::edictUnknown(edictAt(1)) : nullptr) {
+		// IHandleEntity slot 2, GetRefEHandle: the player's own handle.
+		info.inflictor = info.attacker = *sdk::vcall<const uint32_t*>(unknown, 2);
+	}
+	info.damage = info.maxDamage = info.baseDamage = damage;
+	info.damageType = type;
+	info.ammoType = -1;
+	return info;
+}
+
+bool serverToolsReady() {
+	if (!g_serverTools) {
+		g_serverTools = engineInterface("server.dll", "VSERVERTOOLS002");
+		logf("server tools %p", g_serverTools);
+	}
+	return g_serverTools && g_inLevel && playerBase();
+}
+
+void receiveBlast(const char* buf) {
+	pcproto::McBlast b;
+	std::memcpy(&b, buf, sizeof b);
+	if (!serverToolsReady() || !(b.radius > 0.0f && b.radius < 4096.0f) || !(b.damage > 0.0f && b.damage < 10000.0f)) {
+		return;
+	}
+	DamageInfo info = damageInfo(b.damage, DMG_BLAST);
+	Vector at{b.origin.x, b.origin.y, b.origin.z};
+	info.position = info.reported = at;
+	__try {
+		sdk::vcall<void>(g_serverTools, 31, static_cast<const void*>(&info), static_cast<const void*>(&at), b.radius, 0, playerBase());
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		logf("blast: RadiusDamage faulted");
+		return;
+	}
+	static int logged = 0;
+	if (logged++ < 3) {
+		logf("blast: Minecraft explosion at %.0f %.0f %.0f, radius %.0f, damage %.0f", at.x, at.y, at.z, b.radius, b.damage);
+	}
+}
+
+void receiveHit(const char* buf) {
+	pcproto::McHit h;
+	std::memcpy(&h, buf, sizeof h);
+	if (!serverToolsReady() || h.index < 2 || h.index >= 2048 || !(h.damage >= 0.0f && h.damage < 1000.0f)) {
+		return;
+	}
+	void* e = edictAt(int(h.index));
+	void* entity = edictInUse(e) ? sdk::networkableBaseEntity(sdk::edictNetworkable(e)) : nullptr;
+	if (!entity) {
+		return;
+	}
+	DamageInfo info = damageInfo(h.damage, DMG_CLUB);
+	info.force = {h.force.x, h.force.y, h.force.z};
+	info.position = info.reported = {h.point.x, h.point.y, h.point.z};
+	__try {
+		sdk::vcall<void>(g_serverTools, 28);
+		sdk::vcall<void>(g_serverTools, 30, static_cast<const void*>(&info), entity);
+		sdk::vcall<void>(g_serverTools, 29);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		logf("hit: multi-damage faulted");
+		return;
+	}
+	static int logged = 0;
+	if (logged++ < 3) {
+		logf("hit: entity #%u (%s) at %.0f %.0f %.0f, force %.0f %.0f %.0f", h.index, sdk::networkableClassName(sdk::edictNetworkable(e)),
+			h.point.x, h.point.y, h.point.z, h.force.x, h.force.y, h.force.z);
+	}
+}
+
 void linkPoll() {
 	char buf[512];
 	for (int i = 0; i < 64; i++) {
@@ -322,6 +420,10 @@ void linkPoll() {
 			std::memcpy(pitchYaw, buf + 4, 8);
 			sdk::QAngle view{pitchYaw[0], pitchYaw[1], 0.0f};
 			sdk::clientSetViewAngles(g_engineClient, &view);
+		} else if (n == sizeof(pcproto::McBlast) && std::memcmp(buf, "PCB1", 4) == 0) {
+			receiveBlast(buf);
+		} else if (n == sizeof(pcproto::McHit) && std::memcmp(buf, "PCI1", 4) == 0) {
+			receiveHit(buf);
 		} else if (n >= 8 && std::memcmp(buf, "PCL1", 4) == 0) {
 			receiveLights(buf, n);
 		} else if (n == 12 && std::memcmp(buf, "PCX2", 4) == 0) {

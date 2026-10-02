@@ -117,6 +117,31 @@ public final class LiveEntities {
 		return moved;
 	}
 
+	/**
+	 * The host entity whose collision holds `point` (Minecraft coordinates, within `margin`
+	 * blocks), or -1. The smallest one wins, so a cube on a lift is the cube.
+	 */
+	public static int entityAt(Vec3 point, double margin) {
+		int best = -1;
+		double bestSize = Double.MAX_VALUE;
+		for (Placed p : PLACED.values()) {
+			if (p.bounds() == null || !p.bounds().inflate(margin).contains(point)) {
+				continue;
+			}
+			for (BspMap.Brush brush : p.brushes()) {
+				if (brush.mcBox().inflate(margin).contains(point)) {
+					double size = p.bounds().getSize();
+					if (size < bestSize) {
+						bestSize = size;
+						best = p.pose().index();
+					}
+					break;
+				}
+			}
+		}
+		return best;
+	}
+
 	private static boolean samePlace(Proto.HostEntity a, Proto.HostEntity b) {
 		return a.solid() == b.solid() && a.model().equals(b.model()) && a.origin().distanceToSqr(b.origin()) < 0.01
 			&& a.angles().distanceToSqr(b.angles()) < 0.01 && a.mins().equals(b.mins()) && a.maxs().equals(b.maxs());

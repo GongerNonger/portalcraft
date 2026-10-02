@@ -10,7 +10,10 @@
 		"ClipContextMixin",
 		"EntityBelowWorldMixin",
 		"FlowingFluidMixin",
-		"PlayerDropsMixin"
+		"LivingEntityAirMixin",
+		"PlayerDropsMixin",
+		"ProjectileHitMixin",
+		"ServerExplosionMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

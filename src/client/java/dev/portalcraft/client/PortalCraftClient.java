@@ -28,6 +28,11 @@ public class PortalCraftClient implements ClientModInitializer {
 		// Left click with the gun fires the primary portal instead of attacking or mining.
 		ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
 			if (!player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+				// A punch on one of the host's live entities (a cube, a turret) shoves it there.
+				if (clickCount > 0 && client.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
+					&& hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK && dev.portalcraft.host.HostAim.isHostCell(hit.getBlockPos())) {
+					dev.portalcraft.host.HostEvents.queueHit(hit.getLocation(), player.getLookAngle().scale(1.5), 2.0F);
+				}
 				return false;
 			}
 			if (clickCount > 0 && fireCooldown == 0) {

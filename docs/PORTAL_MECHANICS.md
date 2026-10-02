@@ -8,13 +8,16 @@ enemies around him. This is where that holds up, and where it doesn't.
 | Mechanic | Count | How it works with PortalCraft |
 |---|---|---|
 | Portals (walk, run, fall through) | everywhere | Portal teleports the player natively and carries its velocity through; Minecraft takes the new place and velocity (a hard handoff). |
-| Momentum flings | core of chambers ~09-19 | **Short by ~37%**: see below. |
+| Momentum flings | core of chambers ~09-19 | Portal air (below): Portal's gravity, no air drag, its speed cap, from the portal until landing. |
 | `trigger_push` air currents | 37 in 8 maps | Velocity impulses are handed to Minecraft (`kMoveImpulse`). Before 10-03 they were lost: the plugin overwrites the velocity every tick. |
 | `env_physexplosion` | 9 | Same impulse path. |
 | Doors, lifts, moving platforms (`func_door`, `func_tracktrain`) | ~400 | Live entity collision, ridden by `carry`, shoves are soft handoffs. |
 | Fizzlers (`trigger_portal_cleanser`) | 40 | Native: they act on the player's position and clear portals; Minecraft's portal holes follow. |
 | Goo, turrets, energy balls (`trigger_hurt`, turrets, launchers) | ~110 | Native: Portal damages its own player at our position. |
 | Cubes, buttons | many | Native (E grabs; floor buttons are triggers / physics). |
+| Floor-portal funneling | everywhere | Portal steers a falling player into a floor portal; PortalAir.funnel does it for Steve (within 1.5 blocks, 10 below). |
+| Minecraft explosions on props | - | TNT, creepers, beds become a Portal blast (`RadiusDamage`, DMG_BLAST, radius 2x power): cubes fly, turrets tip. The player is left out (Minecraft hurts Steve itself). |
+| Arrows, snowballs, punches on props | - | A projectile or a bare-hand punch that lands on a Portal entity hits it (`AddMultiDamage`, DMG_CLUB, force along the hit): cubes get shoved, turrets knocked over. |
 | Bounce pads, faith plates, gels | 0 | Portal 2 only. |
 
 Fall damage is ON: Steve has no long-fall boots. Every test chamber and escape level hands him a
@@ -36,7 +39,24 @@ air drag at all. Simulated (drop into a floor portal, exit a wall portal, 128-un
 
 Puzzles are built for Portal's numbers, so flings fall short of their ledges.
 
-## Options (not built: they change how Steve moves)
+## Portal air (built: option A below)
+
+From the moment Steve comes out of a portal with speed (or is thrown by an air current or a blast)
+until he lands, touches water or a ladder, and on any fall longer than 3 blocks, Steve flies by
+Portal's rules (`PortalAir`, `LivingEntityAirMixin`): gravity 600 u/s² (Minecraft's is 1280), no
+air drag, speed capped at 3500 u/s, and air control can steer but not add speed. Jumps, sprint-jumps
+and short drops are vanilla. Fall damage is still Minecraft's, from the fall distance: long falls
+still need the water bucket.
+
+## Minecraft hitting Portal's props
+
+Explosions (`ServerExplosionMixin`), projectiles landing on host geometry (`ProjectileHitMixin`) and
+bare-hand punches on host geometry are sent to the plugin (`HostEvents`: PCB1 blasts, PCI1 hits).
+A hit only goes through if a live host entity's collision is at the point. The plugin applies them
+with the server's own damage calls (IServerTools slots 28-31, checked in server.dll), so Portal's
+physics does the rest. Test without Minecraft: `fake_mc.py --blast=x,y,z,320,120` near a cube.
+
+## Options (the scoping, kept for reference)
 
 **A. Portal air physics in Minecraft ("fling mode").** A mixin on the player's air movement: while
 Steve is airborne after a portal (and optionally whenever he has fallen more than ~2 blocks), use

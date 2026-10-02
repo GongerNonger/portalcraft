@@ -135,6 +135,25 @@ struct HostEntities {
 	HostEntity entities[kMaxHostEntities]; // only `count` are sent
 };
 
+// ---- Minecraft's blasts and hits, for the host's props (Minecraft -> host) ------------------------
+// Minecraft's explosions become blasts in the host (cubes thrown, turrets knocked over), and its
+// projectiles and punches that land on a host entity become a hit on it. Host coordinates.
+
+struct McBlast {
+	char magic[4]; // "PCB1"
+	Vec3 origin;
+	float radius; // units
+	float damage; // at the centre; also what drives the push
+};
+
+struct McHit {
+	char magic[4]; // "PCI1"
+	uint32_t index; // HostEntity::index (edict)
+	Vec3 point;     // where it landed
+	Vec3 force;     // physics force along the hit
+	float damage;
+};
+
 // ---- overlay: Minecraft's hand + HUD, drawn by the host on top of its frame ---------------------
 // A named shared-memory mapping created by the host: Local\PortalCraft_Overlay_v1.
 //   [0, 4096)                      OverlayHeader
@@ -349,5 +368,7 @@ static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 236, "HostState layout");
 static_assert(sizeof(McState) == 76, "McState layout");
+static_assert(sizeof(McBlast) == 24, "McBlast layout");
+static_assert(sizeof(McHit) == 36, "McHit layout");
 
 } // namespace pcproto

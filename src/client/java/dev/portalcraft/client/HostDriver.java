@@ -12,6 +12,8 @@ import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
 import dev.portalcraft.host.HostLink;
 import dev.portalcraft.host.LiveEntities;
+import dev.portalcraft.host.HostEvents;
+import dev.portalcraft.host.PortalAir;
 import dev.portalcraft.host.Proto;
 import dev.portalcraft.host.Units;
 import net.minecraft.client.CameraType;
@@ -152,6 +154,9 @@ public final class HostDriver {
 		player.setYHeadRot(yaw);
 
 		followHostMoves(minecraft, player, s);
+		PortalAir.tick(player);
+		PortalAir.funnel(player, s.portals());
+		HostEvents.drainHits();
 
 		if (s.foreground()) {
 			applyKeys(minecraft, s);
@@ -473,11 +478,16 @@ public final class HostDriver {
 				player.setPos(to);
 				player.setDeltaMovement(Units.velocityToMc(s.teleportVelocity()));
 				player.resetFallDistance();
+				PortalAir.startFling();
 			} else if (s.teleportKind() == Proto.MOVE_SHOVE && player.position().distanceToSqr(to) < 0.6 * 0.6) {
 				// A shove (a prop, a lift): just take the place, keep our own momentum.
 				player.setPos(to);
 			} else {
-				teleport(minecraft, player, to, Units.velocityToMc(s.teleportVelocity()));
+				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
+				teleport(minecraft, player, to, velocity);
+				if (velocity.lengthSqr() > 0.1 * 0.1) {
+					PortalAir.startFling(); // out of a portal with speed: Portal's flight until he lands
+				}
 			}
 			teleportAck = s.teleportSeq();
 		}
