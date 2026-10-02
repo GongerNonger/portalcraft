@@ -27,7 +27,7 @@
 // Portal's lighting: every Minecraft triangle is tinted by what Portal would light a model with at
 // that spot, facing that way: IVEngineClient::ComputeLighting (slot 67; the ambient cube from the
 // map's light probes plus its nearby lights), the same lighting Portal gives its cubes and turrets.
-// Cached per 16-unit cell and face direction (Portal's lighting is baked); the block mesh is lit
+// Cached per 8-unit grid point and face direction (Portal's lighting is baked); the block mesh is lit
 // once per publish, the entity mesh when it changes. That is what makes the blocks sit in the
 // chamber's cool light and darken in its shadows instead of glowing at full brightness.
 
@@ -133,8 +133,8 @@ uint32_t lightTint(const sdk::Vector& p, const sdk::Vector& n) {
 	} else {
 		face = n.z >= 0 ? 4 : 5;
 	}
-	int64_t cx = int64_t(std::floor(p.x / 16.0f)) & 0xFFFFF, cy = int64_t(std::floor(p.y / 16.0f)) & 0xFFFFF,
-		cz = int64_t(std::floor(p.z / 16.0f)) & 0xFFFFF;
+	int64_t cx = int64_t(std::floor(p.x / 8.0f + 0.5f)) & 0xFFFFF, cy = int64_t(std::floor(p.y / 8.0f + 0.5f)) & 0xFFFFF,
+		cz = int64_t(std::floor(p.z / 8.0f + 0.5f)) & 0xFFFFF;
 	uint64_t key = uint64_t(cx) | uint64_t(cy) << 20 | uint64_t(cz) << 40 | uint64_t(face) << 60;
 	auto it = g_lightCache.find(key);
 	if (it != g_lightCache.end()) {
@@ -142,7 +142,7 @@ uint32_t lightTint(const sdk::Vector& p, const sdk::Vector& n) {
 	}
 	static const sdk::Vector kAxes[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
 	const sdk::Vector& axis = kAxes[face];
-	sdk::Vector at{p.x + axis.x * 2.0f, p.y + axis.y * 2.0f, p.z + axis.z * 2.0f}; // just off the face, in the air
+	sdk::Vector at = p; // the caller put it in front of the face
 	sdk::Vector color{1.0f, 1.0f, 1.0f};
 	sdk::Vector box[6] = {};
 	bool haveBox = false;
@@ -184,8 +184,11 @@ uint32_t modulate(uint32_t color, uint32_t tint) {
 	return (color & 0xFF000000u) | r << 16 | g << 8 | b;
 }
 
-// Appends `count` vertices of `src` to `out`, each triangle tinted by Portal's light at its centre
-// (plus `offset`, for the avatar's feet-relative vertices) facing its normal.
+// Appends `count` vertices of `src` to `out`, each vertex tinted by Portal's light just in front of
+// it (plus `offset`, for the avatar's feet-relative vertices) facing its triangle's normal. Per
+// vertex, so a face shades smoothly and the two triangles of a quad never disagree (lit per
+// triangle, they made a checkerboard). The sample is pulled a little in from the corner, which can
+// sit right on a Portal wall, and taken a few units out in front of the face.
 void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVertex* src, uint32_t count, const sdk::Vector& offset) {
 	size_t base = out.size();
 	out.insert(out.end(), src, src + count);
@@ -194,11 +197,18 @@ void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVerte
 		float ux = t[1].x - t[0].x, uy = t[1].y - t[0].y, uz = t[1].z - t[0].z;
 		float vx = t[2].x - t[0].x, vy = t[2].y - t[0].y, vz = t[2].z - t[0].z;
 		sdk::Vector n{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx};
-		sdk::Vector c{(t[0].x + t[1].x + t[2].x) / 3.0f + offset.x, (t[0].y + t[1].y + t[2].y) / 3.0f + offset.y,
-			(t[0].z + t[1].z + t[2].z) / 3.0f + offset.z};
-		uint32_t tint = lightTint(c, n);
+		float len = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+		if (!(len > 1e-6f)) {
+			continue;
+		}
+		n = {n.x / len, n.y / len, n.z / len};
+		float cx = (t[0].x + t[1].x + t[2].x) / 3.0f, cy = (t[0].y + t[1].y + t[2].y) / 3.0f, cz = (t[0].z + t[1].z + t[2].z) / 3.0f;
 		for (int k = 0; k < 3; k++) {
-			t[k].color = modulate(t[k].color, tint);
+			float dx = cx - t[k].x, dy = cy - t[k].y, dz = cz - t[k].z;
+			float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+			float in = d > 2.0f ? 2.0f / d : 0.0f;
+			sdk::Vector at{t[k].x + dx * in + n.x * 6.0f + offset.x, t[k].y + dy * in + n.y * 6.0f + offset.y, t[k].z + dz * in + n.z * 6.0f + offset.z};
+			t[k].color = modulate(t[k].color, lightTint(at, n));
 		}
 	}
 }
@@ -580,7 +590,11 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			drawTriangles(dev, particles, pSolid);
 		}
 		if (cracks) { // Minecraft's crumbling blend: what's behind, times the crack texture
-			dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+			// The blend doubles (dst*src + src*dst), so a texel must be dropped where the crack texture
+			// is clear, or its white-ish RGB brightens the whole face.
+			dev->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
+			dev->SetRenderState(D3DRS_ALPHAREF, 25);
+			dev->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATER);
 			dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
 			dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
 			dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_DESTCOLOR);

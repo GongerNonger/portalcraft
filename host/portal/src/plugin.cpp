@@ -320,6 +320,8 @@ Vector toVec(const pcproto::Vec3& v) {
 // here and add it to what we write, until the player walks away from where it was learned.
 float g_zLift = 0.0f;
 Vector g_zLiftAt{};
+float g_zLiftFloor = 0.0f; // Minecraft's z (feet, on the ground) when the lift was learned
+float g_lastMcZ = 0.0f;    // Minecraft's z we last wrote, before the lift
 
 // Where Minecraft's player is "now": one physics step behind Minecraft's smoothed timeline,
 // between the two samples around that moment (the way Minecraft itself renders one step behind).
@@ -362,12 +364,18 @@ Vector interpolatedMinecraft(Vector* velocity) {
 void applyMinecraft(uint8_t* mv) {
 	Vector velocity{};
 	Vector o = interpolatedMinecraft(&velocity);
+	// The lift belongs to a floor height, not a spot: Portal rests the player the same amount above
+	// a whole floor, so forgetting it every 24 units walked (as this used to) re-learnt it with a
+	// one-tick dip over and over, which felt like snagging. Drop it when Steve stands at another
+	// height (a step, a platform, the button) or has gone far; keep it through jumps.
 	if (g_zLift != 0.0f) {
 		float dx = o.x - g_zLiftAt.x, dy = o.y - g_zLiftAt.y;
-		if (dx * dx + dy * dy > 24.0f * 24.0f) {
+		bool otherFloor = g_mc.onGround && std::fabs(o.z - g_zLiftFloor) > 1.0f;
+		if (otherFloor || dx * dx + dy * dy > 1024.0f * 1024.0f) {
 			g_zLift = 0.0f;
 		}
 	}
+	g_lastMcZ = o.z;
 	o.z += g_zLift;
 	*reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin) = o;
 	*reinterpret_cast<Vector*>(mv + sdk::kMvVelocity) = velocity;
@@ -413,14 +421,16 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	}
 
 	static int pushLogs = 0;
-	if (g_haveSet && pushLogs < 12) {
+	static DWORD lastPushLog = 0;
+	if (g_haveSet && pushLogs < 300 && GetTickCount() - lastPushLog > 250) {
 		float d = dist(origin, g_lastSet);
 		if (d > 0.1f && d <= 24.0f) {
 			pushLogs++;
+			lastPushLog = GetTickCount();
 			logf("push: Portal moved the player %.2f units between ticks (%.2f %.2f %.2f) -> (%.2f %.2f %.2f)", d, g_lastSet.x, g_lastSet.y,
 				g_lastSet.z, origin.x, origin.y, origin.z);
-			if (pushLogs == 1) {
-				logSolidNear(origin);
+			if (pushLogs == 1 || d > 0.5f) {
+				logSolidNear(origin); // who did it (a handed-over shove, or the first nudge)
 			}
 		}
 	}
@@ -430,6 +440,10 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		if (dx * dx + dy * dy < 0.25f && dz > 0.1f && g_zLift + dz <= 4.0f) {
 			g_zLift += dz; // a small straight-up nudge: keep it (see applyMinecraft)
 			g_zLiftAt = origin;
+			g_zLiftFloor = g_lastMcZ;
+			g_lastSet = origin;
+		} else if (dx * dx + dy * dy < 0.25f && dz < -0.1f && dz > -0.5f && g_zLift > 0.0f) {
+			g_zLift = g_zLift + dz > 0.0f ? g_zLift + dz : 0.0f; // nudged back down: we lifted too much
 			g_lastSet = origin;
 		}
 	}
