@@ -112,6 +112,7 @@ public final class HostDriver {
 			teleportAck = s.teleportSeq();
 			minecraft.getTutorial().setStep(TutorialSteps.NONE);
 			giveGun(minecraft, player);
+			freezeDaylight(minecraft);
 			player.refreshDimensions(); // host-sized hull (see AvatarDimensionsMixin)
 			LOG.info("PortalCraft: player hull {} x {} blocks", player.getBbWidth(), player.getBbHeight());
 		}
@@ -220,6 +221,24 @@ public final class HostDriver {
 			if (sp != null) {
 				sp.getInventory().add(new ItemStack(item.get(), item.get().getDefaultMaxStackSize()));
 				LOG.info("PortalCraft: dev give {}", id);
+			}
+		});
+	}
+
+	/**
+	 * Everything Minecraft draws for the host (the hand, held and dropped items) is lit by its
+	 * own sky. A void world drifting into night turns all of it near-black inside a bright test
+	 * chamber, so pin it to clear noon.
+	 */
+	private static void freezeDaylight(Minecraft minecraft) {
+		var server = minecraft.getSingleplayerServer();
+		if (server == null) {
+			return;
+		}
+		server.execute(() -> {
+			var source = server.createCommandSourceStack().withSuppressedOutput();
+			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear"}) {
+				server.getCommands().performPrefixedCommand(source, command);
 			}
 		});
 	}
