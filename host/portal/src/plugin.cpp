@@ -155,6 +155,7 @@ void linkOpen() {
 
 // Dev: keys injected by a "PCK1" packet (tools/fake_mc.py --keys), OR'd into the real ones until expiry.
 uint8_t g_fakeKeys[32] = {};
+uint8_t g_fakeMouse = 0;
 DWORD g_fakeUntil = 0;
 
 // Dev: per-tick movement trace for N server ticks ("PCT1", tools/fake_mc.py --trace N).
@@ -181,11 +182,18 @@ void linkPoll() {
 		} else if (n == 8 && std::memcmp(buf, "PCT1", 4) == 0) {
 			std::memcpy(&g_traceTicks, buf + 4, 4);
 			logf("trace on for %d ticks", g_traceTicks);
-		} else if (n == 4 + 32 + 4 && std::memcmp(buf, "PCK1", 4) == 0) {
+		} else if ((n == 4 + 32 + 4 || n == 4 + 32 + 4 + 1) && std::memcmp(buf, "PCK1", 4) == 0) {
 			std::memcpy(g_fakeKeys, buf + 4, 32);
 			uint32_t ms;
 			std::memcpy(&ms, buf + 36, 4);
+			g_fakeMouse = n == 41 ? uint8_t(buf[40]) : 0;
 			g_fakeUntil = GetTickCount() + ms;
+		} else if (n == 4 + 8 && std::memcmp(buf, "PCV1", 4) == 0 && g_engineClient) {
+			// Dev: point the camera (pitch, yaw), e.g. to aim at a floor for a placement test.
+			float pitchYaw[2];
+			std::memcpy(pitchYaw, buf + 4, 8);
+			sdk::QAngle view{pitchYaw[0], pitchYaw[1], 0.0f};
+			sdk::clientSetViewAngles(g_engineClient, &view);
 		} else if (n > 4 && std::memcmp(buf, "PCC1", 4) == 0 && g_engineServer) {
 			char cmd[260];
 			int len = n - 4 < 250 ? n - 4 : 250;
@@ -687,6 +695,7 @@ void sendState() {
 		for (int i = 0; i < 32; i++) {
 			s.keys[i] |= g_fakeKeys[i];
 		}
+		s.mouse |= g_fakeMouse;
 	}
 	s.origin = {g_origin.x, g_origin.y, g_origin.z};
 	s.velocity = {g_velocity.x, g_velocity.y, g_velocity.z};

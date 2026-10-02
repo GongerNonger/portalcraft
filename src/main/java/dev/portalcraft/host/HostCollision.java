@@ -185,10 +185,16 @@ public final class HostCollision {
 		if (map == null) {
 			return null;
 		}
+		// DYNAMIC_CACHE holds the finished cell: the fixed geometry joined with whatever live
+		// entities are in it. Joining costs a full optimize (hundreds of boxes in a sloped cell), so it
+		// must not happen per query. Every invalidation that drops a CACHE entry clears this too, and a
+		// moving entity drops just the cells it passed through (setDynamic).
 		int x = pos.getX(), y = pos.getY(), z = pos.getZ();
-		VoxelShape fixed = CACHE.computeIfAbsent(pos.asLong(), k -> live ? build(x, y, z, world) : build(x, y, z, world, baked));
-		VoxelShape moving = DYNAMIC_CACHE.computeIfAbsent(pos.asLong(), k -> build(x, y, z, dynamic));
-		VoxelShape shape = moving == EMPTY ? fixed : fixed == EMPTY ? moving : Shapes.or(fixed, moving);
+		VoxelShape shape = DYNAMIC_CACHE.computeIfAbsent(pos.asLong(), k -> {
+			VoxelShape fixed = CACHE.computeIfAbsent(k, kk -> live ? build(x, y, z, world) : build(x, y, z, world, baked));
+			VoxelShape moving = build(x, y, z, dynamic);
+			return moving == EMPTY ? fixed : fixed == EMPTY ? moving : Shapes.or(fixed, moving);
+		});
 		return shape == EMPTY ? null : shape;
 	}
 

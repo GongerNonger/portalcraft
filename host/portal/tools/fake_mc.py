@@ -29,10 +29,20 @@ def main():
     ap.add_argument("--keys", help="dev: hold SDL scancodes in Portal, e.g. 26 for W, 26,225 for W+shift")
     ap.add_argument("--ms", type=int, default=1000)
     ap.add_argument("--goto", help="dev: move Minecraft's player to x,y,z (host units); Portal follows")
+    ap.add_argument("--mouse", type=int, default=0, help="dev: with --keys, also hold mouse buttons (1 left, 2 right, 4 middle)")
+    ap.add_argument("--view", help="dev: set Portal's camera to pitch,yaw")
+    ap.add_argument("--give", help="dev: give Minecraft's player an item, e.g. minecraft:stone")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if a.view:
+        p, y = (float(v) for v in a.view.split(","))
+        sock.sendto(b"PCV1" + struct.pack("<2f", p, y), HOST)
+        return
+    if a.give:
+        sock.sendto(b"PCG1" + a.give.encode() + b"\0", ("127.0.0.1", 27516))
+        return
     if a.goto:
         x, y, z = (float(v) for v in a.goto.split(","))
         sock.sendto(b"PCD1" + struct.pack("<3f", x, y, z), ("127.0.0.1", 27516))
@@ -40,12 +50,12 @@ def main():
     if a.trace:
         sock.sendto(b"PCT1" + struct.pack("<i", a.trace), HOST)
         return
-    if a.keys:
+    if a.keys is not None and a.keys != "":
         bits = bytearray(32)
         for k in a.keys.split(","):
             k = int(k)
             bits[k >> 3] |= 1 << (k & 7)
-        sock.sendto(b"PCK1" + bytes(bits) + struct.pack("<I", a.ms), HOST)
+        sock.sendto(b"PCK1" + bytes(bits) + struct.pack("<I", a.ms) + (bytes((a.mouse,)) if a.mouse else b""), HOST)
         return
     if a.cmd:
         sock.sendto(b"PCC1" + a.cmd.encode() + b"\0", HOST)

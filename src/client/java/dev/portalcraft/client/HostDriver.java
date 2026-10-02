@@ -115,6 +115,10 @@ public final class HostDriver {
 		}
 
 		carry(player, moved);
+		String devGive = HostLink.takeDevGive();
+		if (devGive != null) {
+			giveDev(minecraft, player, devGive);
+		}
 		Vec3 devGoto = HostLink.takeDevGoto();
 		if (devGoto != null) {
 			teleport(minecraft, player, Units.toMc(devGoto), Vec3.ZERO);
@@ -180,6 +184,24 @@ public final class HostDriver {
 				return;
 			}
 		}
+	}
+
+	/** Dev: give a full stack of an item by id (tools/fake_mc.py --give minecraft:stone). */
+	private static void giveDev(Minecraft minecraft, LocalPlayer player, String id) {
+		var server = minecraft.getSingleplayerServer();
+		var item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(net.minecraft.resources.Identifier.tryParse(id));
+		if (server == null || item.isEmpty()) {
+			LOG.warn("PortalCraft: dev give: no item {}", id);
+			return;
+		}
+		var uuid = player.getUUID();
+		server.execute(() -> {
+			ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+			if (sp != null) {
+				sp.getInventory().add(new ItemStack(item.get(), item.get().getDefaultMaxStackSize()));
+				LOG.info("PortalCraft: dev give {}", id);
+			}
+		});
 	}
 
 	/** Steve starts with the portal gun; while he holds it, clicks fire the host's real portals. */

@@ -100,12 +100,15 @@ void upload(const uint8_t* src, UINT w, UINT h) {
 	g_tex->UnlockRect(0);
 }
 
-void draw(IDirect3DDevice9* dev) {
+// intoCurrentTarget: draw into Source's current render target (from EndFrame), which it resolves
+// onto the back buffer when presenting (with anti-aliasing that resolve would erase anything drawn
+// on the back buffer directly). Otherwise draw onto the back buffer (from Present).
+void draw(IDirect3DDevice9* dev, bool intoCurrentTarget) {
 	if (!g_header) {
 		return;
 	}
 	IDirect3DSurface9* backBuffer = nullptr;
-	if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer))) {
+	if (FAILED(intoCurrentTarget ? dev->GetRenderTarget(0, &backBuffer) : dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer))) {
 		return;
 	}
 	D3DSURFACE_DESC bb;
@@ -215,13 +218,15 @@ void draw(IDirect3DDevice9* dev) {
 		{-0.5f, H, 0.0f, 1.0f, 0.0f, 1.0f},
 		{W, H, 0.0f, 1.0f, 1.0f, 1.0f},
 	};
-	if (SUCCEEDED(dev->BeginScene())) {
-		dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(V));
+	// From Present the scene is closed and we open our own; from EndFrame Source's scene is still
+	// open (BeginScene fails), and we draw inside it.
+	bool began = SUCCEEDED(dev->BeginScene());
+	if (SUCCEEDED(dev->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, quad, sizeof(V))) && !g_loggedFirstDraw && g_log) {
+		g_loggedFirstDraw = true;
+		g_log("overlay: drawing Minecraft %ux%u onto %ux%u (%s)", w, h, bb.Width, bb.Height, began ? "own scene" : "inside Source's scene");
+	}
+	if (began) {
 		dev->EndScene();
-		if (!g_loggedFirstDraw && g_log) {
-			g_loggedFirstDraw = true;
-			g_log("overlay: drawing Minecraft %ux%u onto %ux%u", w, h, bb.Width, bb.Height);
-		}
 	}
 
 	dev->SetRenderTarget(0, oldTarget);
@@ -232,16 +237,32 @@ void draw(IDirect3DDevice9* dev) {
 	backBuffer->Release();
 }
 
+// Other in-game overlays (Steam, Discord) hook Present too, sometimes after us and sometimes by
+// swapping the device onto a copied vtable; the EndFrame watchdog re-attaches us when that happens.
+// If a chain ever calls back into us (their saved "original" is our hook), the inner call goes
+// straight to the root original instead of recursing.
+thread_local int g_presentDepth = 0;
+
 HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst, HWND wnd, const RGNDATA* dirty) {
-	draw(dev);
-	worldrender::frameDone();
-	return forDevice(dev)->present(dev, src, dst, wnd, dirty);
+	if (g_presentDepth > 0 && g_vt[0].present) {
+		return g_vt[0].present(dev, src, dst, wnd, dirty);
+	}
+	g_presentDepth++;
+	draw(dev, false);
+	HRESULT hr = forDevice(dev)->present(dev, src, dst, wnd, dirty);
+	g_presentDepth--;
+	return hr;
 }
 
 HRESULT WINAPI hkPresentEx(IDirect3DDevice9Ex* dev, const RECT* src, const RECT* dst, HWND wnd, const RGNDATA* dirty, DWORD flags) {
-	draw(dev);
-	worldrender::frameDone();
-	return forDevice(dev)->presentEx(dev, src, dst, wnd, dirty, flags);
+	if (g_presentDepth > 0 && g_vt[0].presentEx) {
+		return g_vt[0].presentEx(dev, src, dst, wnd, dirty, flags);
+	}
+	g_presentDepth++;
+	draw(dev, false);
+	HRESULT hr = forDevice(dev)->presentEx(dev, src, dst, wnd, dirty, flags);
+	g_presentDepth--;
+	return hr;
 }
 
 HRESULT WINAPI hkReset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp) {
@@ -272,16 +293,16 @@ bool patch(void** vt, int slot, void* fn, void** original) {
 }
 
 void hookVtable(void** vt, bool ex) {
-	for (Hooked& h : g_vt) {
-		if (h.vtable == vt) {
-			return; // already patched (plain and Ex share it)
+	Hooked* h = nullptr;
+	for (Hooked& known : g_vt) {
+		if (known.vtable == vt) {
+			h = &known; // known table: re-patch any slot someone overwrote since
+			break;
 		}
 	}
-	Hooked* h = nullptr;
 	for (Hooked& slot : g_vt) {
-		if (!slot.vtable) {
+		if (!h && !slot.vtable) {
 			h = &slot;
-			break;
 		}
 	}
 	if (!h) {
@@ -405,6 +426,49 @@ IDirect3DDevice9* findGameDevice() {
 	return nullptr;
 }
 
+// IMaterialSystem (VMaterialSystem080): slot 38 (the header re-declares IAppSystem's five first).
+// Source calls it once per frame right before presenting, after the HUD and menus. It lives in
+// materialsystem.dll, which no in-game overlay hooks: unlike d3d9's Present, nobody swaps it out
+// from under us. With mat_queue_mode 0 it runs on the thread that owns the device.
+constexpr int kEndFrame = 38;
+using EndFrameFn = void(__thiscall*)(void* self);
+EndFrameFn g_endFrameOriginal = nullptr;
+
+bool g_deviceIsEx = false;
+
+void __fastcall hkEndFrame(void* self, void* /*edx*/) {
+	worldrender::frameDone();
+	// Watchdog: is Portal's device still presenting through us?
+	static int countdown = 0;
+	if (g_gameDevice && --countdown <= 0) {
+		countdown = 30;
+		void** vt = *reinterpret_cast<void***>(g_gameDevice);
+		bool ours = vt[kPresent] == reinterpret_cast<void*>(&hkPresent) &&
+			(!g_deviceIsEx || vt[kPresentEx] == reinterpret_cast<void*>(&hkPresentEx));
+		if (!ours) {
+			hookVtable(vt, g_deviceIsEx);
+			if (g_log) {
+				g_log("overlay: Present was hooked over (vtable %p); re-attached", vt);
+			}
+		}
+	}
+	g_endFrameOriginal(self);
+}
+
+void hookEndFrame(LogFn log) {
+	HMODULE ms = GetModuleHandleA("materialsystem.dll");
+	auto factory = ms ? reinterpret_cast<void* (*)(const char*, int*)>(GetProcAddress(ms, "CreateInterface")) : nullptr;
+	void* materials = factory ? factory("VMaterialSystem080", nullptr) : nullptr;
+	if (!materials || !g_gameDevice) {
+		log("overlay: no VMaterialSystem080 (or no device); no EndFrame watchdog");
+		return;
+	}
+	void** vt = *static_cast<void***>(materials);
+	if (patch(vt, kEndFrame, reinterpret_cast<void*>(&hkEndFrame), reinterpret_cast<void**>(&g_endFrameOriginal))) {
+		log("overlay: EndFrame watchdog on");
+	}
+}
+
 } // namespace
 
 void* device() {
@@ -448,6 +512,7 @@ bool init(LogFn log) {
 		bool isEx = SUCCEEDED(dev->QueryInterface(__uuidof(IDirect3DDevice9Ex), reinterpret_cast<void**>(&ex)));
 		if (ex) ex->Release();
 		hookVtable(*reinterpret_cast<void***>(dev), isEx);
+		g_deviceIsEx = isEx;
 		void** vt = *reinterpret_cast<void***>(dev);
 		HMODULE owner = nullptr;
 		char ownerName[MAX_PATH] = "?";
@@ -508,6 +573,7 @@ bool init(LogFn log) {
 	UnregisterClassA(wc.lpszClassName, wc.hInstance);
 
 	g_hooked = g_vt[0].vtable != nullptr;
+	hookEndFrame(log);
 	log("overlay: shared memory %s ready; d3d9 vtables hooked: %p %p %p", pcproto::kOverlayMapping, g_vt[0].vtable, g_vt[1].vtable, g_vt[2].vtable);
 	return g_hooked;
 }

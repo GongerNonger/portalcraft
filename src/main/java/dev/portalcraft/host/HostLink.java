@@ -52,6 +52,17 @@ public final class HostLink {
 				buf.clear();
 				channel.receive(buf);
 				buf.flip();
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'G' && buf.get(3) == '1') {
+					byte[] raw = new byte[buf.remaining() - 4];
+					buf.position(4);
+					buf.get(raw);
+					int len = 0;
+					while (len < raw.length && raw[len] != 0) {
+						len++;
+					}
+					devGive = new String(raw, 0, len, java.nio.charset.StandardCharsets.US_ASCII);
+					continue;
+				}
 				if (buf.remaining() == 16 && buf.get(2) == 'D') {
 					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
 					devGoto = new net.minecraft.world.phys.Vec3(buf.getFloat(4), buf.getFloat(8), buf.getFloat(12));
@@ -80,6 +91,15 @@ public final class HostLink {
 	public static Proto.@Nullable HostState current() {
 		Proto.HostState s = latest;
 		return s != null && System.nanoTime() - latestAt < STALE_NANOS ? s : null;
+	}
+
+	/** Dev: a "PCG1" item-id packet gives Minecraft's player that item (a stack). */
+	private static volatile @Nullable String devGive;
+
+	public static @Nullable String takeDevGive() {
+		String g = devGive;
+		devGive = null;
+		return g;
 	}
 
 	public static net.minecraft.world.phys.@Nullable Vec3 takeDevGoto() {
