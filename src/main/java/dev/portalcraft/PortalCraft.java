@@ -79,5 +79,7 @@ public class PortalCraft implements ModInitializer {
 
 		// The host's cubes and turrets press Minecraft's pressure plates.
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostPlates::tick);
+		// Arrows stuck in a host prop come loose when it moves.
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostArrows::tick);
 	}
 }

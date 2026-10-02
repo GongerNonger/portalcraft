@@ -3,6 +3,7 @@
 	"package": "dev.portalcraft.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
+		"ArrowInvoker",
 		"AvatarDimensionsMixin",
 		"BasePressurePlateBlockMixin",
 		"BlockCollisionsMixin",
