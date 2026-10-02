@@ -107,8 +107,19 @@ void draw(IDirect3DDevice9* dev) {
 	if (!g_atlas || !m || slot > 1) {
 		return skipped(!g_atlas ? "no atlas" : !m ? "no WorldToScreenMatrix" : "bad slot");
 	}
+	// Claim the slot, then make sure it's still the newest: Minecraft may have published the
+	// other one and started rewriting this one between our read of `front` and the claim.
 	g_header->reading = slot;
 	MemoryBarrier();
+	if (g_header->front != slot) {
+		slot = g_header->front;
+		if (slot > 1) {
+			g_header->reading = 0xFFFFFFFFu;
+			return;
+		}
+		g_header->reading = slot;
+		MemoryBarrier();
+	}
 	uint32_t solid = g_header->slotSolid[slot], translucent = g_header->slotTranslucent[slot];
 	if (solid + translucent > pcproto::kWorldMaxVertices) {
 		g_header->reading = 0xFFFFFFFFu;
