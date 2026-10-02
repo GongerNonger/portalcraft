@@ -143,6 +143,11 @@ public final class HostCollision {
 		return new Index(index, big);
 	}
 
+	/** The linked portals' holes, in world coordinates. Fluids treat them as solid (HostFluids). */
+	public static List<AABB> holes() {
+		return holes;
+	}
+
 	/** Recomputes the holes from the host's portals; cheap when nothing changed. */
 	public static void setPortals(Proto.HostPortal[] portals) {
 		List<AABB> next = new ArrayList<>();

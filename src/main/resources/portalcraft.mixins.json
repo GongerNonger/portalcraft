@@ -7,8 +7,10 @@
 		"BlockCollisionsMixin",
 		"BlockPlaceContextMixin",
 		"BlockStateBaseMixin",
+		"BucketItemMixin",
 		"ClipContextMixin",
 		"EntityBelowWorldMixin",
+		"FlowingFluidMixin",
 		"PlayerDropsMixin"
 	],
 	"injectors": {
