@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.portalcraft.PortalCraft;
 import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
@@ -14,6 +15,7 @@ import dev.portalcraft.host.Units;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.world.item.ItemStack;
@@ -36,6 +38,10 @@ public final class HostDriver {
 		System.getenv().getOrDefault("PORTALCRAFT_MAPS", "D:/SteamLibrary/steamapps/common/Portal/portal/maps")));
 
 	private static final boolean[] KEYS = new boolean[256];
+	/** HostState.mouse bit i is Minecraft mouse button MOUSE_BUTTONS[i]. */
+	private static final int[] MOUSE_BUTTONS = {InputConstants.MOUSE_BUTTON_LEFT, InputConstants.MOUSE_BUTTON_RIGHT, InputConstants.MOUSE_BUTTON_MIDDLE};
+	/** The host's mouse buttons Minecraft currently has down, as HostState.mouse bits. */
+	private static int buttons;
 	private static boolean linked;
 	private static boolean resync;
 	private static int teleportAck;
@@ -125,6 +131,7 @@ public final class HostDriver {
 
 		if (s.foreground()) {
 			applyKeys(minecraft, s);
+			applyMouse(minecraft, player, s.mouse());
 		} else {
 			releaseAll(minecraft);
 		}
@@ -246,6 +253,49 @@ public final class HostDriver {
 		}
 	}
 
+	/**
+	 * Mouse clicks are Minecraft's (attack, use, pick block) unless Steve holds the portal gun: the
+	 * host fires its own gun then, so Minecraft gets none and lets go of any it had down.
+	 */
+	private static void applyMouse(Minecraft minecraft, LocalPlayer player, int wanted) {
+		if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+			wanted = 0;
+		} else if (minecraft.gui.screen() != null) {
+			wanted &= buttons; // screens get no cursor from the host: let go, but don't click
+		}
+		for (int bit = 0; bit < MOUSE_BUTTONS.length; bit++) {
+			int mask = 1 << bit;
+			boolean down = (wanted & mask) != 0;
+			if (down != ((buttons & mask) != 0)) {
+				if (down) {
+					readyToClick(minecraft);
+				}
+				buttons ^= mask;
+				click(minecraft, MOUSE_BUTTONS[bit], down);
+			}
+		}
+	}
+
+	/**
+	 * Vanilla's MouseHandler.onButton grabs an ungrabbed mouse on the first click, and grabMouse sets
+	 * missTime to 10000, so that click's attack does nothing; a held attack also only keeps
+	 * breaking while the mouse is grabbed. InputConstantsMixin leaves the OS cursor alone while
+	 * linked, so grab Minecraft's side up front and drop the grab's cooldown. Vanilla's own
+	 * 10-tick cooldown after a survival miss is kept.
+	 */
+	private static void readyToClick(Minecraft minecraft) {
+		if (!minecraft.mouseHandler.isMouseGrabbed()) {
+			minecraft.mouseHandler.grabMouse();
+		}
+		if (minecraft.missTime > 10) {
+			minecraft.missTime = 0;
+		}
+	}
+
+	private static void click(Minecraft minecraft, int button, boolean down) {
+		minecraft.mouseHandler.onButton(minecraft.getWindow().handle(), new MouseButtonInfo(button, modifiers()), down ? 1 : 0);
+	}
+
 	private static void releaseAll(Minecraft minecraft) {
 		for (int sc = 1; sc < KEYS.length; sc++) {
 			if (KEYS[sc]) {
@@ -253,15 +303,26 @@ public final class HostDriver {
 				press(minecraft, sc, false);
 			}
 		}
+		for (int bit = 0; bit < MOUSE_BUTTONS.length; bit++) {
+			if ((buttons & (1 << bit)) != 0) {
+				buttons &= ~(1 << bit);
+				click(minecraft, MOUSE_BUTTONS[bit], false);
+			}
+		}
 	}
 
-	private static void press(Minecraft minecraft, int scancode, boolean down) {
+	private static int modifiers() {
 		int mods = 0;
 		if (KEYS[225]) mods |= 0x0001; // SDL_KMOD_LSHIFT
 		if (KEYS[229]) mods |= 0x0002; // SDL_KMOD_RSHIFT
 		if (KEYS[224]) mods |= 0x0040; // SDL_KMOD_LCTRL
 		if (KEYS[228]) mods |= 0x0080; // SDL_KMOD_RCTRL
 		if (KEYS[226]) mods |= 0x0100; // SDL_KMOD_LALT
+		return mods;
+	}
+
+	private static void press(Minecraft minecraft, int scancode, boolean down) {
+		int mods = modifiers();
 		int keycode = SDLKeyboard.SDL_GetKeyFromScancode(scancode, (short) mods, true);
 		minecraft.keyboardHandler.keyPress(minecraft.getWindow().handle(), down ? 1 : 0, new KeyEvent(scancode, keycode, mods));
 	}
