@@ -6,7 +6,10 @@ PortalCraft's host-game bridge follows patterns from [chasmlol/SkyCraft](https:/
 - injecting host geometry through a `BlockCollisions` mixin;
 - replaying the host's keyboard as Minecraft input;
 - forcing window focus and full frame rate while linked;
-- the teleport sequence/acknowledge handshake.
+- the teleport sequence/acknowledge handshake;
+- exporting placed blocks to the host: the CPU copy of the block atlas (`WorldAtlas`, from
+  `SkyAtlas`), the `LevelExtractor` dirty-section mixin and the `BlockQuadOutput` mesher
+  (`WorldExporter`).
 
 > Copyright (c) 2026 chasmlol
 >
