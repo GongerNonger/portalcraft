@@ -9,6 +9,15 @@
 //
 // In third person (Minecraft's F5, see camera.cpp) the player's avatar is drawn too: its vertices
 // are relative to the player's feet, and we place them where Portal draws its player this frame.
+//
+// Views through portals: Portal draws each one as a nested 3D view (IVRenderView::Push3DView ...
+// PopView) inside the main view, its camera moved through the portal pair, with the stencil
+// buffer limiting it to the portal's oval. We follow the view stack and, when a view whose camera
+// differs from its parent's is popped, draw everything (blocks, items, and the avatar even in first
+// person, since that is how you see yourself) with that view's own matrices and Portal's stencil
+// left on. Slots, checked in build 19017868's engine.dll (MSVC puts the 5-argument Push3DView
+// overload first): 37 Push3DView(+depth), 38 Push3DView, 39 Push2DView, 40 PopView,
+// 50 GetMatricesForView.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -41,6 +50,19 @@ uint32_t g_itemAtlasSeq = 0;
 IDirect3DTexture9* g_skin = nullptr;
 uint32_t g_skinSeq = 0;
 bool g_loggedAvatar = false;
+void* g_renderView = nullptr;
+
+// The 3D view stack, as Portal pushes it this frame.
+struct ViewEntry {
+	const uint8_t* setup; // the CViewSetup being drawn (alive until its PopView)
+	sdk::Vector origin;
+	bool throughPortal;   // draw our meshes into it when it is popped
+};
+constexpr int kMaxViews = 32;
+ViewEntry g_views[kMaxViews];
+int g_viewDepth = 0;
+int g_portalViewsThisFrame = 0;
+int g_portalViewsLogged = 0;
 IDirect3DStateBlock9* g_state = nullptr;
 
 using SceneEndFn = void(__thiscall*)(void* self);
@@ -171,7 +193,10 @@ void setTranslucent(IDirect3DDevice9* dev) { // stained glass, water, ice: blend
 	dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 }
 
-void draw(IDirect3DDevice9* dev) {
+// Draws everything with the world-to-clip matrix `m` (row-major, clip = M * v). A view through a
+// portal keeps Portal's stencil test (its oval) and always shows the avatar; the main view shows
+// the avatar only in third person.
+void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal) {
 	if (!g_header || (g_header->meshSeq == 0 && g_header->entitySeq == 0)) {
 		return skipped("no mesh published yet");
 	}
@@ -179,7 +204,6 @@ void draw(IDirect3DDevice9* dev) {
 		return skipped("Minecraft isn't sending frames");
 	}
 	uploadAtlases(dev);
-	const float* m = worldToScreen();
 	if (!m) {
 		return skipped("no WorldToScreenMatrix");
 	}
@@ -238,7 +262,7 @@ void draw(IDirect3DDevice9* dev) {
 	sdk::Vector feet{};
 	const pcproto::WorldVertex* aBlocks = avatar ? avatar + aSkin : nullptr;
 	const pcproto::WorldVertex* aItems = aBlocks ? aBlocks + aBlockSolid + aBlockTranslucent : nullptr;
-	if (!avatar || !camera::thirdPerson() || !camera::playerFeet(&feet)) {
+	if (!avatar || !(throughPortal || camera::thirdPerson()) || !camera::playerFeet(&feet)) {
 		aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
 	}
 	if (!g_skin) {
@@ -308,7 +332,10 @@ void draw(IDirect3DDevice9* dev) {
 	dev->SetRenderState(D3DRS_LIGHTING, FALSE);
 	dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
 	dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE); // also makes flat item sprites two-sided
-	dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	if (!throughPortal) {
+		dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	}
+	dev->SetRenderState(D3DRS_CLIPPLANEENABLE, 0); // Portal's are clip-space planes for its shaders, not ours
 	dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 	dev->SetRenderState(D3DRS_CLIPPING, TRUE);
 	dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
@@ -386,10 +413,83 @@ void __fastcall hkSceneEnd(void* self, void* /*edx*/) {
 	// monitors and the like, which WorldToScreenMatrix doesn't describe.
 	if (g_scenesThisFrame == 1) {
 		if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-			draw(dev);
+			draw(dev, worldToScreen(), false);
 		}
 	}
 	g_sceneEndOriginal(self);
+}
+
+// ---- the view stack ----------------------------------------------------------------------
+
+using Push3DView4Fn = void(__thiscall*)(void* self, const void* view, int flags, void* target, void* frustum);
+using Push3DView5Fn = void(__thiscall*)(void* self, const void* view, int flags, void* target, void* frustum, void* depth);
+using PopViewFn = void(__thiscall*)(void* self, void* frustum);
+Push3DView4Fn g_push3d4Original = nullptr;
+Push3DView5Fn g_push3d5Original = nullptr;
+Push3DView4Fn g_push2dOriginal = nullptr;
+PopViewFn g_popOriginal = nullptr;
+
+constexpr int kSetupOrigin = 64; // CViewSetup::origin
+
+void pushView(const void* view, bool candidate) {
+	if (g_viewDepth >= kMaxViews) {
+		g_viewDepth++; // keep counting so the pops still match
+		return;
+	}
+	ViewEntry& e = g_views[g_viewDepth];
+	e.setup = static_cast<const uint8_t*>(view);
+	e.origin = view ? *reinterpret_cast<const sdk::Vector*>(e.setup + kSetupOrigin) : sdk::Vector{};
+	e.throughPortal = false;
+	if (candidate && view && g_viewDepth >= 1 && g_viewDepth - 1 < kMaxViews) {
+		const sdk::Vector& p = g_views[g_viewDepth - 1].origin;
+		float dx = e.origin.x - p.x, dy = e.origin.y - p.y, dz = e.origin.z - p.z;
+		e.throughPortal = dx * dx + dy * dy + dz * dz > 1.0f; // its camera moved: a view through a portal
+	} else if (g_viewDepth >= 1 && !view) {
+		e.origin = g_views[g_viewDepth - 1].origin;
+	}
+	g_viewDepth++;
+}
+
+// Push3DView without a depth texture: the main view, world views, and the views through portals.
+void __fastcall hkPush3DView4(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum) {
+	pushView(view, target == nullptr); // render-to-texture views (water, monitors) aren't through portals
+	g_push3d4Original(self, view, flags, target, frustum);
+}
+
+// With a depth texture: the 3D skybox and shadow depth views, in their own coordinates.
+void __fastcall hkPush3DView5(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum, void* depth) {
+	pushView(view, false);
+	g_push3d5Original(self, view, flags, target, frustum, depth);
+}
+
+void __fastcall hkPush2DView(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum) {
+	pushView(nullptr, false);
+	g_push2dOriginal(self, view, flags, target, frustum);
+}
+
+void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
+	if (g_viewDepth > 0) {
+		g_viewDepth--;
+		if (g_viewDepth < kMaxViews && g_views[g_viewDepth].throughPortal && g_renderView) {
+			auto* dev = static_cast<IDirect3DDevice9*>(overlay::device());
+			float worldToView[16], viewToProjection[16], worldToProjection[16], worldToPixels[16];
+			sdk::vcall<void>(g_renderView, 50, static_cast<const void*>(g_views[g_viewDepth].setup), static_cast<void*>(worldToView),
+				static_cast<void*>(viewToProjection), static_cast<void*>(worldToProjection), static_cast<void*>(worldToPixels));
+			if (dev) {
+				g_portalViewsThisFrame++;
+				draw(dev, worldToProjection, true);
+			}
+		}
+	}
+	g_popOriginal(self, frustum);
+}
+
+void hook(void** vt, int slot, void* replacement, void** original) {
+	DWORD old;
+	VirtualProtect(&vt[slot], sizeof(void*), PAGE_READWRITE, &old);
+	*original = vt[slot];
+	vt[slot] = replacement;
+	VirtualProtect(&vt[slot], sizeof(void*), old, &old);
 }
 
 } // namespace
@@ -399,6 +499,19 @@ void frameDone() {
 		g_framesLogged++;
 		g_log("world: %d SceneEnd calls this frame", g_scenesThisFrame);
 	}
+	if (g_portalViewsThisFrame > 0 && g_portalViewsLogged < 3 && g_log) {
+		g_portalViewsLogged++;
+		g_log("world: drew into %d views through portals this frame", g_portalViewsThisFrame);
+	}
+	if (g_viewDepth != 0 && g_log) {
+		static bool logged = false;
+		if (!logged) {
+			logged = true;
+			g_log("world: view stack unbalanced at frame end (%d); resetting (logged once)", g_viewDepth);
+		}
+	}
+	g_viewDepth = 0;
+	g_portalViewsThisFrame = 0;
 	g_scenesThisFrame = 0;
 }
 
@@ -443,14 +556,15 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 		log("world: no VEngineRenderView014");
 		return false;
 	}
-	// IVRenderView: 9 SceneEnd()
+	g_renderView = renderView;
+	// IVRenderView: 9 SceneEnd(), and the view stack (see the top of this file)
 	void** vt = *static_cast<void***>(renderView);
-	DWORD old;
-	VirtualProtect(&vt[9], sizeof(void*), PAGE_READWRITE, &old);
-	g_sceneEndOriginal = reinterpret_cast<SceneEndFn>(vt[9]);
-	vt[9] = reinterpret_cast<void*>(&hkSceneEnd);
-	VirtualProtect(&vt[9], sizeof(void*), old, &old);
-	log("world: mapping %s ready (%u MB), SceneEnd hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
+	hook(vt, 9, reinterpret_cast<void*>(&hkSceneEnd), reinterpret_cast<void**>(&g_sceneEndOriginal));
+	hook(vt, 37, reinterpret_cast<void*>(&hkPush3DView5), reinterpret_cast<void**>(&g_push3d5Original));
+	hook(vt, 38, reinterpret_cast<void*>(&hkPush3DView4), reinterpret_cast<void**>(&g_push3d4Original));
+	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
+	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
+	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
 	return true;
 }
 

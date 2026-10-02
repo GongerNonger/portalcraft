@@ -13,6 +13,8 @@ void shutdown();
 // Minecraft's camera mode (McState.cameraMode: 0 first person, 1 behind, 2 in front) and how far its
 // own camera gets before its blocks stop it (McState.cameraDistance, host units).
 void setMode(int mode, float minecraftDistance);
+// While true, Portal doesn't draw its own player (Chell), through portals or as a portal ghost.
+void setHideBody(bool hide);
 // True while the camera is pulled out of the player's head this frame.
 bool thirdPerson();
 // Where Portal draws its own player this frame (feet, host units): the avatar is drawn here.

@@ -6,8 +6,10 @@
 		"AvatarDimensionsMixin",
 		"BlockCollisionsMixin",
 		"BlockPlaceContextMixin",
+		"BlockStateBaseMixin",
 		"ClipContextMixin",
-		"EntityBelowWorldMixin"
+		"EntityBelowWorldMixin",
+		"PlayerDropsMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

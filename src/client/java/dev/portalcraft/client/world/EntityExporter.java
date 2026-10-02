@@ -72,7 +72,7 @@ import org.slf4j.LoggerFactory;
  * <p>Items whose model is a special renderer (chests, shields, heads, banners) fall back to a flat
  * quad of their particle sprite. Lighting is face shading only, matching the blocks (J8).
  *
- * <p>In third person (F5) the player's own avatar goes in too, in its own ranges: Steve posed by
+ * <p>The player's own avatar goes in too, in its own ranges: Steve posed by
  * his AvatarRenderer (walk cycle, head turn, sneak, arm swing) with the skin as a third texture,
  * and what he holds. Those vertices are relative to his feet; the host adds where it draws its
  * player, so the body sits exactly under the host's camera. Armour and capes aren't sent yet.
@@ -225,12 +225,13 @@ public final class EntityExporter {
 	}
 
 	/**
-	 * The player himself, when Minecraft's camera is in third person: run through his own
-	 * AvatarRenderer into the avatar ranges, relative to his feet.
+	 * The player himself: run through his own AvatarRenderer into the avatar ranges, relative to
+	 * his feet. Sent in first person too: the host draws him in its views through portals always,
+	 * and in its main view only in third person.
 	 */
 	private static void addAvatar(Minecraft minecraft, float partial) {
 		LocalPlayer player = minecraft.player;
-		if (minecraft.options.getCameraType().isFirstPerson() || player == null) {
+		if (player == null) {
 			return;
 		}
 		try {
@@ -257,7 +258,7 @@ public final class EntityExporter {
 			if (!avatarLogged) {
 				avatarLogged = true;
 				int[] c = CAPTURE.counts();
-				LOG.info("PortalCraft: third person: avatar mesh {} skin + {} held vertices", c[4], c[5] + c[6] + c[7] + c[8]);
+				LOG.info("PortalCraft: avatar mesh {} skin + {} held vertices", c[4], c[5] + c[6] + c[7] + c[8]);
 			}
 		} catch (RuntimeException e) {
 			CAPTURE.endAvatar();
