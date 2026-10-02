@@ -101,6 +101,8 @@ public final class HostDriver {
 			teleportAck = s.teleportSeq();
 			minecraft.getTutorial().setStep(TutorialSteps.NONE);
 			giveGun(minecraft, player);
+			player.refreshDimensions(); // host-sized hull (see AvatarDimensionsMixin)
+			LOG.info("PortalCraft: player hull {} x {} blocks", player.getBbWidth(), player.getBbHeight());
 		}
 
 		carry(player, moved);
