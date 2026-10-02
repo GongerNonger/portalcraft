@@ -154,6 +154,9 @@ void linkOpen() {
 uint8_t g_fakeKeys[32] = {};
 DWORD g_fakeUntil = 0;
 
+// Dev: per-tick movement trace for N server ticks ("PCT1", tools/fake_mc.py --trace N).
+int g_traceTicks = 0;
+
 bool mcReady() {
 	return (g_mc.flags & pcproto::kMcReady) && GetTickCount() - g_mcTime < 500;
 }
@@ -172,6 +175,9 @@ void linkPoll() {
 			if (!wasReady && mcReady()) {
 				logf("Minecraft linked");
 			}
+		} else if (n == 8 && std::memcmp(buf, "PCT1", 4) == 0) {
+			std::memcpy(&g_traceTicks, buf + 4, 4);
+			logf("trace on for %d ticks", g_traceTicks);
 		} else if (n == 4 + 32 + 4 && std::memcmp(buf, "PCK1", 4) == 0) {
 			std::memcpy(g_fakeKeys, buf + 4, 32);
 			uint32_t ms;
@@ -305,13 +311,20 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (g_drivingNow) {
 		quietPortalMovement(mv);
 	}
+	float zIn = origin.z;
 	g_serverOriginal(self, player, mvRaw);
+	float zPortal = origin.z;
 	if (g_drivingNow) {
 		applyMinecraft(mv);
 		g_lastSet = origin;
 		g_haveSet = true;
 	} else {
 		g_haveSet = false;
+	}
+	if (g_traceTicks > 0) {
+		g_traceTicks--;
+		logf("S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal, origin.z,
+			g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, origin.x, origin.y);
 	}
 	g_origin = origin;
 	g_velocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
@@ -324,9 +337,14 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (drive) {
 		quietPortalMovement(mv);
 	}
+	float zIn = reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z;
 	g_clientOriginal(self, player, mvRaw);
+	float zPortal = reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z;
 	if (drive) {
 		applyMinecraft(mv);
+	}
+	if (g_traceTicks > 0) {
+		logf("C %lu z in %.3f portal %.3f out %.3f", GetTickCount(), zIn, zPortal, reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z);
 	}
 }
 

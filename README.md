@@ -72,9 +72,15 @@ Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.lo
 Dev tools: `host\portal\tools\fake_mc.py` (stand-in for Minecraft, `--cmd` console commands,
 `--keys` test input).
 
-Known gaps: models aren't solid yet (chamber doors, some props, the elevator), moving brushes
-(func_door, func_tracktrain) aren't followed, Minecraft's blocks, hand and HUD aren't drawn in
-Portal yet, and the Minecraft hotbar doesn't gate Portal's gun.
+Camera smoothness: Portal's single-player client doesn't predict the player (`cl_predict` is
+forced to 0), so its camera follows the server through network interpolation. At Portal's
+defaults (20 updates/s, 100 ms delay) that beats against Minecraft's 20 Hz ticks and the view
+bobs. `play-portal.cmd` launches Portal with `+cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0
++cl_interp_ratio 1` (one update per server tick, ~15 ms delay), which removes the bob.
+
+Known gaps: moving and dynamic models (chamber doors, the elevator, cubes) aren't solid,
+moving brushes (func_door, func_tracktrain) aren't followed, Minecraft's placed blocks aren't
+drawn in Portal yet, and Minecraft screens (inventory) get no mouse.
 
 ## Host-game bridges
 

@@ -28,9 +28,13 @@ def main():
     ap.add_argument("--cmd")
     ap.add_argument("--keys", help="dev: hold SDL scancodes in Portal, e.g. 26 for W, 26,225 for W+shift")
     ap.add_argument("--ms", type=int, default=1000)
+    ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if a.trace:
+        sock.sendto(b"PCT1" + struct.pack("<i", a.trace), HOST)
+        return
     if a.keys:
         bits = bytearray(32)
         for k in a.keys.split(","):
