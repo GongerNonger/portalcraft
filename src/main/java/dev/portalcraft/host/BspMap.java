@@ -13,17 +13,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import dev.portalcraft.PortalCraft;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Reads the solid brushes out of a Source (VBSP v19-21) map: the world, plus brush entities that
  * stand still and block players (func_brush, func_wall, ...). Each brush is a convex volume: the
  * intersection of its sides' half-spaces. vbsp adds axial bevel planes to every brush, so the
  * six axial sides give its exact bounding box; brushes with any other side are "sloped" and get
- * voxelised by {@link HostCollision}.
+ * voxelised by {@link HostCollision}. Solid prop_statics are appended as more convex brushes
+ * ({@link StaticProps}), their models read from the game folder the map sits in.
  */
 public final class BspMap {
+	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
 	// bspflags.h
 	private static final int CONTENTS_SOLID = 0x1;
 	private static final int CONTENTS_WINDOW = 0x2;
@@ -149,6 +154,11 @@ public final class BspMap {
 			Vec3 a = Units.toMc(new Vec3(lo[0], lo[1], lo[2]));
 			Vec3 c = Units.toMc(new Vec3(hi[0], hi[1], hi[2]));
 			out.add(new Brush(new AABB(a, c), sides, sloped));
+		}
+		try {
+			out.addAll(StaticProps.load(b, GameFiles.forMap(file)).brushes());
+		} catch (IOException | RuntimeException e) {
+			LOG.warn("PortalCraft: no static props for {} ({})", name, e.toString());
 		}
 		return new BspMap(name, out);
 	}
