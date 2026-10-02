@@ -4,6 +4,7 @@
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
 		"AvatarDimensionsMixin",
+		"BasePressurePlateBlockMixin",
 		"BlockCollisionsMixin",
 		"BlockPlaceContextMixin",
 		"BucketItemMixin",
@@ -12,6 +13,7 @@
 		"FlowingFluidMixin",
 		"LivingEntityAirMixin",
 		"PlayerDropsMixin",
+		"PressurePlateInvoker",
 		"ProjectileHitMixin",
 		"ServerExplosionMixin"
 	],

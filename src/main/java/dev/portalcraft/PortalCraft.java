@@ -76,5 +76,8 @@ public class PortalCraft implements ModInitializer {
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) ->
 			player.getItemInHand(hand).is(PORTAL_GUN) ? InteractionResult.FAIL : InteractionResult.PASS
 		);
+
+		// The host's cubes and turrets press Minecraft's pressure plates.
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostPlates::tick);
 	}
 }

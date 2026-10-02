@@ -30,6 +30,25 @@ public final class LiveEntities {
 	}
 
 	private static final Map<Integer, Placed> PLACED = new HashMap<>();
+
+	/**
+	 * A movable host prop, for Minecraft's pressure plates (HostPlates): its bounds (Minecraft
+	 * coordinates) and whether it counts as a mob (a turret: stone plates take mobs only).
+	 */
+	public record Prop(AABB bounds, boolean mob) {
+	}
+
+	/** The movable props, for the server thread; replaced whole whenever the host's entities change. */
+	private static volatile List<Prop> props = List.of();
+
+	public static List<Prop> props() {
+		return props;
+	}
+
+	/** Portal 1's movable props by model: cubes (metal_box), turrets, the radio. Floor buttons and the rest stay put. */
+	private static boolean movableProp(String model) {
+		return model.endsWith(".mdl") && (model.contains("metal_box") || model.contains("turret") || model.contains("radio"));
+	}
 	private static final Map<String, StaticProps.@Nullable Shape> SHAPES = new HashMap<>();
 	private static @Nullable BspMap shapesFor;
 	private static @Nullable GameFiles files;
@@ -54,6 +73,7 @@ public final class LiveEntities {
 		if (shapesFor != map) {
 			shapesFor = map;
 			PLACED.clear();
+			props = List.of();
 			SHAPES.clear();
 			try {
 				files = GameFiles.forMap(map.file);
@@ -105,6 +125,13 @@ public final class LiveEntities {
 		}
 		PLACED.clear();
 		PLACED.putAll(next);
+		List<Prop> nextProps = new ArrayList<>();
+		for (Placed p : PLACED.values()) {
+			if (p.bounds() != null && movableProp(p.pose().model())) {
+				nextProps.add(new Prop(p.bounds(), p.pose().model().contains("turret")));
+			}
+		}
+		props = List.copyOf(nextProps);
 		List<BspMap.Brush> all = new ArrayList<>();
 		for (Placed p : PLACED.values()) {
 			all.addAll(p.brushes());
