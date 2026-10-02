@@ -13,6 +13,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.tutorial.TutorialSteps;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.portal.TeleportTransition;
 import net.minecraft.world.phys.Vec3;
@@ -57,6 +59,7 @@ public final class HostDriver {
 				// player would fall out of the world while it's gone.
 				LOG.info("PortalCraft: host gone, releasing control");
 				releaseAll(minecraft);
+				OverlayLink.close();
 				linked = false;
 			}
 			return;
@@ -68,6 +71,7 @@ public final class HostDriver {
 		}
 		loadMap(s.map());
 		HostCollision.setPortals(s.portals());
+		matchHostWindowSize(minecraft);
 
 		// Losing the link (host restarting) makes Minecraft pause itself; linked again, carry on.
 		if (minecraft.gui.screen() instanceof PauseScreen) {
@@ -91,6 +95,8 @@ public final class HostDriver {
 			resync = false;
 			teleport(minecraft, player, Units.toMc(s.origin()), Vec3.ZERO);
 			teleportAck = s.teleportSeq();
+			minecraft.getTutorial().setStep(TutorialSteps.NONE);
+			giveGun(minecraft, player);
 		}
 
 		float yaw = Units.yawToMc(s.yaw());
@@ -129,6 +135,34 @@ public final class HostDriver {
 		}
 		HostLink.send(Proto.writeMcState(++seq, ready ? Proto.MC_READY : 0, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN)));
+	}
+
+	/** Steve starts with the portal gun; while he holds it, clicks fire the host's real portals. */
+	private static void giveGun(Minecraft minecraft, LocalPlayer player) {
+		var server = minecraft.getSingleplayerServer();
+		if (server == null) {
+			return;
+		}
+		var uuid = player.getUUID();
+		server.execute(() -> {
+			ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+			if (sp != null && !sp.getInventory().contains(new ItemStack(PortalCraft.PORTAL_GUN))) {
+				sp.getInventory().add(new ItemStack(PortalCraft.PORTAL_GUN));
+			}
+		});
+	}
+
+	/** Render the overlay at the host's resolution so the HUD is sharp and the right size. */
+	private static void matchHostWindowSize(Minecraft minecraft) {
+		int w = OverlayLink.hostWidth(), h = OverlayLink.hostHeight();
+		var window = minecraft.getWindow();
+		if (w <= 0 || h <= 0 || w > OverlayLink.MAX_W || h > OverlayLink.MAX_H || window.isExclusiveFullscreen()) {
+			return;
+		}
+		if (window.getWidth() != w || window.getHeight() != h) {
+			LOG.info("PortalCraft: matching the host's {}x{}", w, h);
+			window.setWindowed(w, h);
+		}
 	}
 
 	private static void loadMap(String name) {

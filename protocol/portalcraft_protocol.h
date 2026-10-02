@@ -81,6 +81,32 @@ struct Command {
 	char text[252]; // a console command, NUL-terminated
 };
 
+// ---- overlay: Minecraft's hand + HUD, drawn by the host on top of its frame ---------------------
+// A named shared-memory mapping created by the host: Local\PortalCraft_Overlay_v1.
+//   [0, 4096)                      OverlayHeader
+//   [4096 + i * kOverlaySlotBytes] slot i of kOverlaySlots, RGBA8, rows bottom-up (OpenGL order)
+// Minecraft writes a slot that is neither `front` nor `reading`, then publishes it by storing its
+// size and finally `front` and `frameSeq`. The host sets `reading` to the slot it is uploading.
+constexpr const char* kOverlayMapping = "Local\\PortalCraft_Overlay_v1";
+constexpr uint32_t kOverlayMaxW = 2560;
+constexpr uint32_t kOverlayMaxH = 1440;
+constexpr uint32_t kOverlaySlots = 3;
+constexpr uint32_t kOverlaySlotBytes = kOverlayMaxW * kOverlayMaxH * 4;
+constexpr uint32_t kOverlayHeaderBytes = 4096;
+constexpr uint32_t kOverlayBytes = kOverlayHeaderBytes + kOverlaySlots * kOverlaySlotBytes;
+
+struct OverlayHeader {
+	char magic[4];           // "PCO1", written by the host
+	uint32_t hostWidth;      // host back buffer size: Minecraft sizes its window to match
+	uint32_t hostHeight;
+	volatile uint32_t front;    // newest complete slot (Minecraft)
+	volatile uint32_t reading;  // slot the host is uploading now (host)
+	volatile uint32_t frameSeq; // bumped by Minecraft after each publish; 0 = nothing yet
+	uint32_t slotWidth[kOverlaySlots];
+	uint32_t slotHeight[kOverlaySlots];
+	volatile uint32_t mcHeartbeat; // GetTickCount-ish millis from Minecraft; stale = draw nothing
+};
+
 #pragma pack(pop)
 
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");

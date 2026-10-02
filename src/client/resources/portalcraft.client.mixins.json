@@ -6,6 +6,7 @@
 		"FramerateLimitTrackerMixin",
 		"MinecraftMixin",
 		"InputConstantsMixin",
+		"LevelRendererMixin",
 		"WindowMixin"
 	],
 	"injectors": {

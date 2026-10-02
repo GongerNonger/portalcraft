@@ -8,3 +8,4 @@ out/
 logs/
 host/portal/ref/
 host/portal/build/
+.claude/

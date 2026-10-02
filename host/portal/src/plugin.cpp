@@ -19,6 +19,7 @@
 #include <intrin.h>
 
 #include "../../../protocol/portalcraft_protocol.h"
+#include "overlay.h"
 #include "sdk.h"
 
 using sdk::Vector;
@@ -260,6 +261,10 @@ void quietPortalMovement(uint8_t* mv) {
 	buttons &= ~(sdk::IN_JUMP | sdk::IN_DUCK);
 	if (g_mc.sneaking) {
 		buttons |= sdk::IN_DUCK;
+	}
+	// Portal's gun only fires while Steve holds the Minecraft portal gun; otherwise clicks are Minecraft's.
+	if (!g_mc.holdingPortalGun) {
+		buttons &= ~(sdk::IN_ATTACK | sdk::IN_ATTACK2);
 	}
 	*reinterpret_cast<float*>(mv + sdk::kMvForwardMove) = 0;
 	*reinterpret_cast<float*>(mv + sdk::kMvSideMove) = 0;
@@ -526,6 +531,11 @@ public:
 			return;
 		}
 		hookClientMovement();
+		static bool overlayStarted = false;
+		if (!overlayStarted) {
+			overlayStarted = true;
+			overlay::init(&logf);
+		}
 		linkPoll();
 		sendState();
 	}
