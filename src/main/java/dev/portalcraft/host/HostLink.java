@@ -121,7 +121,7 @@ public final class HostLink {
 	}
 
 	/**
-	 * "PCU1" damage float, flags uint32: Portal hurt its player (turrets, energy balls, goo), in
+	 * "PCU1" damage float, flags uint32: Portal hurt its player (turrets, energy balls, toxic water), in
 	 * Portal health (100 is a full Chell). Minecraft owns the player's health: the host refunds it
 	 * and Minecraft takes it as damage. Flag 1: Portal's player died, so Steve dies too.
 	 */
