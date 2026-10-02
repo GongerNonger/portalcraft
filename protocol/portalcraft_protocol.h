@@ -30,6 +30,15 @@ enum HostFlags : uint32_t {
 	kHostDriving = 1u << 2,    // the host is applying McState to its player this tick
 };
 
+// What the host's latest move (teleportSeq) is. A shove only places the player; an impulse
+// (trigger_push air currents, explosions) also sets its velocity; a teleport (portals, level start)
+// places it and replaces its velocity, which the host has carried through the portal.
+enum TeleportKind : uint8_t {
+	kMoveShove = 0,
+	kMoveImpulse = 1,
+	kMoveTeleport = 2,
+};
+
 enum PortalFlags : uint32_t {
 	kPortalExists = 1u << 0,
 	kPortalActive = 1u << 1, // placed and open
@@ -57,7 +66,8 @@ struct HostState {
 	uint8_t keys[32];     // pressed SDL scancodes 0..255, bit per scancode
 	uint8_t mouse;        // bit0 left, bit1 right, bit2 middle
 	int8_t wheel;         // mouse-wheel notches so far, wrapping (up is positive): Minecraft scrolls by the change
-	uint8_t pad[2];
+	uint8_t teleportKind; // TeleportKind of the move teleportSeq names
+	uint8_t pad;
 	HostPortal portals[2]; // [0] blue, [1] orange
 	// PCH2: the OS cursor over the host's window, 0..1 across its client area (top-left origin), or
 	// -1 when there is none. Only meaningful while Minecraft has a screen open (McFlags kMcScreen):

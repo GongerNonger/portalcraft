@@ -22,6 +22,8 @@ public final class Proto {
 	public static final int PORTAL_LINKED = 1 << 2;
 
 	public static final int MC_READY = 1;
+	/** HostState.teleportKind: a shove only places the player, an impulse also sets its velocity. */
+	public static final int MOVE_SHOVE = 0, MOVE_IMPULSE = 1, MOVE_TELEPORT = 2;
 	/** McFlags kMcScreen: a screen is open, so the host frees its mouse and sends the cursor. */
 	public static final int MC_SCREEN = 1 << 1;
 
@@ -36,7 +38,7 @@ public final class Proto {
 
 	public record HostState(
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
-		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, HostPortal[] portals,
+		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, int teleportKind, HostPortal[] portals,
 		float cursorX, float cursorY
 	) {
 		public boolean inGame() {
@@ -78,13 +80,14 @@ public final class Proto {
 		b.get(keys);
 		int mouse = b.get() & 0xFF;
 		int wheel = b.get(); // signed, wrapping
-		b.position(b.position() + 2);
+		int teleportKind = b.get() & 0xFF; // TeleportKind
+		b.position(b.position() + 1);
 		HostPortal[] portals = new HostPortal[2];
 		for (int i = 0; i < 2; i++) {
 			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
 		}
 		float cursorX = b.getFloat(), cursorY = b.getFloat();
-		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, portals, cursorX,
+		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, teleportKind, portals, cursorX,
 			cursorY);
 	}
 

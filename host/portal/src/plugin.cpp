@@ -280,11 +280,15 @@ void linkPoll() {
 			g_mcTime = GetTickCount();
 			if (g_mc.teleportAck != oldAck) {
 				dropAppliedShoves(g_mc.teleportAck);
-				// Minecraft just applied a teleport: its earlier steps are from before it, and playing
-				// them back (one step behind) would put the player back where he was, e.g. outside the
-				// map after a Portal restart. Start the timeline over from this step.
-				std::memset(g_ticks, 0, sizeof g_ticks);
-				g_haveOffset = false;
+				// Minecraft just applied a move: its earlier steps are from before it, and playing them
+				// back (one step behind) would put the player back where he was (outside the map after a
+				// Portal restart; a step back along a fling after a portal, the snap). Keep the timeline
+				// but move those steps to where Minecraft is now, so playback starts from the new place.
+				for (TickSample& t : g_ticks) {
+					if (t.seq != 0) {
+						t.pos = g_mc.origin;
+					}
+				}
 			}
 			if (g_mc.tickSeq != g_tickSeq) {
 				// A physics step just ended in Minecraft. Keep it, and fold its arrival time into a
@@ -387,6 +391,8 @@ void readInput(pcproto::HostState& s) {
 
 uint32_t g_teleportSeq = 0;
 Vector g_teleportOrigin{}, g_teleportVelocity{};
+uint8_t g_teleportKind = pcproto::kMoveTeleport;
+Vector g_lastSetVelocity{}; // the velocity we wrote last server tick
 bool g_needSync = true;   // first tick of a level: hand Portal's spawn point to Minecraft
 bool g_haveSet = false;   // we wrote the player's origin last server tick
 Vector g_lastSet{};       // ... to this
@@ -581,11 +587,28 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// Something other than us moved the player since last tick: a portal, a trigger_teleport, a
 	// fresh level, or Portal's physics shoving the player out of a prop. That move is Portal's;
 	// give it to Minecraft and wait for the ack, rather than fighting it every tick (which bobs).
-	if (g_needSync || (g_haveSet && dist(origin, g_lastSet) > 0.5f)) {
+	// Portal changed the player's velocity since last tick (a trigger_push air current, an
+	// env_physexplosion): an impulse, handed to Minecraft with the new velocity. We overwrite the
+	// velocity every tick, so without this every push was lost.
+	Vector& mvVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
+	bool impulse = false;
+	if (g_haveSet && !g_needSync) {
+		Vector dv{mvVelocity.x - g_lastSetVelocity.x, mvVelocity.y - g_lastSetVelocity.y, mvVelocity.z - g_lastSetVelocity.z};
+		// Only a pure velocity change: a physics shove (which also moves the player) stays a shove.
+		impulse = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z > 40.0f * 40.0f && dist(origin, g_lastSet) <= 0.5f;
+		static int impulseLogs = 0;
+		if (impulse && impulseLogs++ < 40) {
+			logf("impulse: Portal changed the velocity by (%.0f %.0f %.0f) to (%.0f %.0f %.0f)", dv.x, dv.y, dv.z, mvVelocity.x, mvVelocity.y,
+				mvVelocity.z);
+		}
+	}
+
+	if (g_needSync || impulse || (g_haveSet && dist(origin, g_lastSet) > 0.5f)) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
-		g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
+		g_teleportVelocity = mvVelocity;
 		bool hard = g_needSync || !g_haveSet || dist(origin, g_lastSet) > 24.0f;
+		g_teleportKind = hard ? pcproto::kMoveTeleport : impulse ? pcproto::kMoveImpulse : pcproto::kMoveShove;
 		if (hard) {
 			g_hardPending = true;
 			g_shoveCount = 0;
@@ -603,6 +626,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		g_needSync = false;
 	}
 
+	bool wasDriving = g_drivingNow;
 	g_drivingNow = following();
 	if (g_drivingNow) {
 		quietPortalMovement(mv);
@@ -611,8 +635,23 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	g_serverOriginal(self, player, mvRaw);
 	float zPortal = origin.z;
 	if (g_drivingNow) {
+		Vector portalWent = origin;
 		applyMinecraft(mv);
+		// Just took over again after a teleport: Portal moved the player by itself while Minecraft
+		// caught up. Hand that difference over as a shove, so we write where Portal had it, not a
+		// step back, and Minecraft is told.
+		if (!wasDriving && g_haveOrigin && dist(portalWent, origin) > 0.5f && dist(portalWent, origin) < 64.0f) {
+			g_teleportSeq++;
+			g_teleportOrigin = portalWent;
+			g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
+			g_teleportKind = pcproto::kMoveShove;
+			if (g_shoveCount < kShoves) {
+				g_shoves[g_shoveCount++] = {g_teleportSeq, {portalWent.x - origin.x, portalWent.y - origin.y, portalWent.z - origin.z}};
+			}
+			origin = portalWent;
+		}
 		g_lastSet = origin;
+		g_lastSetVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
 		g_haveSet = true;
 	} else {
 		g_haveSet = false;
@@ -1161,6 +1200,7 @@ void sendState() {
 	s.teleportSeq = g_teleportSeq;
 	s.teleportOrigin = {g_teleportOrigin.x, g_teleportOrigin.y, g_teleportOrigin.z};
 	s.teleportVelocity = {g_teleportVelocity.x, g_teleportVelocity.y, g_teleportVelocity.z};
+	s.teleportKind = g_teleportKind;
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
 	}

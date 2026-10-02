@@ -369,7 +369,8 @@ public final class HostDriver {
 
 	/**
 	 * The void world is a stage, not a survival map: daylight and weather are pinned (so what Steve
-	 * holds is lit), deaths keep the inventory (a fall out of a host map is a long one), and
+	 * holds is lit), deaths keep the inventory (a fall out of a host map is a long one), no fall
+	 * damage (Portal's long-fall boots: its puzzles drop you from anywhere), and
 	 * commands are allowed, as "Open to LAN, allow cheats" would.
 	 */
 	private static void freezeDaylight(Minecraft minecraft) {
@@ -384,7 +385,7 @@ public final class HostDriver {
 			}
 			var source = server.createCommandSourceStack().withSuppressedOutput();
 			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear",
-				"gamerule keep_inventory true"}) {
+				"gamerule keep_inventory true", "gamerule fall_damage false"}) {
 				server.getCommands().performPrefixedCommand(source, command);
 			}
 		});
@@ -443,7 +444,12 @@ public final class HostDriver {
 			teleportAck = 0; // a fresh host session that hasn't placed the player yet
 		} else if (s.teleportSeq() != teleportAck) {
 			Vec3 to = Units.toMc(s.teleportOrigin());
-			if (player.position().distanceToSqr(to) < 0.6 * 0.6) {
+			if (s.teleportKind() == Proto.MOVE_IMPULSE) {
+				// An air current or an explosion: Portal's velocity is the point.
+				player.setPos(to);
+				player.setDeltaMovement(Units.velocityToMc(s.teleportVelocity()));
+				player.resetFallDistance();
+			} else if (s.teleportKind() == Proto.MOVE_SHOVE && player.position().distanceToSqr(to) < 0.6 * 0.6) {
 				// A shove (a prop, a lift): just take the place, keep our own momentum.
 				player.setPos(to);
 			} else {
