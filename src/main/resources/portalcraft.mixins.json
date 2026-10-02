@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "dev.portalcraft.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"BlockCollisionsMixin",
+		"EntityBelowWorldMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

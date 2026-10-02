@@ -1,0 +1,10 @@
+.jdk/
+.gradle/
+build/
+run/
+out/
+*.iml
+.idea/
+logs/
+host/portal/ref/
+host/portal/build/

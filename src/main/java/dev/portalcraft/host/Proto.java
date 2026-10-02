@@ -1,0 +1,103 @@
+package dev.portalcraft.host;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+
+import net.minecraft.world.phys.Vec3;
+
+/** Java mirror of protocol/portalcraft_protocol.h. Positions here are still in host units. */
+public final class Proto {
+	public static final int HOST_PORT = 27515;
+	public static final int MC_PORT = 27516;
+	public static final int HOST_STATE_SIZE = 228;
+	public static final int MC_STATE_SIZE = 44;
+
+	public static final int HOST_IN_GAME = 1;
+	public static final int HOST_FOREGROUND = 1 << 1;
+	public static final int HOST_DRIVING = 1 << 2;
+
+	public static final int PORTAL_EXISTS = 1;
+	public static final int PORTAL_ACTIVE = 1 << 1;
+	public static final int PORTAL_LINKED = 1 << 2;
+
+	public static final int MC_READY = 1;
+
+	private Proto() {
+	}
+
+	public record HostPortal(int flags, Vec3 origin, Vec3 angles) {
+		public boolean linked() {
+			return (flags & PORTAL_LINKED) != 0;
+		}
+	}
+
+	public record HostState(
+		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
+		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, HostPortal[] portals
+	) {
+		public boolean inGame() {
+			return (flags & HOST_IN_GAME) != 0;
+		}
+
+		public boolean foreground() {
+			return (flags & HOST_FOREGROUND) != 0;
+		}
+
+		public boolean keyDown(int scancode) {
+			return scancode >= 0 && scancode < 256 && (keys[scancode >> 3] & (1 << (scancode & 7))) != 0;
+		}
+	}
+
+	public static HostState readHostState(ByteBuffer b) {
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '1') {
+			return null;
+		}
+		b.position(4);
+		int seq = b.getInt();
+		int flags = b.getInt();
+		byte[] mapBytes = new byte[64];
+		b.get(mapBytes);
+		int len = 0;
+		while (len < 64 && mapBytes[len] != 0) {
+			len++;
+		}
+		String map = new String(mapBytes, 0, len, StandardCharsets.US_ASCII);
+		float yaw = b.getFloat();
+		float pitch = b.getFloat();
+		Vec3 origin = vec(b);
+		Vec3 velocity = vec(b);
+		int teleportSeq = b.getInt();
+		Vec3 tpOrigin = vec(b);
+		Vec3 tpVelocity = vec(b);
+		byte[] keys = new byte[32];
+		b.get(keys);
+		int mouse = b.get() & 0xFF;
+		b.position(b.position() + 3);
+		HostPortal[] portals = new HostPortal[2];
+		for (int i = 0; i < 2; i++) {
+			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
+		}
+		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, portals);
+	}
+
+	public static ByteBuffer writeMcState(int seq, int flags, int teleportAck, Vec3 origin, Vec3 velocity, boolean onGround,
+		boolean sneaking, boolean holdingGun) {
+		ByteBuffer b = ByteBuffer.allocate(MC_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'M').put((byte) '1');
+		b.putInt(seq).putInt(flags).putInt(teleportAck);
+		putVec(b, origin);
+		putVec(b, velocity);
+		b.put((byte) (onGround ? 1 : 0)).put((byte) (sneaking ? 1 : 0)).put((byte) (holdingGun ? 1 : 0)).put((byte) 0);
+		return b.flip();
+	}
+
+	private static Vec3 vec(ByteBuffer b) {
+		return new Vec3(b.getFloat(), b.getFloat(), b.getFloat());
+	}
+
+	private static void putVec(ByteBuffer b, Vec3 v) {
+		b.putFloat((float) v.x).putFloat((float) v.y).putFloat((float) v.z);
+	}
+}

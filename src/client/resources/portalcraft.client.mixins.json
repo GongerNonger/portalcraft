@@ -1,0 +1,14 @@
+{
+	"required": true,
+	"package": "dev.portalcraft.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"FramerateLimitTrackerMixin",
+		"MinecraftMixin",
+		"InputConstantsMixin",
+		"WindowMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

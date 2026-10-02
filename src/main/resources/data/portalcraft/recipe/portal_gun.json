@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "A": "minecraft:amethyst_shard",
+    "E": "minecraft:ender_pearl",
+    "G": "minecraft:gold_ingot",
+    "O": "minecraft:obsidian"
+  },
+  "pattern": [
+    " EA",
+    " GE",
+    "O  "
+  ],
+  "result": {
+    "id": "portalcraft:portal_gun"
+  }
+}

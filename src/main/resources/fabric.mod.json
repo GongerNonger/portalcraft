@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "portalcraft",
+	"version": "${version}",
+	"name": "PortalCraft",
+	"description": "A portal gun for Minecraft. Two linked portals, momentum kept through them.",
+	"authors": [
+		"Kaydn"
+	],
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"dev.portalcraft.PortalCraft"
+		],
+		"client": [
+			"dev.portalcraft.client.PortalCraftClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	},
+	"mixins": [
+		"portalcraft.mixins.json",
+		{
+			"config": "portalcraft.client.mixins.json",
+			"environment": "client"
+		}
+	]
+}
