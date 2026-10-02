@@ -133,6 +133,7 @@ void resolvePortalOffsets(void* networkable) {
 SOCKET g_sock = INVALID_SOCKET;
 sockaddr_in g_mcAddr{};
 pcproto::McState g_mc{};
+void dropAppliedShoves(uint32_t ack); // the player puppet, below
 // Minecraft's recent physics steps on a smoothed timeline (see interpolatedMinecraft).
 struct TickSample {
 	uint32_t seq;
@@ -267,6 +268,7 @@ void linkPoll() {
 			std::memcpy(&g_mc, buf, sizeof g_mc);
 			g_mcTime = GetTickCount();
 			if (g_mc.teleportAck != oldAck) {
+				dropAppliedShoves(g_mc.teleportAck);
 				// Minecraft just applied a teleport: its earlier steps are from before it, and playing
 				// them back (one step behind) would put the player back where he was, e.g. outside the
 				// map after a Portal restart. Start the timeline over from this step.
@@ -381,8 +383,46 @@ bool g_drivingNow = false;
 Vector g_origin{}, g_velocity{}; // player state after the last server movement tick
 bool g_haveOrigin = false;       // a movement tick has run this level: g_origin is real
 
+// Small shoves (Portal's physics pushing the player off a prop or a physics brush, a lift carrying
+// it) are soft handoffs: Minecraft is told where the player went like any other move, but we keep
+// driving meanwhile, writing Minecraft's position plus the shoves it hasn't applied yet. Before,
+// every shove stopped the driving until Minecraft answered (2-4 server ticks), and Portal's own
+// movement took over for that long: the sticky snap at buttons, lifts and some walls.
+struct Shove {
+	uint32_t seq;
+	Vector delta;
+};
+constexpr int kShoves = 32;
+Shove g_shoves[kShoves];
+int g_shoveCount = 0;
+bool g_hardPending = false; // a real teleport (portal, level start) waits for Minecraft's answer
+
+Vector pendingShoves() {
+	Vector sum{};
+	for (int i = 0; i < g_shoveCount; i++) {
+		if (g_shoves[i].seq > g_mc.teleportAck) {
+			sum = {sum.x + g_shoves[i].delta.x, sum.y + g_shoves[i].delta.y, sum.z + g_shoves[i].delta.z};
+		}
+	}
+	return sum;
+}
+
+// Minecraft answered up to `ack`: forget the shoves it has applied.
+void dropAppliedShoves(uint32_t ack) {
+	int kept = 0;
+	for (int i = 0; i < g_shoveCount; i++) {
+		if (g_shoves[i].seq > ack) {
+			g_shoves[kept++] = g_shoves[i];
+		}
+	}
+	g_shoveCount = kept;
+	if (ack == g_teleportSeq) {
+		g_hardPending = false;
+	}
+}
+
 bool following() {
-	return mcReady() && g_mc.teleportAck == g_teleportSeq;
+	return mcReady() && (g_mc.teleportAck == g_teleportSeq || !g_hardPending);
 }
 
 Vector toVec(const pcproto::Vec3& v) {
@@ -452,6 +492,8 @@ void applyMinecraft(uint8_t* mv) {
 	}
 	g_lastMcZ = o.z;
 	o.z += g_zLift;
+	Vector shoved = pendingShoves();
+	o = {o.x + shoved.x, o.y + shoved.y, o.z + shoved.z};
 	*reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin) = o;
 	*reinterpret_cast<Vector*>(mv + sdk::kMvVelocity) = velocity;
 }
@@ -530,7 +572,18 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
-		if (g_needSync || dist(origin, g_lastSet) > 24.0f) {
+		bool hard = g_needSync || !g_haveSet || dist(origin, g_lastSet) > 24.0f;
+		if (hard) {
+			g_hardPending = true;
+			g_shoveCount = 0;
+		} else {
+			if (g_shoveCount == kShoves) { // Minecraft fell far behind: drop the oldest
+				std::memmove(g_shoves, g_shoves + 1, sizeof(Shove) * (kShoves - 1));
+				g_shoveCount--;
+			}
+			g_shoves[g_shoveCount++] = {g_teleportSeq, {origin.x - g_lastSet.x, origin.y - g_lastSet.y, origin.z - g_lastSet.z}};
+		}
+		if (hard) {
 			logf("handing teleport %u to Minecraft: (%.1f %.1f %.1f)%s", g_teleportSeq, origin.x, origin.y, origin.z,
 				g_needSync ? " [level start]" : "");
 		}
@@ -1119,6 +1172,8 @@ public:
 		g_needSync = true;
 		g_haveSet = false;
 		g_haveOrigin = false;
+		g_shoveCount = 0;
+		g_hardPending = false;
 		g_checkedLayout = false;
 		g_po = PortalOffsets{};
 		g_portalCount = 0;

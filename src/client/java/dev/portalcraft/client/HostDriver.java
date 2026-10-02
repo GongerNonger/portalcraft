@@ -140,12 +140,7 @@ public final class HostDriver {
 		player.setXRot(s.pitch());
 		player.setYHeadRot(yaw);
 
-		if (s.teleportSeq() == 0) {
-			teleportAck = 0; // a fresh host session that hasn't placed the player yet
-		} else if (s.teleportSeq() != teleportAck) {
-			teleport(minecraft, player, Units.toMc(s.teleportOrigin()), Units.velocityToMc(s.teleportVelocity()));
-			teleportAck = s.teleportSeq();
-		}
+		followHostMoves(minecraft, player, s);
 
 		if (s.foreground()) {
 			applyKeys(minecraft, s);
@@ -171,6 +166,12 @@ public final class HostDriver {
 	public static void frame(Minecraft minecraft) {
 		if (!linked) {
 			return;
+		}
+		// The host's moves as soon as they arrive, not at the next tick: while it waits for our
+		// answer it can't drive the player (a real teleport) or has to carry a shove itself.
+		Proto.HostState hs = HostLink.current();
+		if (hs != null && minecraft.player != null && hs.inGame()) {
+			followHostMoves(minecraft, minecraft.player, hs);
 		}
 		boolean ready = sendState(minecraft);
 		moveCursor(minecraft);
@@ -348,6 +349,10 @@ public final class HostDriver {
 			return;
 		}
 		LOG.info("PortalCraft: dev command: {}", command);
+		if (command.equals("portalcraft:save")) { // single player has no save-all: save the world and players now
+			server.execute(() -> LOG.info("PortalCraft: saved: {}", server.saveEverything(false, true, true)));
+			return;
+		}
 		server.execute(() -> server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command));
 	}
 
@@ -417,6 +422,21 @@ public final class HostDriver {
 			failedMap = name;
 			HostCollision.clear();
 			LOG.warn("PortalCraft: can't read {} ({}). Set -Dportalcraft.mapsDir to the game's maps folder.", file, e.toString());
+		}
+	}
+
+	private static void followHostMoves(Minecraft minecraft, LocalPlayer player, Proto.HostState s) {
+		if (s.teleportSeq() == 0) {
+			teleportAck = 0; // a fresh host session that hasn't placed the player yet
+		} else if (s.teleportSeq() != teleportAck) {
+			Vec3 to = Units.toMc(s.teleportOrigin());
+			if (player.position().distanceToSqr(to) < 0.6 * 0.6) {
+				// A shove (a prop, a lift): just take the place, keep our own momentum.
+				player.setPos(to);
+			} else {
+				teleport(minecraft, player, to, Units.velocityToMc(s.teleportVelocity()));
+			}
+			teleportAck = s.teleportSeq();
 		}
 	}
 

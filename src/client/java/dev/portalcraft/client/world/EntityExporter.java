@@ -796,10 +796,31 @@ public final class EntityExporter {
 				}
 			}
 
+			/** OverlayTexture: v < 8 is the red hurt tint, u the white flash (creepers, TNT). */
+			private int overlay = net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY;
+
 			@Override
 			public void addVertex(float x, float y, float z, int color, float u, float v, int overlayCoords, int lightCoords, float nx, float ny,
 				float nz) {
+				this.overlay = overlayCoords;
 				this.addVertex(x, y, z).setColor(color).setUv(u, v).setNormal(nx, ny, nz);
+			}
+
+			private int overlaid(int argb) {
+				int white = this.overlay & 0xFFFF, red = this.overlay >>> 16;
+				int r = argb >>> 16 & 0xFF, g = argb >>> 8 & 0xFF, b = argb & 0xFF;
+				if (red < 8) { // hurt: Minecraft mixes in its overlay red
+					r = r + Math.round((255 - r) * 0.55F);
+					g = Math.round(g * 0.45F);
+					b = Math.round(b * 0.45F);
+				}
+				if (white > 0) {
+					float f = Math.min(1.0F, white / 15.0F);
+					r += Math.round((255 - r) * f);
+					g += Math.round((255 - g) * f);
+					b += Math.round((255 - b) * f);
+				}
+				return argb & 0xFF000000 | r << 16 | g << 8 | b;
 			}
 
 			@Override
@@ -837,7 +858,7 @@ public final class EntityExporter {
 				this.nz = z;
 				if (++this.corner == 4) {
 					this.corner = 0;
-					int shaded = WorldFormat.d3dColor(WorldFormat.shadeArgb(this.color, WorldFormat.shade(this.nx, this.ny, this.nz)), false);
+					int shaded = WorldFormat.d3dColor(this.overlaid(WorldFormat.shadeArgb(this.color, WorldFormat.shade(this.nx, this.ny, this.nz))), false);
 					for (int k : WorldFormat.QUAD_TRIANGLES) {
 						this.out.add(this.ox + this.xyz[k * 3], this.oy + this.xyz[k * 3 + 1], this.oz + this.xyz[k * 3 + 2], shaded,
 							this.u0 + this.uv[k * 2] * this.us, this.v0 + this.uv[k * 2 + 1] * this.vs);
