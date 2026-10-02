@@ -17,7 +17,10 @@ enemies around him. This is where that holds up, and where it doesn't.
 | Cubes, buttons | many | Native (E grabs; floor buttons are triggers / physics). |
 | Bounce pads, faith plates, gels | 0 | Portal 2 only. |
 
-Fall damage is off in Minecraft (Portal's long-fall boots).
+Fall damage is ON: Steve has no long-fall boots. Every test chamber and escape level hands him a
+water bucket at load (if he has none) to clutch falls with; placing a block under himself or an
+ender pearl works too. Going through a portal resets the fall distance, so only the drop after a
+portal counts.
 
 ## Flings: why they come up short
 
@@ -51,3 +54,9 @@ landing needs care.
 
 Recommendation: **A, applied to long falls and post-portal flight**, for exact puzzle numbers with
 Minecraft collision; B is the quick fallback.
+
+**Raising the terminal velocity doesn't help**: Minecraft's is already 3136 u/s (Portal caps at
+3500) and puzzle falls (256-1024 u) never get near either. The cheapest real lever is **keeping
+Steve's horizontal speed after a portal until he lands** (no air drag in that flight, Minecraft's
+gravity kept): 90% / 88% / 84% of Portal's distance for 256 / 512 / 1024-unit drops, a small
+mixin, jumps and falls otherwise untouched.

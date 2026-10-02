@@ -369,8 +369,8 @@ public final class HostDriver {
 
 	/**
 	 * The void world is a stage, not a survival map: daylight and weather are pinned (so what Steve
-	 * holds is lit), deaths keep the inventory (a fall out of a host map is a long one), no fall
-	 * damage (Portal's long-fall boots: its puzzles drop you from anywhere), and
+	 * holds is lit), deaths keep the inventory (a fall out of a host map is a long one), fall
+	 * damage stays on (Steve has no long-fall boots: water-bucket clutch, see chamberKit), and
 	 * commands are allowed, as "Open to LAN, allow cheats" would.
 	 */
 	private static void freezeDaylight(Minecraft minecraft) {
@@ -385,7 +385,7 @@ public final class HostDriver {
 			}
 			var source = server.createCommandSourceStack().withSuppressedOutput();
 			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear",
-				"gamerule keep_inventory true", "gamerule fall_damage false"}) {
+				"gamerule keep_inventory true", "gamerule fall_damage true"}) {
 				server.getCommands().performPrefixedCommand(source, command);
 			}
 		});
@@ -432,11 +432,35 @@ public final class HostDriver {
 				Minecraft.getInstance().player.refreshDimensions(); // host-sized hull
 			}
 			LOG.info("PortalCraft: loaded {} ({} solid brushes) in {} ms", file, map.brushes.size(), (System.nanoTime() - t0) / 1_000_000);
+			chamberKit(name);
 		} catch (Exception e) {
 			failedMap = name;
 			HostCollision.clear();
 			LOG.warn("PortalCraft: can't read {} ({}). Set -Dportalcraft.mapsDir to the game's maps folder.", file, e.toString());
 		}
+	}
+
+	/**
+	 * Chell's long-fall boots aren't Steve's: fall damage is on, so every test chamber and escape
+	 * level hands him a water bucket to clutch a fall with (portals make a long drop out of any
+	 * chamber), unless he already carries one.
+	 */
+	private static void chamberKit(String map) {
+		if (!map.startsWith("testchmb_") && !map.startsWith("escape_")) {
+			return;
+		}
+		var server = Minecraft.getInstance().getSingleplayerServer();
+		if (server == null) {
+			return;
+		}
+		server.execute(() -> {
+			for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+				if (!sp.getInventory().contains(stack -> stack.is(net.minecraft.world.item.Items.WATER_BUCKET))) {
+					sp.getInventory().add(new ItemStack(net.minecraft.world.item.Items.WATER_BUCKET));
+					LOG.info("PortalCraft: {}: gave {} a water bucket for the falls", map, sp.getName().getString());
+				}
+			}
+		});
 	}
 
 	private static void followHostMoves(Minecraft minecraft, LocalPlayer player, Proto.HostState s) {
