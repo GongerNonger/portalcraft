@@ -79,8 +79,8 @@ def main():
     ap.add_argument("--entity", action="store_true", help="publish into the entity mesh (block-atlas solid range)")
     a = ap.parse_args()
     m = mmap.mmap(-1, TOTAL, tagname=MAPPING)
-    if m[0:4] != b"PCW5":
-        print(f"Portal's world mapping isn't there or isn't PCW5 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
+    if m[0:4] != b"PCW6":
+        print(f"Portal's world mapping isn't there or isn't PCW6 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
         return
     size, pixels = atlas_pixels()
     struct.pack_into("<II", m, 4, size, size)

@@ -35,6 +35,7 @@ public final class WorldLink {
 		SLOT_SOLID = WorldFormat.H_SLOT_SOLID, SLOT_TRANSLUCENT = WorldFormat.H_SLOT_TRANSLUCENT;
 	private static final ValueLayout.OfInt INT = JAVA_INT.withByteAlignment(4);
 	private static final ValueLayout.OfInt INT_UNALIGNED = ValueLayout.JAVA_INT_UNALIGNED;
+	private static final int MAGIC_PCW6 = 'P' | 'C' << 8 | 'W' << 16 | '6' << 24;
 	private static final int MAGIC_PCW5 = 'P' | 'C' << 8 | 'W' << 16 | '5' << 24;
 	private static final int MAGIC_PCW4 = 'P' | 'C' << 8 | 'W' << 16 | '4' << 24;
 	private static final int MAGIC_PCW3 = 'P' | 'C' << 8 | 'W' << 16 | '3' << 24;
@@ -101,12 +102,12 @@ public final class WorldLink {
 			}
 			v = v.reinterpret(WorldFormat.TOTAL_BYTES);
 			int magic = v.get(INT, MAGIC);
-			if (magic != MAGIC_PCW5) {
+			if (magic != MAGIC_PCW6) {
 				if (!warnedMagic) {
 					warnedMagic = true;
-					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2 || magic == MAGIC_PCW3 || magic == MAGIC_PCW4
+					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2 || magic == MAGIC_PCW3 || magic == MAGIC_PCW4 || magic == MAGIC_PCW5
 						? "PortalCraft: the Portal plugin speaks an older world format (rerun setup with Portal closed); retrying every 2 s"
-						: "PortalCraft: world mapping has no PCW5 magic yet; retrying every 2 s");
+						: "PortalCraft: world mapping has no PCW6 magic yet; retrying every 2 s");
 				}
 				int ignored = (int) UNMAP.invokeExact(v);
 				ignored = (int) CLOSE.invokeExact(h);

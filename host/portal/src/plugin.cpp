@@ -255,6 +255,17 @@ void applyLights() {
 	g_dlightsUsed = lit;
 }
 
+// Dev packets that drive the game (console commands, fake keys, the view) are only taken when Portal
+// was started with -portalcraftdev: otherwise any program on this PC could run Portal's console.
+bool devMode() {
+	static int dev = -1;
+	if (dev < 0) {
+		const char* line = GetCommandLineA();
+		dev = line && std::strstr(line, "-portalcraftdev") ? 1 : 0;
+	}
+	return dev == 1;
+}
+
 void linkPoll() {
 	char buf[512];
 	for (int i = 0; i < 64; i++) {
@@ -295,13 +306,13 @@ void linkPoll() {
 		} else if (n == 8 && std::memcmp(buf, "PCT1", 4) == 0) {
 			std::memcpy(&g_traceTicks, buf + 4, 4);
 			logf("trace on for %d ticks", g_traceTicks);
-		} else if ((n == 4 + 32 + 4 || n == 4 + 32 + 4 + 1) && std::memcmp(buf, "PCK1", 4) == 0) {
+		} else if ((n == 4 + 32 + 4 || n == 4 + 32 + 4 + 1) && std::memcmp(buf, "PCK1", 4) == 0 && devMode()) {
 			std::memcpy(g_fakeKeys, buf + 4, 32);
 			uint32_t ms;
 			std::memcpy(&ms, buf + 36, 4);
 			g_fakeMouse = n == 41 ? uint8_t(buf[40]) : 0;
 			g_fakeUntil = GetTickCount() + ms;
-		} else if (n == 4 + 8 && std::memcmp(buf, "PCV1", 4) == 0 && g_engineClient) {
+		} else if (n == 4 + 8 && std::memcmp(buf, "PCV1", 4) == 0 && g_engineClient && devMode()) {
 			// Dev: point the camera (pitch, yaw), e.g. to aim at a floor for a placement test.
 			float pitchYaw[2];
 			std::memcpy(pitchYaw, buf + 4, 8);
@@ -317,7 +328,7 @@ void linkPoll() {
 			float exposure; // dev: lighting exposure (tools/fake_mc.py --exposure)
 			std::memcpy(&exposure, buf + 4, 4);
 			worldrender::setExposure(exposure);
-		} else if (n > 4 && std::memcmp(buf, "PCC1", 4) == 0 && g_engineServer) {
+		} else if (n > 4 && std::memcmp(buf, "PCC1", 4) == 0 && g_engineServer && devMode()) {
 			char cmd[260];
 			int len = n - 4 < 250 ? n - 4 : 250;
 			std::memcpy(cmd, buf + 4, len);
@@ -1249,6 +1260,15 @@ public:
 		static bool overlayStarted = false;
 		if (!overlayStarted) {
 			overlayStarted = true;
+			// What PortalCraft needs from Portal, whichever way Portal was launched (Steam's Play
+			// button included). None is a cheat:
+			//   cl_updaterate/cmdrate 66, cl_interp 0, cl_interp_ratio 1: one update per server tick and
+			//     no interpolation delay, or the camera bobs against Minecraft's 20 Hz ticks;
+			//   mat_queue_mode 0: draw on the main thread, where the world pass and overlay draw;
+			//   engine_no_focus_sleep 0: keep running at full rate with Minecraft's window focused.
+			sdk::serverCommand(g_engineServer,
+				"cl_updaterate 66; cl_cmdrate 66; cl_interp 0; cl_interp_ratio 1; mat_queue_mode 0; engine_no_focus_sleep 0\n");
+			logf("set cl_updaterate/cmdrate 66, cl_interp 0, mat_queue_mode 0, engine_no_focus_sleep 0%s", devMode() ? "; dev packets on" : "");
 			overlay::init(&logf);
 			worldrender::init(&logf, g_engineFactory);
 		}

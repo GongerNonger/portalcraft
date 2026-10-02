@@ -415,6 +415,8 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	uint32_t pSolid = 0, pTranslucent = 0, cracks = 0;
 	const pcproto::WorldVertex* mobs = nullptr; // mob atlas solid then translucent
 	uint32_t mSolid = 0, mTranslucent = 0;
+	const pcproto::WorldVertex* avatarMobs = nullptr; // the avatar's armour and cape (mob atlas, feet-relative)
+	uint32_t amSolid = 0, amTranslucent = 0;
 	if (g_header->entitySeq != 0) {
 		uint32_t slot = claimSlot(g_header->entityFront, g_header->entityReading);
 		if (slot != kNoSlot) {
@@ -432,13 +434,16 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			cracks = g_header->crack[slot];
 			mSolid = g_header->mobSolid[slot];
 			mTranslucent = g_header->mobTranslucent[slot];
+			amSolid = g_header->avatarMobSolid[slot];
+			amTranslucent = g_header->avatarMobTranslucent[slot];
 			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent + aSkin + aBlockSolid + aBlockTranslucent +
-				aItemSolid + aItemTranslucent + pSolid + pTranslucent + cracks + mSolid + mTranslucent;
+				aItemSolid + aItemTranslucent + pSolid + pTranslucent + cracks + mSolid + mTranslucent + amSolid + amTranslucent;
 			if (total == 0 || total > pcproto::kWorldEntityMaxVertices) {
 				eBlockSolid = eBlockTranslucent = eItemSolid = eItemTranslucent = 0;
 				aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
 				pSolid = pTranslucent = cracks = 0;
 				mSolid = mTranslucent = 0;
+				amSolid = amTranslucent = 0;
 				g_header->entityReading = kNoSlot;
 			} else {
 				entities = reinterpret_cast<const pcproto::WorldVertex*>(
@@ -447,6 +452,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 				avatar = eItems + eItemSolid + eItemTranslucent;
 				particles = avatar + aSkin + aBlockSolid + aBlockTranslucent + aItemSolid + aItemTranslucent;
 				mobs = particles + pSolid + pTranslucent + cracks;
+				avatarMobs = mobs + mSolid + mTranslucent;
 			}
 		}
 	}
@@ -475,6 +481,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			appendLit(g_litEntities, particles, pSolid + pTranslucent, sdk::Vector{});
 			g_litEntities.insert(g_litEntities.end(), particles + pSolid + pTranslucent, particles + pSolid + pTranslucent + cracks); // multiplied: unlit
 			appendLit(g_litEntities, mobs, mSolid + mTranslucent, sdk::Vector{});
+			appendLit(g_litEntities, avatarMobs, amSolid + amTranslucent, haveFeet ? feet : sdk::Vector{});
 			g_litEntitySlot = slot;
 			g_litEntitySeq = g_header->entitySeq;
 			g_litFeet = feet;
@@ -484,6 +491,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		avatar = lit + eTotal;
 		particles = avatar + aTotal;
 		mobs = particles + pSolid + pTranslucent + cracks;
+		avatarMobs = mobs + mSolid + mTranslucent;
 		entities = lit;
 	}
 	// The avatar only while Portal's camera is out of the player's head, placed on the player.
@@ -491,6 +499,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	const pcproto::WorldVertex* aItems = aBlocks ? aBlocks + aBlockSolid + aBlockTranslucent : nullptr;
 	if (!avatar || !(throughPortal || camera::thirdPerson()) || !haveFeet) {
 		aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
+		amSolid = amTranslucent = 0;
 	}
 	if (!g_skin) {
 		aSkin = 0;
@@ -512,6 +521,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	}
 	if (!g_mobAtlas) {
 		mSolid = mTranslucent = 0;
+		amSolid = amTranslucent = 0;
 	}
 	D3DMATRIX atFeet = {};
 	atFeet._11 = atFeet._22 = atFeet._33 = atFeet._44 = 1.0f;
@@ -613,6 +623,12 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			dev->SetTexture(0, g_mobAtlas);
 			drawTriangles(dev, mobs, mSolid);
 		}
+		if (amSolid) {
+			dev->SetTransform(D3DTS_WORLD, &atFeet);
+			dev->SetTexture(0, g_mobAtlas);
+			drawTriangles(dev, avatarMobs, amSolid);
+			dev->SetTransform(D3DTS_WORLD, &identity);
+		}
 		if (cracks) { // Minecraft's crumbling blend: what's behind, times the crack texture
 			// The blend doubles (dst*src + src*dst), so a texel must be dropped where the crack texture
 			// is clear, or its white-ish RGB brightens the whole face.
@@ -629,7 +645,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		}
 	}
 	if ((passes & kPassTranslucent) &&
-		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3 || pTranslucent >= 3 || mTranslucent >= 3)) {
+		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3 || pTranslucent >= 3 || mTranslucent >= 3 || amTranslucent >= 3)) {
 		setTranslucent(dev);
 		dev->SetTexture(0, g_atlas);
 		if (blocks) {
@@ -657,6 +673,12 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		if (mTranslucent) {
 			dev->SetTexture(0, g_mobAtlas);
 			drawTriangles(dev, mobs + mSolid, mTranslucent);
+		}
+		if (amTranslucent) {
+			dev->SetTransform(D3DTS_WORLD, &atFeet);
+			dev->SetTexture(0, g_mobAtlas);
+			drawTriangles(dev, avatarMobs + amSolid, amTranslucent);
+			dev->SetTransform(D3DTS_WORLD, &identity);
 		}
 	}
 
@@ -881,7 +903,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	g_header = reinterpret_cast<pcproto::WorldHeader*>(g_shm);
 	g_header->reading = kNoSlot;
 	g_header->entityReading = kNoSlot;
-	std::memcpy(g_header->magic, "PCW5", 4);
+	std::memcpy(g_header->magic, "PCW6", 4);
 
 	g_engineClient = engineFactory("VEngineClient013", nullptr);
 	void* renderView = engineFactory("VEngineRenderView014", nullptr);

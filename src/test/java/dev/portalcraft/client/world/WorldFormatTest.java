@@ -67,8 +67,9 @@ class WorldFormatTest {
 		assertEquals(200, WorldFormat.H_MOB_ATLAS_W);
 		assertEquals(212, WorldFormat.H_MOB_SOLID);
 		assertEquals(220, WorldFormat.H_MOB_TRANSLUCENT);
-		assertEquals(228, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
-		assertEquals(WorldFormat.H_MOB_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
+		assertEquals(228, WorldFormat.H_AVATAR_MOB_SOLID);
+		assertEquals(244, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
+		assertEquals(WorldFormat.H_AVATAR_MOB_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
 		assertTrue(WorldFormat.HEADER_STRUCT_BYTES <= WorldFormat.HEADER_BYTES);
 	}
 

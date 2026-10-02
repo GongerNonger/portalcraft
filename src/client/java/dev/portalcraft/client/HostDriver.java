@@ -51,6 +51,8 @@ public final class HostDriver {
 	private static int buttons;
 	private static boolean linked;
 	private static int tickSeq;
+	/** The next resync follows a respawn (Minecraft's spawn point is not the host's player). */
+	private static boolean respawned;
 	private static Vec3 tickPrevious = Vec3.ZERO, tickCurrent = Vec3.ZERO;
 	private static boolean resync;
 	private static int teleportAck;
@@ -108,12 +110,21 @@ public final class HostDriver {
 			}
 			player.respawn();
 			resync = true;
+			respawned = true;
 			return;
 		}
 		if (resync) {
-			// Just linked, or back from a respawn: stand where the host's player is now.
+			// Just linked, or back from a respawn: stand where the host's player is now, unless the
+			// host's own latest move (its level start) was just applied: that already placed us, and
+			// its live origin can be a moment stale (once it put Steve outside the map).
 			resync = false;
-			teleport(minecraft, player, Units.toMc(s.origin()), Vec3.ZERO);
+			boolean placed = s.teleportSeq() != 0 && teleportAck == s.teleportSeq() && !player.isDeadOrDying() && !respawned;
+			LOG.info("PortalCraft: resync: host origin {}, last host move #{} to {}{}", s.origin(), s.teleportSeq(), s.teleportOrigin(),
+				placed ? " (already applied: staying)" : "");
+			if (!placed) {
+				teleport(minecraft, player, Units.toMc(s.origin()), Vec3.ZERO);
+			}
+			respawned = false;
 			teleportAck = s.teleportSeq();
 			minecraft.getTutorial().setStep(TutorialSteps.NONE);
 			giveGun(minecraft, player);
@@ -358,7 +369,8 @@ public final class HostDriver {
 
 	/**
 	 * The void world is a stage, not a survival map: daylight and weather are pinned (so what Steve
-	 * holds is lit), and commands are allowed, as "Open to LAN, allow cheats" would.
+	 * holds is lit), deaths keep the inventory (a fall out of a host map is a long one), and
+	 * commands are allowed, as "Open to LAN, allow cheats" would.
 	 */
 	private static void freezeDaylight(Minecraft minecraft) {
 		var server = minecraft.getSingleplayerServer();
@@ -371,7 +383,8 @@ public final class HostDriver {
 				LOG.info("PortalCraft: commands allowed in this world");
 			}
 			var source = server.createCommandSourceStack().withSuppressedOutput();
-			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear"}) {
+			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear",
+				"gamerule keep_inventory true"}) {
 				server.getCommands().performPrefixedCommand(source, command);
 			}
 		});

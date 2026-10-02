@@ -61,7 +61,7 @@ public final class HostLink {
 					typed.codePoints().forEach(TYPED::add);
 					continue;
 				}
-				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'R' && buf.get(3) == '1') {
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'R' && buf.get(3) == '1' && DEV) {
 					byte[] raw = new byte[buf.remaining() - 4];
 					buf.position(4);
 					buf.get(raw);
@@ -72,7 +72,7 @@ public final class HostLink {
 					DEV_COMMANDS.add(new String(raw, 0, len, java.nio.charset.StandardCharsets.UTF_8));
 					continue;
 				}
-				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'G' && buf.get(3) == '1') {
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'G' && buf.get(3) == '1' && DEV) {
 					byte[] raw = new byte[buf.remaining() - 4];
 					buf.position(4);
 					buf.get(raw);
@@ -83,7 +83,7 @@ public final class HostLink {
 					devGive = new String(raw, 0, len, java.nio.charset.StandardCharsets.US_ASCII);
 					continue;
 				}
-				if (buf.remaining() == 16 && buf.get(2) == 'D') {
+				if (buf.remaining() == 16 && buf.get(2) == 'D' && DEV) {
 					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
 					devGoto = new net.minecraft.world.phys.Vec3(buf.getFloat(4), buf.getFloat(8), buf.getFloat(12));
 					continue;
@@ -119,6 +119,12 @@ public final class HostLink {
 	public static @Nullable Integer takeTyped() {
 		return TYPED.poll();
 	}
+
+	/**
+	 * Dev packets (commands, give, goto) are only taken in the dev client (-Dportalcraft.dev=true,
+	 * set by build.gradle's runClient): otherwise any program on this PC could run commands.
+	 */
+	private static final boolean DEV = Boolean.getBoolean("portalcraft.dev");
 
 	/** Dev: "PCR1" packets carry Minecraft commands to run as the server (tools/fake_mc.py --mc). */
 	private static final java.util.concurrent.ConcurrentLinkedQueue<String> DEV_COMMANDS = new java.util.concurrent.ConcurrentLinkedQueue<>();

@@ -65,11 +65,12 @@ public final class WorldFormat {
 	public static final long H_PARTICLE_ATLAS_W = 152, H_PARTICLE_ATLAS_H = 156, H_PARTICLE_ATLAS_SEQ = 160, H_CRACK_W = 164, H_CRACK_H = 168,
 		H_CRACK_SEQ = 172, H_PARTICLE_SOLID = 176, H_PARTICLE_TRANSLUCENT = 184, H_CRACK = 192;
 	public static final long H_MOB_ATLAS_W = 200, H_MOB_ATLAS_H = 204, H_MOB_ATLAS_SEQ = 208, H_MOB_SOLID = 212, H_MOB_TRANSLUCENT = 220;
+	public static final long H_AVATAR_MOB_SOLID = 228, H_AVATAR_MOB_TRANSLUCENT = 236;
 	/** Every per-slot count array of the entity slot, in the order its ranges sit in the slot. */
 	public static final long[] H_ENTITY_RANGES = {H_ENTITY_BLOCK_SOLID, H_ENTITY_BLOCK_TRANSLUCENT, H_ENTITY_ITEM_SOLID, H_ENTITY_ITEM_TRANSLUCENT,
 		H_AVATAR_SKIN, H_AVATAR_BLOCK_SOLID, H_AVATAR_BLOCK_TRANSLUCENT, H_AVATAR_ITEM_SOLID, H_AVATAR_ITEM_TRANSLUCENT, H_PARTICLE_SOLID,
-		H_PARTICLE_TRANSLUCENT, H_CRACK, H_MOB_SOLID, H_MOB_TRANSLUCENT};
-	public static final long HEADER_STRUCT_BYTES = 228; // sizeof(WorldHeader)
+		H_PARTICLE_TRANSLUCENT, H_CRACK, H_MOB_SOLID, H_MOB_TRANSLUCENT, H_AVATAR_MOB_SOLID, H_AVATAR_MOB_TRANSLUCENT};
+	public static final long HEADER_STRUCT_BYTES = 244; // sizeof(WorldHeader)
 
 	/** ItemEntityRenderer.ITEM_MIN_HOVER_HEIGHT: how far a dropped item's model floats off the ground. */
 	public static final float ITEM_MIN_HOVER = 0.0625F;

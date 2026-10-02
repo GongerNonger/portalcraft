@@ -488,7 +488,7 @@ public final class EntityExporter {
 			if (!avatarLogged) {
 				avatarLogged = true;
 				int[] c = CAPTURE.counts();
-				LOG.info("PortalCraft: avatar mesh {} skin + {} held vertices", c[4], c[5] + c[6] + c[7] + c[8]);
+				LOG.info("PortalCraft: avatar mesh {} skin + {} held + {} armour vertices", c[4], c[5] + c[6] + c[7] + c[8], c[14] + c[15]);
 			}
 		} catch (RuntimeException e) {
 			CAPTURE.endAvatar();
@@ -596,10 +596,12 @@ public final class EntityExporter {
 		final WorldFormat.Vertices crack = new WorldFormat.Vertices(64);
 		final WorldFormat.Vertices mobSolid = new WorldFormat.Vertices(4096);
 		final WorldFormat.Vertices mobTranslucent = new WorldFormat.Vertices(256);
+		final WorldFormat.Vertices avatarMobSolid = new WorldFormat.Vertices(512);
+		final WorldFormat.Vertices avatarMobTranslucent = new WorldFormat.Vertices(64);
 		/** In slot order (WorldFormat.H_ENTITY_RANGES). */
 		final WorldFormat.Vertices[] ranges = {this.blockSolid, this.blockTranslucent, this.itemSolid, this.itemTranslucent, this.avatarSkin,
 			this.avatarBlockSolid, this.avatarBlockTranslucent, this.avatarItemSolid, this.avatarItemTranslucent, this.particleSolid,
-			this.particleTranslucent, this.crack, this.mobSolid, this.mobTranslucent};
+			this.particleTranslucent, this.crack, this.mobSolid, this.mobTranslucent, this.avatarMobSolid, this.avatarMobTranslucent};
 		private final ParticleQuads particleQuads = new ParticleQuads();
 		private final List<BlockStateModelPart> movingParts = new ArrayList<>();
 		private final RandomSource movingRandom = RandomSource.create();
@@ -933,10 +935,7 @@ public final class EntityExporter {
 			if (outlineColor != 0) {
 				return;
 			}
-			if (this.avatarModel != null) {
-				if (model != this.avatarModel) {
-					return;
-				}
+			if (this.avatarModel != null && model == this.avatarModel) {
 				model.setupAnim(state);
 				this.skinQuads.start(this.avatarSkin, 0, 0, 0, null);
 				model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
@@ -948,7 +947,12 @@ public final class EntityExporter {
 				return;
 			}
 			model.setupAnim(state);
-			this.skinQuads.start(renderType.hasBlending() ? this.mobTranslucent : this.mobSolid, this.ox, this.oy, this.oz, rect);
+			boolean blend = renderType.hasBlending();
+			if (this.avatarModel != null) { // the avatar's armour, cape, elytra: feet-relative like its body
+				this.skinQuads.start(blend ? this.avatarMobTranslucent : this.avatarMobSolid, 0, 0, 0, rect);
+			} else {
+				this.skinQuads.start(blend ? this.mobTranslucent : this.mobSolid, this.ox, this.oy, this.oz, rect);
+			}
 			model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
 			this.captured = true;
 		}

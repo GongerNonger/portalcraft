@@ -192,6 +192,9 @@ struct OverlayHeader {
 // armour layers, skins) into the mob atlas and remaps each model's UVs into it; two ranges after
 // the cracks, world space, solid then translucent.
 //   [kWorldMobAtlasOffset, + kWorldMobAtlasBytes)              the mob atlas, RGBA8, rows TOP-DOWN, mobAtlasWidth x mobAtlasHeight
+//
+// PCW6: the avatar's own armour and cape, textured from the mob atlas and feet-relative like the
+// rest of the avatar: two more ranges after the mob ranges, solid then translucent.
 constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
 constexpr uint32_t kWorldAtlasMaxW = 2048;
 constexpr uint32_t kWorldAtlasMaxH = 2048;
@@ -241,7 +244,7 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 };
 
 struct WorldHeader {
-	char magic[4];            // "PCW5", written by the host
+	char magic[4];            // "PCW6", written by the host
 	uint32_t atlasWidth;      // Minecraft
 	uint32_t atlasHeight;
 	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
@@ -286,12 +289,17 @@ struct WorldHeader {
 	volatile uint32_t mobAtlasSeq; // bumped after the mob atlas pixels are written; 0 = none
 	uint32_t mobSolid[2];          // after the cracks: mob atlas, alpha tested
 	uint32_t mobTranslucent[2];    // then mob atlas, blended
+	// ---- PCW6: the avatar's armour and cape ----
+	uint32_t avatarMobSolid[2];       // after the mob ranges: mob atlas, feet-relative, alpha tested
+	uint32_t avatarMobTranslucent[2]; // then mob atlas, feet-relative, blended
 };
 
 #pragma pack(pop)
 
 static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
-static_assert(sizeof(WorldHeader) == 228, "WorldHeader layout");
+static_assert(sizeof(WorldHeader) == 244, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, avatarMobSolid) == 228, "WorldHeader PCW5 offsets unchanged");
+static_assert(offsetof(WorldHeader, avatarMobTranslucent) == 236, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, mobAtlasWidth) == 200, "WorldHeader PCW4 offsets unchanged");
 static_assert(offsetof(WorldHeader, mobSolid) == 212, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, mobTranslucent) == 220, "WorldHeader layout");

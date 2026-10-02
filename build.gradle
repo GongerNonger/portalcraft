@@ -8,7 +8,7 @@ loom {
 	runs {
 		client {
 			programArgs "--username", (System.getenv("PORTALCRAFT_USERNAME") ?: "Steve")
-			vmArgs "--enable-native-access=ALL-UNNAMED"
+			vmArgs "--enable-native-access=ALL-UNNAMED", "-Dportalcraft.dev=true"
 		}
 	}
 
