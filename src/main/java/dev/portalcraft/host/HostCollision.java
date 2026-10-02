@@ -30,11 +30,26 @@ public final class HostCollision {
 	private static final int BUCKET = 8;
 	private static final int SUBCELLS = 8;
 
+	/** Brushes bucketed by 8-block region; ones too big to bucket are checked everywhere. */
+	private record Index(Map<Long, List<BspMap.Brush>> buckets, List<BspMap.Brush> huge) {
+		static final Index EMPTY = new Index(Map.of(), List.of());
+
+		List<BspMap.Brush> near(int x, int y, int z) {
+			return buckets.getOrDefault(BlockPos.asLong(Math.floorDiv(x, BUCKET), Math.floorDiv(y, BUCKET), Math.floorDiv(z, BUCKET)), List.of());
+		}
+	}
+
 	private static volatile @Nullable BspMap map;
-	private static volatile Map<Long, List<BspMap.Brush>> buckets = Map.of();
-	private static volatile List<BspMap.Brush> huge = List.of();
+	/** The world and static props. */
+	private static volatile Index world = Index.EMPTY;
+	/** Brush entities where the map compiled them, until the host streams live ones. */
+	private static volatile Index baked = Index.EMPTY;
+	/** Live entities from the host: doors, buttons, lifts, cubes, toggling walls. */
+	private static volatile Index dynamic = Index.EMPTY;
+	private static volatile boolean live;
 	private static volatile List<AABB> holes = List.of();
 	private static final ConcurrentHashMap<Long, VoxelShape> CACHE = new ConcurrentHashMap<>();
+	private static final ConcurrentHashMap<Long, VoxelShape> DYNAMIC_CACHE = new ConcurrentHashMap<>();
 	private static final VoxelShape EMPTY = Shapes.empty();
 
 	private HostCollision() {
@@ -51,15 +66,43 @@ public final class HostCollision {
 
 	public static void clear() {
 		map = null;
-		buckets = Map.of();
-		huge = List.of();
+		world = baked = dynamic = Index.EMPTY;
+		live = false;
 		CACHE.clear();
+		DYNAMIC_CACHE.clear();
 	}
 
 	public static void setMap(BspMap m) {
+		world = index(m.brushes);
+		baked = index(m.bakedEntityBrushes);
+		dynamic = Index.EMPTY;
+		live = false;
+		map = m;
+		CACHE.clear();
+		DYNAMIC_CACHE.clear();
+	}
+
+	public static @Nullable BspMap map() {
+		return map;
+	}
+
+	/**
+	 * The host's live solid entities, already placed. The first call switches the baked brush
+	 * entities off: from then on the host says what's solid and where.
+	 */
+	public static void setDynamic(List<BspMap.Brush> brushes) {
+		dynamic = index(brushes);
+		if (!live) {
+			live = true;
+			CACHE.clear();
+		}
+		DYNAMIC_CACHE.clear();
+	}
+
+	private static Index index(List<BspMap.Brush> brushes) {
 		Map<Long, List<BspMap.Brush>> index = new HashMap<>();
 		List<BspMap.Brush> big = new ArrayList<>();
-		for (BspMap.Brush brush : m.brushes) {
+		for (BspMap.Brush brush : brushes) {
 			AABB box = brush.mcBox();
 			int x0 = Math.floorDiv((int) Math.floor(box.minX), BUCKET), x1 = Math.floorDiv((int) Math.floor(box.maxX), BUCKET);
 			int y0 = Math.floorDiv((int) Math.floor(box.minY), BUCKET), y1 = Math.floorDiv((int) Math.floor(box.maxY), BUCKET);
@@ -77,10 +120,7 @@ public final class HostCollision {
 				}
 			}
 		}
-		buckets = index;
-		huge = big;
-		map = m;
-		CACHE.clear();
+		return new Index(index, big);
 	}
 
 	/** Recomputes the holes from the host's portals; cheap when nothing changed. */
@@ -94,6 +134,7 @@ public final class HostCollision {
 		if (!next.equals(holes)) {
 			holes = List.copyOf(next);
 			CACHE.clear();
+			DYNAMIC_CACHE.clear();
 		}
 	}
 
@@ -124,16 +165,23 @@ public final class HostCollision {
 		if (map == null) {
 			return null;
 		}
-		VoxelShape shape = CACHE.computeIfAbsent(pos.asLong(), k -> build(pos.getX(), pos.getY(), pos.getZ()));
+		int x = pos.getX(), y = pos.getY(), z = pos.getZ();
+		VoxelShape fixed = CACHE.computeIfAbsent(pos.asLong(), k -> live ? build(x, y, z, world) : build(x, y, z, world, baked));
+		VoxelShape moving = DYNAMIC_CACHE.computeIfAbsent(pos.asLong(), k -> build(x, y, z, dynamic));
+		VoxelShape shape = moving == EMPTY ? fixed : fixed == EMPTY ? moving : Shapes.or(fixed, moving);
 		return shape == EMPTY ? null : shape;
 	}
 
-	private static VoxelShape build(int x, int y, int z) {
+	private static VoxelShape build(int x, int y, int z, Index... sources) {
 		AABB cell = new AABB(x, y, z, x + 1, y + 1, z + 1);
-		List<BspMap.Brush> near = buckets.getOrDefault(BlockPos.asLong(Math.floorDiv(x, BUCKET), Math.floorDiv(y, BUCKET), Math.floorDiv(z, BUCKET)), List.of());
+		List<List<BspMap.Brush>> lists = new ArrayList<>();
+		for (Index source : sources) {
+			lists.add(source.near(x, y, z));
+			lists.add(source.huge());
+		}
 		VoxelShape shape = Shapes.empty();
 		boolean full = false;
-		for (List<BspMap.Brush> list : List.of(near, huge)) {
+		for (List<BspMap.Brush> list : lists) {
 			for (BspMap.Brush brush : list) {
 				AABB box = brush.mcBox();
 				if (!box.intersects(cell)) {

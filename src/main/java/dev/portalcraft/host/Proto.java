@@ -82,6 +82,43 @@ public final class Proto {
 		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, portals);
 	}
 
+	/** One solid host entity (protocol HostEntity); positions in host units. */
+	public record HostEntity(int index, int solid, int flags, Vec3 origin, Vec3 angles, Vec3 mins, Vec3 maxs, String model) {
+	}
+
+	public record HostEntities(int seq, java.util.List<HostEntity> entities) {
+	}
+
+	public static final int HOST_ENTITY_SIZE = 108;
+
+	public static HostEntities readHostEntities(ByteBuffer b) {
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		if (b.remaining() < 12 || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'E' || b.get(3) != '1') {
+			return null;
+		}
+		int seq = b.getInt(4);
+		int count = b.getInt(8);
+		if (count < 0 || 12 + (long) count * HOST_ENTITY_SIZE > b.remaining()) {
+			return null;
+		}
+		java.util.List<HostEntity> out = new java.util.ArrayList<>(count);
+		byte[] name = new byte[56];
+		for (int i = 0; i < count; i++) {
+			b.position(12 + i * HOST_ENTITY_SIZE);
+			int index = b.getShort() & 0xFFFF;
+			int solid = b.get() & 0xFF;
+			int flags = b.get() & 0xFF;
+			Vec3 origin = vec(b), angles = vec(b), mins = vec(b), maxs = vec(b);
+			b.get(name);
+			int len = 0;
+			while (len < name.length && name[len] != 0) {
+				len++;
+			}
+			out.add(new HostEntity(index, solid, flags, origin, angles, mins, maxs, new String(name, 0, len, StandardCharsets.US_ASCII)));
+		}
+		return new HostEntities(seq, out);
+	}
+
 	public static ByteBuffer writeMcState(int seq, int flags, int teleportAck, Vec3 origin, Vec3 velocity, boolean onGround,
 		boolean sneaking, boolean holdingGun) {
 		ByteBuffer b = ByteBuffer.allocate(MC_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);

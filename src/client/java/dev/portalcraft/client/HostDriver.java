@@ -2,11 +2,13 @@ package dev.portalcraft.client;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import dev.portalcraft.PortalCraft;
 import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
 import dev.portalcraft.host.HostLink;
+import dev.portalcraft.host.LiveEntities;
 import dev.portalcraft.host.Proto;
 import dev.portalcraft.host.Units;
 import net.minecraft.client.Minecraft;
@@ -17,6 +19,7 @@ import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.portal.TeleportTransition;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.sdl.SDLKeyboard;
 import org.slf4j.Logger;
@@ -71,6 +74,7 @@ public final class HostDriver {
 		}
 		loadMap(s.map());
 		HostCollision.setPortals(s.portals());
+		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);
 
 		// Losing the link (host restarting) makes Minecraft pause itself; linked again, carry on.
@@ -98,6 +102,8 @@ public final class HostDriver {
 			minecraft.getTutorial().setStep(TutorialSteps.NONE);
 			giveGun(minecraft, player);
 		}
+
+		carry(player, moved);
 
 		float yaw = Units.yawToMc(s.yaw());
 		player.setYRot(yaw);
@@ -137,6 +143,24 @@ public final class HostDriver {
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN)));
 	}
 
+	/**
+	 * Standing on something the host moved (a lift, a moving panel, a button going down): move
+	 * with it, the way the host would carry its own player.
+	 */
+	private static void carry(LocalPlayer player, List<LiveEntities.Moved> moved) {
+		if (moved.isEmpty()) {
+			return;
+		}
+		AABB feet = player.getBoundingBox();
+		feet = new AABB(feet.minX, feet.minY - 0.2, feet.minZ, feet.maxX, feet.minY + 0.1, feet.maxZ);
+		for (LiveEntities.Moved m : moved) {
+			if (m.before().intersects(feet) && m.delta().lengthSqr() < 4.0) {
+				player.setPos(player.position().add(m.delta()));
+				return;
+			}
+		}
+	}
+
 	/** Steve starts with the portal gun; while he holds it, clicks fire the host's real portals. */
 	private static void giveGun(Minecraft minecraft, LocalPlayer player) {
 		var server = minecraft.getSingleplayerServer();
@@ -174,6 +198,9 @@ public final class HostDriver {
 			long t0 = System.nanoTime();
 			BspMap map = BspMap.load(file, name);
 			HostCollision.setMap(map);
+			if (Minecraft.getInstance().player != null) {
+				Minecraft.getInstance().player.refreshDimensions(); // host-sized hull
+			}
 			LOG.info("PortalCraft: loaded {} ({} solid brushes) in {} ms", file, map.brushes.size(), (System.nanoTime() - t0) / 1_000_000);
 		} catch (Exception e) {
 			failedMap = name;
@@ -183,6 +210,7 @@ public final class HostDriver {
 	}
 
 	private static void teleport(Minecraft minecraft, LocalPlayer player, Vec3 pos, Vec3 velocity) {
+		boolean far = player.position().distanceToSqr(pos) > 0.25;
 		player.setPos(pos);
 		player.setDeltaMovement(velocity);
 		player.resetFallDistance();
@@ -197,7 +225,9 @@ public final class HostDriver {
 				}
 			});
 		}
-		LOG.info("PortalCraft: host moved the player to {} (velocity {})", pos, velocity);
+		if (far) {
+			LOG.info("PortalCraft: host moved the player to {} (velocity {})", pos, velocity);
+		}
 	}
 
 	private static void applyKeys(Minecraft minecraft, Proto.HostState s) {

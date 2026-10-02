@@ -19,6 +19,7 @@ public final class HostLink {
 
 	private static @Nullable DatagramChannel channel;
 	private static volatile Proto.@Nullable HostState latest;
+	private static volatile Proto.@Nullable HostEntities entities;
 	private static volatile long latestAt;
 
 	private HostLink() {
@@ -43,12 +44,19 @@ public final class HostLink {
 	}
 
 	private static void receiveLoop() {
-		ByteBuffer buf = ByteBuffer.allocate(1024);
+		ByteBuffer buf = ByteBuffer.allocate(65536);
 		while (channel != null) {
 			try {
 				buf.clear();
 				channel.receive(buf);
 				buf.flip();
+				if (buf.remaining() >= 4 && buf.get(2) == 'E') {
+					Proto.HostEntities e = Proto.readHostEntities(buf.slice());
+					if (e != null) {
+						entities = e;
+					}
+					continue;
+				}
 				Proto.HostState s = Proto.readHostState(buf.slice());
 				if (s != null) {
 					latest = s;
@@ -65,6 +73,11 @@ public final class HostLink {
 	public static Proto.@Nullable HostState current() {
 		Proto.HostState s = latest;
 		return s != null && System.nanoTime() - latestAt < STALE_NANOS ? s : null;
+	}
+
+	/** The newest solid-entity list from the host, or null before the first one. */
+	public static Proto.@Nullable HostEntities entities() {
+		return entities;
 	}
 
 	public static void send(ByteBuffer packet) {

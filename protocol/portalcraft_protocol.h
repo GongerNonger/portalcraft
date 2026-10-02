@@ -81,6 +81,33 @@ struct Command {
 	char text[252]; // a console command, NUL-terminated
 };
 
+// ---- solid entities: doors, buttons, lifts, cubes, toggling walls -------------------------------
+// HostEntities is sent ~16 times a second (UDP, to kMcPort) with every solid, non-trigger entity
+// near the player. Minecraft builds collision for each from its model: "*N" is the map's brush
+// model N (positioned by origin/angles); a .mdl is a physics model (solid == 6) or its box.
+enum EntityFlags : uint8_t {
+	kEntityStatic = 1u << 0, // hasn't moved since the last packet
+};
+
+struct HostEntity {
+	uint16_t index; // edict index, stable while the entity lives
+	uint8_t solid;  // SolidType_t: 1 BSP, 2 BBOX, 3/4 OBB, 6 VPHYSICS
+	uint8_t flags;  // EntityFlags
+	Vec3 origin;    // world space (works for parented parts too)
+	Vec3 angles;
+	Vec3 mins, maxs; // collision bounds in the entity's own space
+	char model[56];  // "*12" or "models/props/portal_button.mdl"
+};
+
+constexpr uint32_t kMaxHostEntities = 128;
+
+struct HostEntities {
+	char magic[4]; // "PCE1"
+	uint32_t seq;
+	uint32_t count;
+	HostEntity entities[kMaxHostEntities]; // only `count` are sent
+};
+
 // ---- overlay: Minecraft's hand + HUD, drawn by the host on top of its frame ---------------------
 // A named shared-memory mapping created by the host: Local\PortalCraft_Overlay_v1.
 //   [0, 4096)                      OverlayHeader
@@ -109,6 +136,7 @@ struct OverlayHeader {
 
 #pragma pack(pop)
 
+static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 228, "HostState layout");
 static_assert(sizeof(McState) == 44, "McState layout");

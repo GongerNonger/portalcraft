@@ -13,6 +13,7 @@
 #include <windows.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -277,6 +278,8 @@ void quietPortalMovement(uint8_t* mv) {
 	*reinterpret_cast<float*>(mv + sdk::kMvUpMove) = 0;
 }
 
+void logSolidNear(const Vector& at);
+
 using ProcessMovementFn = void(__thiscall*)(void* self, void* player, void* mv);
 ProcessMovementFn g_serverOriginal = nullptr;
 ProcessMovementFn g_clientOriginal = nullptr;
@@ -296,14 +299,30 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
-	// Something other than us moved the player since last tick: a portal, a trigger_teleport,
-	// or a fresh level. That move is Portal's; give it to Minecraft and wait for the ack.
-	if (g_needSync || (g_haveSet && dist(origin, g_lastSet) > 24.0f)) {
+	static int pushLogs = 0;
+	if (g_haveSet && pushLogs < 12) {
+		float d = dist(origin, g_lastSet);
+		if (d > 0.1f && d <= 24.0f) {
+			pushLogs++;
+			logf("push: Portal moved the player %.2f units between ticks (%.2f %.2f %.2f) -> (%.2f %.2f %.2f)", d, g_lastSet.x, g_lastSet.y,
+				g_lastSet.z, origin.x, origin.y, origin.z);
+			if (pushLogs == 1) {
+				logSolidNear(origin);
+			}
+		}
+	}
+
+	// Something other than us moved the player since last tick: a portal, a trigger_teleport, a
+	// fresh level, or Portal's physics shoving the player out of a prop. That move is Portal's;
+	// give it to Minecraft and wait for the ack, rather than fighting it every tick (which bobs).
+	if (g_needSync || (g_haveSet && dist(origin, g_lastSet) > 0.5f)) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
-		logf("handing teleport %u to Minecraft: (%.1f %.1f %.1f)%s", g_teleportSeq, origin.x, origin.y, origin.z,
-			g_needSync ? " [level start]" : "");
+		if (g_needSync || dist(origin, g_lastSet) > 24.0f) {
+			logf("handing teleport %u to Minecraft: (%.1f %.1f %.1f)%s", g_teleportSeq, origin.x, origin.y, origin.z,
+				g_needSync ? " [level start]" : "");
+		}
 		g_needSync = false;
 	}
 
@@ -436,6 +455,178 @@ void fillPortals(pcproto::HostState& s) {
 	}
 }
 
+// ---- solid entities (doors, buttons, lifts, cubes) -------------------------------------
+
+void* g_modelInfo = nullptr; // VModelInfoServer00x: 1 GetModel(int), 3 GetModelName(const model_t*)
+
+// ICollideable (SP 2013): 3 OBBMins, 4 OBBMaxs, 9 GetCollisionModel, 10 GetCollisionOrigin,
+// 11 GetCollisionAngles, 13 GetSolid, 14 GetSolidFlags, 16 GetCollisionGroup. Checked on the
+// player once per level before anything else uses them.
+enum { kColMins = 3, kColMaxs = 4, kColModel = 9, kColOrigin = 10, kColAngles = 11, kColSolid = 13, kColSolidFlags = 14, kColGroup = 16 };
+constexpr int FSOLID_NOT_SOLID = 0x4, FSOLID_TRIGGER = 0x8;
+int g_colState = 0; // 0 unchecked, 1 verified, -1 mismatch (entity streaming off)
+
+void* collideableOf(void* edict) {
+	void* unknown = sdk::edictUnknown(edict);
+	return unknown ? sdk::vcall<void*>(unknown, 3) : nullptr; // IServerUnknown::GetCollideable
+}
+
+bool guardedColRead(void* col, sdk::Vector* origin, int* solid) {
+	__try {
+		*origin = *sdk::vcall<const sdk::Vector*>(col, kColOrigin);
+		*solid = sdk::vcall<int>(col, kColSolid);
+		return true;
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+}
+
+void checkCollideableLayout() {
+	if (g_colState != 0 || !g_playerInfoMgr || !g_edicts) {
+		return;
+	}
+	void* info = sdk::playerInfo(g_playerInfoMgr, edictAt(1));
+	void* col = edictInUse(edictAt(1)) ? collideableOf(edictAt(1)) : nullptr;
+	if (!info || !col) {
+		return; // the player isn't spawned yet: try again next frame
+	}
+	sdk::Vector origin{};
+	int solid = -1;
+	if (!guardedColRead(col, &origin, &solid)) {
+		g_colState = -1;
+		logf("ICollideable check: reading the player's collideable faulted -> entity collision off");
+	} else {
+		Vector truth = sdk::playerAbsOrigin(info);
+		g_colState = dist(origin, truth) < 1.0f && solid == 2 ? 1 : -1;
+		logf("ICollideable check: origin (%.1f %.1f %.1f) vs player (%.1f %.1f %.1f), solid %d -> %s", origin.x, origin.y, origin.z,
+			truth.x, truth.y, truth.z, solid, g_colState == 1 ? "layout OK" : "LAYOUT MISMATCH, entity collision off");
+	}
+}
+
+int g_entityEdicts[512];
+int g_entityCount = 0;
+int g_entityScanCountdown = 0;
+uint32_t g_entitySeq = 0;
+int g_entitySendCountdown = 0;
+pcproto::Vec3 g_lastEntityOrigin[2048];
+
+bool interestingClass(const char* cls) {
+	return cls && std::strcmp(cls, "player") != 0 && std::strcmp(cls, "prop_portal") != 0 && std::strcmp(cls, "worldspawn") != 0 &&
+		std::strcmp(cls, "func_clip_vphysics") != 0 && std::strcmp(cls, "func_vehicleclip") != 0 && std::strncmp(cls, "trigger_", 8) != 0;
+}
+
+void scanEntities() {
+	g_entityCount = 0;
+	for (int i = 2; i < 2048 && g_entityCount < 512; i++) {
+		void* e = edictAt(i);
+		if (!edictInUse(e)) {
+			continue;
+		}
+		if (!interestingClass(sdk::networkableClassName(sdk::edictNetworkable(e)))) {
+			continue;
+		}
+		void* col = collideableOf(e);
+		if (col && sdk::vcall<int>(col, kColSolid) != 0) {
+			g_entityEdicts[g_entityCount++] = i;
+		}
+	}
+}
+
+void sendEntities() {
+	if (g_colState != 1 || !g_modelInfo) {
+		return;
+	}
+	if (--g_entityScanCountdown <= 0) {
+		g_entityScanCountdown = 30;
+		scanEntities();
+	}
+	if (--g_entitySendCountdown > 0) {
+		return;
+	}
+	g_entitySendCountdown = 4; // ~16 Hz at Portal's 66 Hz server frame
+	static pcproto::HostEntities packet;
+	std::memcpy(packet.magic, "PCE1", 4);
+	packet.seq = ++g_entitySeq;
+	uint32_t n = 0;
+	for (int k = 0; k < g_entityCount && n < pcproto::kMaxHostEntities; k++) {
+		int index = g_entityEdicts[k];
+		void* e = edictAt(index);
+		if (!edictInUse(e)) {
+			continue;
+		}
+		void* col = collideableOf(e);
+		if (!col) {
+			continue;
+		}
+		int solid = sdk::vcall<int>(col, kColSolid);
+		int solidFlags = sdk::vcall<int>(col, kColSolidFlags);
+		int group = sdk::vcall<int>(col, kColGroup);
+		// Not solid right now, a trigger, or debris that players walk through.
+		if (solid == 0 || (solidFlags & (FSOLID_NOT_SOLID | FSOLID_TRIGGER)) || (group >= 1 && group <= 3)) {
+			continue;
+		}
+		const sdk::Vector& o = *sdk::vcall<const sdk::Vector*>(col, kColOrigin);
+		if (dist(o, g_origin) > 2048.0f) {
+			continue;
+		}
+		const sdk::Vector& a = *sdk::vcall<const sdk::Vector*>(col, kColAngles);
+		const sdk::Vector& mins = *sdk::vcall<const sdk::Vector*>(col, kColMins);
+		const sdk::Vector& maxs = *sdk::vcall<const sdk::Vector*>(col, kColMaxs);
+		void* model = sdk::vcall<void*>(col, kColModel);
+		const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : nullptr;
+		if (!name || !*name) {
+			continue;
+		}
+		pcproto::HostEntity& out = packet.entities[n++];
+		out.index = uint16_t(index);
+		out.solid = uint8_t(solid);
+		pcproto::Vec3& last = g_lastEntityOrigin[index];
+		out.flags = (last.x == o.x && last.y == o.y && last.z == o.z) ? pcproto::kEntityStatic : 0;
+		last = {o.x, o.y, o.z};
+		out.origin = {o.x, o.y, o.z};
+		out.angles = {a.x, a.y, a.z};
+		out.mins = {mins.x, mins.y, mins.z};
+		out.maxs = {maxs.x, maxs.y, maxs.z};
+		std::strncpy(out.model, name, sizeof out.model - 1);
+		out.model[sizeof out.model - 1] = 0;
+	}
+	packet.count = n;
+	int bytes = int(offsetof(pcproto::HostEntities, entities) + n * sizeof(pcproto::HostEntity));
+	sendto(g_sock, reinterpret_cast<const char*>(&packet), bytes, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
+
+	static bool logged = false;
+	if (!logged && n > 0) {
+		logged = true;
+		logf("streaming %u solid entities (first: #%u %s solid %u)", n, packet.entities[0].index, packet.entities[0].model, packet.entities[0].solid);
+	}
+}
+
+/** Every solid entity within 96 units: who might be shoving the player. */
+void logSolidNear(const Vector& at) {
+	if (g_colState != 1 || !g_modelInfo) {
+		logf("  (entity list unavailable: collideable state %d)", g_colState);
+		return;
+	}
+	for (int i = 2; i < 2048; i++) {
+		void* e = edictAt(i);
+		if (!edictInUse(e)) {
+			continue;
+		}
+		void* col = collideableOf(e);
+		if (!col || sdk::vcall<int>(col, kColSolid) == 0) {
+			continue;
+		}
+		const sdk::Vector& o = *sdk::vcall<const sdk::Vector*>(col, kColOrigin);
+		if (dist(o, at) > 96.0f) {
+			continue;
+		}
+		void* model = sdk::vcall<void*>(col, kColModel);
+		const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : "?";
+		logf("  near: #%d %s model %s solid %d flags 0x%x group %d at (%.1f %.1f %.1f)", i, sdk::networkableClassName(sdk::edictNetworkable(e)),
+			name ? name : "?", sdk::vcall<int>(col, kColSolid), sdk::vcall<int>(col, kColSolidFlags), sdk::vcall<int>(col, kColGroup), o.x, o.y, o.z);
+	}
+}
+
 // ---- per-frame state out --------------------------------------------------------------
 
 void sendState() {
@@ -507,7 +698,11 @@ public:
 		g_engineServer = interfaceFactory("VEngineServer021", nullptr);
 		g_playerInfoMgr = gameServerFactory("PlayerInfoManager002", nullptr);
 		void* gm = gameServerFactory("GameMovement001", nullptr);
-		logf("Load: engine %p playerinfo %p gamemovement %p", g_engineServer, g_playerInfoMgr, gm);
+		g_modelInfo = interfaceFactory("VModelInfoServer004", nullptr);
+		if (!g_modelInfo) {
+			g_modelInfo = interfaceFactory("VModelInfoServer003", nullptr);
+		}
+		logf("Load: engine %p playerinfo %p gamemovement %p modelinfo %p", g_engineServer, g_playerInfoMgr, gm, g_modelInfo);
 		if (!g_engineServer || !g_playerInfoMgr || !gm) {
 			logf("missing interfaces, staying inactive");
 			return true; // stay loaded so the log is readable; do nothing
@@ -534,6 +729,9 @@ public:
 		g_checkedLayout = false;
 		g_po = PortalOffsets{};
 		g_portalCount = 0;
+		g_colState = 0;
+		g_entityCount = 0;
+		std::memset(g_lastEntityOrigin, 0, sizeof g_lastEntityOrigin);
 		logf("LevelInit %s", g_map);
 	}
 	virtual void ServerActivate(void* edictList, int edictCount, int clientMax) {
@@ -556,6 +754,10 @@ public:
 		}
 		linkPoll();
 		sendState();
+		if (g_inLevel && g_edicts) {
+			checkCollideableLayout();
+			sendEntities();
+		}
 	}
 	virtual void LevelShutdown() {
 		g_inLevel = false;

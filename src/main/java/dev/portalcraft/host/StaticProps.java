@@ -43,7 +43,7 @@ public final class StaticProps {
 	public record Result(List<Prop> props, List<BspMap.Brush> brushes, int solid, int viaPhy, int viaBox, int failed) {
 	}
 
-	private record Shape(List<Phy.Hull> hulls, boolean fromPhy) {
+	record Shape(List<Phy.Hull> hulls, boolean fromPhy) {
 	}
 
 	private StaticProps() {
@@ -165,7 +165,7 @@ public final class StaticProps {
 		return new Result(props, brushes, solid, viaPhy, viaBox, failed);
 	}
 
-	private static @Nullable Shape shape(GameFiles files, String model, boolean vphysics) {
+	static @Nullable Shape shape(GameFiles files, String model, boolean vphysics) {
 		String base = model.endsWith(".mdl") ? model.substring(0, model.length() - 4) : model;
 		if (vphysics) {
 			try {
