@@ -11,6 +11,9 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory);
 void frameDone();
 // A new map: forget the cached lighting.
 void levelChanged();
+
+// Seconds spent drawing Minecraft's world since the last call (for the perf: log line).
+double takeDrawSeconds();
 // Dev: how bright Portal's lighting makes Minecraft's geometry (0 = lighting off).
 void setExposure(float exposure);
 // Before a device reset.

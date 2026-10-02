@@ -1656,6 +1656,53 @@ void sendState() {
 
 // ---- the plugin ----------------------------------------------------------------------
 
+// ---- perf: a line a minute in portalcraft.log (as SkyCraft's) ---------------------------
+// Portal's frame rate and its worst frame, and what PortalCraft costs per frame: the plugin's own
+// per-frame work and drawing Minecraft's world. For "it lags" reports.
+struct Perf {
+	LARGE_INTEGER freq{}, last{}, windowStart{};
+	int frames = 0;
+	double worstFrame = 0.0, workSeconds = 0.0;
+} g_perf;
+
+double perfSeconds(const LARGE_INTEGER& a, const LARGE_INTEGER& b) {
+	return double(b.QuadPart - a.QuadPart) / double(g_perf.freq.QuadPart);
+}
+
+// Times one GameFrame of PortalCraft's own work (constructed at its start, whatever way it returns).
+struct PerfFrame {
+	LARGE_INTEGER start;
+	PerfFrame() {
+		if (!g_perf.freq.QuadPart) {
+			QueryPerformanceFrequency(&g_perf.freq);
+		}
+		QueryPerformanceCounter(&start);
+		if (g_perf.last.QuadPart) {
+			double frame = perfSeconds(g_perf.last, start);
+			g_perf.worstFrame = frame > g_perf.worstFrame ? frame : g_perf.worstFrame;
+		} else {
+			g_perf.windowStart = start;
+		}
+		g_perf.last = start;
+		g_perf.frames++;
+	}
+	~PerfFrame() {
+		LARGE_INTEGER end;
+		QueryPerformanceCounter(&end);
+		g_perf.workSeconds += perfSeconds(start, end);
+		double window = perfSeconds(g_perf.windowStart, end);
+		if (window >= 60.0) {
+			double draw = worldrender::takeDrawSeconds();
+			logf("perf: %.0f fps (worst frame %.0f ms); PortalCraft per frame: plugin %.2f ms, drawing Minecraft %.2f ms; Minecraft %s, %zu block boxes",
+				g_perf.frames / window, g_perf.worstFrame * 1000.0, g_perf.workSeconds * 1000.0 / g_perf.frames, draw * 1000.0 / g_perf.frames,
+				mcReady() ? "linked" : "not linked", g_blockBoxes.size());
+			g_perf.frames = 0;
+			g_perf.worstFrame = g_perf.workSeconds = 0.0;
+			g_perf.windowStart = end;
+		}
+	}
+};
+
 class Plugin {
 public:
 	virtual bool Load(sdk::CreateInterfaceFn interfaceFactory, sdk::CreateInterfaceFn gameServerFactory) {
@@ -1729,6 +1776,7 @@ public:
 		hookClientMovement();
 	}
 	virtual void GameFrame(bool /*simulating*/) {
+		PerfFrame perf;
 		if (g_sock == INVALID_SOCKET) {
 			return;
 		}

@@ -375,7 +375,21 @@ void setTranslucent(IDirect3DDevice9* dev) { // stained glass, water, ice: blend
 // Draws everything with the world-to-clip matrix `m` (row-major, clip = M * v). A view through a
 // portal keeps Portal's stencil test (its oval) and always shows the avatar; the main view shows
 // the avatar only in third person.
+// Seconds spent drawing Minecraft's world since the last takeDrawSeconds (the perf: log line).
+double g_drawSeconds = 0.0;
+
+void drawTimed(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes);
+
 void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes) {
+	LARGE_INTEGER t0, t1, f;
+	QueryPerformanceCounter(&t0);
+	drawTimed(dev, m, throughPortal, passes);
+	QueryPerformanceCounter(&t1);
+	QueryPerformanceFrequency(&f);
+	g_drawSeconds += double(t1.QuadPart - t0.QuadPart) / double(f.QuadPart);
+}
+
+void drawTimed(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes) {
 	if (!g_header || (g_header->meshSeq == 0 && g_header->entitySeq == 0)) {
 		return skipped("no mesh published yet");
 	}
@@ -818,6 +832,12 @@ void hook(void** vt, int slot, void* replacement, void** original) {
 }
 
 } // namespace
+
+double takeDrawSeconds() {
+	double s = g_drawSeconds;
+	g_drawSeconds = 0.0;
+	return s;
+}
 
 void levelChanged() {
 	g_lightCache.clear(); // another map's light

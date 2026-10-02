@@ -53,7 +53,10 @@ Steve's Minecraft movement inside real Steam Portal. A hidden-in-plain-sight Min
 physics; Portal draws everything and keeps its own portal gun, portals and teleports.
 
 1. `play-portal.cmd` builds and installs the Portal plugin the first time (into
-   `Portal\portal\addons\`), then starts Portal and the dev Minecraft (void world `PortalCraft`).
+   `Portal\portal\addons\`), then starts Portal. The plugin starts Minecraft itself, hidden
+   (void world `PortalCraft`, about a minute; Portal's top-left corner says how it's going), and
+   Minecraft saves and quits when Portal closes. What it starts is in
+   `Portal\portal\addons\portalcraft.ini`; `start_with_portal=0` there to start Minecraft yourself.
 2. Click into the Portal window. WASD/space/shift/ctrl go to Minecraft; the mouse is Portal's.
 3. Walk into a pair of open portals: Portal teleports you, Minecraft follows with your momentum.
 

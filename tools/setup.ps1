@@ -55,3 +55,16 @@ New-Item -ItemType Directory -Force $addons | Out-Null
 Copy-Item $dll (Join-Path $addons "portalcraft.dll") -Force
 Set-Content -Path (Join-Path $addons "portalcraft.vdf") -Encoding ascii -Value "`"Plugin`"`r`n{`r`n`t`"file`"`t`"addons/portalcraft`"`r`n}"
 Write-Host "Plugin installed to $addons"
+# The plugin starts Minecraft with Portal (host\portal\src\launcher.cpp). An existing ini is kept.
+$ini = Join-Path $addons "portalcraft.ini"
+if (-not (Test-Path $ini)) {
+	$launcher = Join-Path $root "gradle.cmd"
+	Set-Content -Path $ini -Encoding ascii -Value @(
+		"[Minecraft]",
+		"start_with_portal=1",
+		"launcher=$launcher",
+		'arguments=runClient --no-configuration-cache --args="--quickPlaySingleplayer PortalCraft"',
+		"directory=$root"
+	)
+	Write-Host "Wrote $ini (Portal starts Minecraft by itself)"
+}
