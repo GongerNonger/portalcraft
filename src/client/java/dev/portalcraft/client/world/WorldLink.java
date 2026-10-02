@@ -35,6 +35,7 @@ public final class WorldLink {
 		SLOT_SOLID = WorldFormat.H_SLOT_SOLID, SLOT_TRANSLUCENT = WorldFormat.H_SLOT_TRANSLUCENT;
 	private static final ValueLayout.OfInt INT = JAVA_INT.withByteAlignment(4);
 	private static final ValueLayout.OfInt INT_UNALIGNED = ValueLayout.JAVA_INT_UNALIGNED;
+	private static final int MAGIC_PCW5 = 'P' | 'C' << 8 | 'W' << 16 | '5' << 24;
 	private static final int MAGIC_PCW4 = 'P' | 'C' << 8 | 'W' << 16 | '4' << 24;
 	private static final int MAGIC_PCW3 = 'P' | 'C' << 8 | 'W' << 16 | '3' << 24;
 	private static final int MAGIC_PCW2 = 'P' | 'C' << 8 | 'W' << 16 | '2' << 24;
@@ -100,12 +101,12 @@ public final class WorldLink {
 			}
 			v = v.reinterpret(WorldFormat.TOTAL_BYTES);
 			int magic = v.get(INT, MAGIC);
-			if (magic != MAGIC_PCW4) {
+			if (magic != MAGIC_PCW5) {
 				if (!warnedMagic) {
 					warnedMagic = true;
-					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2 || magic == MAGIC_PCW3
+					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2 || magic == MAGIC_PCW3 || magic == MAGIC_PCW4
 						? "PortalCraft: the Portal plugin speaks an older world format (rerun setup with Portal closed); retrying every 2 s"
-						: "PortalCraft: world mapping has no PCW4 magic yet; retrying every 2 s");
+						: "PortalCraft: world mapping has no PCW5 magic yet; retrying every 2 s");
 				}
 				int ignored = (int) UNMAP.invokeExact(v);
 				ignored = (int) CLOSE.invokeExact(h);
@@ -238,6 +239,19 @@ public final class WorldLink {
 		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.PARTICLE_ATLAS_OFFSET, width * height);
 		VarHandle.releaseFence();
 		view.set(INT, WorldFormat.H_PARTICLE_ATLAS_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_PARTICLE_ATLAS_SEQ)));
+	}
+
+	/** The mob atlas (MOB_ATLAS_SIZE square), like {@link #writeAtlas}. */
+	public static void writeMobAtlas(int[] rgba) {
+		int size = WorldFormat.MOB_ATLAS_SIZE;
+		if (!isOpen() || rgba.length < size * size) {
+			return;
+		}
+		view.set(INT, WorldFormat.H_MOB_ATLAS_W, size);
+		view.set(INT, WorldFormat.H_MOB_ATLAS_H, size);
+		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.MOB_ATLAS_OFFSET, size * size);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_MOB_ATLAS_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_MOB_ATLAS_SEQ)));
 	}
 
 	/** The crack strip (the destroy stages side by side), like {@link #writeAtlas}. */

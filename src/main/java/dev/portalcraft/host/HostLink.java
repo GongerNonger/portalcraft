@@ -52,6 +52,26 @@ public final class HostLink {
 				buf.clear();
 				channel.receive(buf);
 				buf.flip();
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'Y' && buf.get(3) == '1') {
+					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+					StringBuilder typed = new StringBuilder();
+					for (int i = 4; i + 1 < buf.limit(); i += 2) {
+						typed.append(buf.getChar(i));
+					}
+					typed.codePoints().forEach(TYPED::add);
+					continue;
+				}
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'R' && buf.get(3) == '1') {
+					byte[] raw = new byte[buf.remaining() - 4];
+					buf.position(4);
+					buf.get(raw);
+					int len = 0;
+					while (len < raw.length && raw[len] != 0) {
+						len++;
+					}
+					DEV_COMMANDS.add(new String(raw, 0, len, java.nio.charset.StandardCharsets.UTF_8));
+					continue;
+				}
 				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'G' && buf.get(3) == '1') {
 					byte[] raw = new byte[buf.remaining() - 4];
 					buf.position(4);
@@ -91,6 +111,20 @@ public final class HostLink {
 	public static Proto.@Nullable HostState current() {
 		Proto.HostState s = latest;
 		return s != null && System.nanoTime() - latestAt < STALE_NANOS ? s : null;
+	}
+
+	/** "PCY1": characters the player typed into the host while a Minecraft screen was open. */
+	private static final java.util.concurrent.ConcurrentLinkedQueue<Integer> TYPED = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+	public static @Nullable Integer takeTyped() {
+		return TYPED.poll();
+	}
+
+	/** Dev: "PCR1" packets carry Minecraft commands to run as the server (tools/fake_mc.py --mc). */
+	private static final java.util.concurrent.ConcurrentLinkedQueue<String> DEV_COMMANDS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+	public static @Nullable String takeDevCommand() {
+		return DEV_COMMANDS.poll();
 	}
 
 	/** Dev: a "PCG1" item-id packet gives Minecraft's player that item (a stack). */

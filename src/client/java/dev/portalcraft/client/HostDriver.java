@@ -18,6 +18,7 @@ import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
@@ -122,6 +123,9 @@ public final class HostDriver {
 		}
 
 		carry(player, moved);
+		for (String command; (command = HostLink.takeDevCommand()) != null;) {
+			runCommand(minecraft, command);
+		}
 		String devGive = HostLink.takeDevGive();
 		if (devGive != null) {
 			giveDev(minecraft, player, devGive);
@@ -171,6 +175,7 @@ public final class HostDriver {
 		boolean ready = sendState(minecraft);
 		moveCursor(minecraft);
 		scroll(minecraft);
+		type(minecraft);
 
 		// The placed blocks, for the host to draw in its own 3D pass.
 		if (ready && WorldLink.open()) {
@@ -206,6 +211,15 @@ public final class HostDriver {
 	}
 
 	private static double cursorX = -1.0, cursorY = -1.0;
+
+	/** Characters typed into the host's window (chat, signs, books, search boxes). */
+	private static void type(Minecraft minecraft) {
+		for (Integer codepoint; (codepoint = HostLink.takeTyped()) != null;) {
+			if (minecraft.gui.screen() != null) {
+				minecraft.keyboardHandler.charTyped(minecraft.getWindow().handle(), new CharacterEvent(codepoint));
+			}
+		}
+	}
 	private static int lastWheel = Integer.MIN_VALUE;
 
 	/**
@@ -327,12 +341,30 @@ public final class HostDriver {
 	 * own sky. A void world drifting into night turns all of it near-black inside a bright test
 	 * chamber, so pin it to clear noon.
 	 */
+	/** Dev: a Minecraft command, run as the server (full permissions), e.g. a /give with components. */
+	private static void runCommand(Minecraft minecraft, String command) {
+		var server = minecraft.getSingleplayerServer();
+		if (server == null) {
+			return;
+		}
+		LOG.info("PortalCraft: dev command: {}", command);
+		server.execute(() -> server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command));
+	}
+
+	/**
+	 * The void world is a stage, not a survival map: daylight and weather are pinned (so what Steve
+	 * holds is lit), and commands are allowed, as "Open to LAN, allow cheats" would.
+	 */
 	private static void freezeDaylight(Minecraft minecraft) {
 		var server = minecraft.getSingleplayerServer();
 		if (server == null) {
 			return;
 		}
 		server.execute(() -> {
+			if (!server.getWorldData().isAllowCommands()) {
+				server.setWorldAllowCommands(true);
+				LOG.info("PortalCraft: commands allowed in this world");
+			}
 			var source = server.createCommandSourceStack().withSuppressedOutput();
 			for (String command : new String[] {"gamerule advance_time false", "time set noon", "gamerule advance_weather false", "weather clear"}) {
 				server.getCommands().performPrefixedCommand(source, command);
@@ -409,7 +441,7 @@ public final class HostDriver {
 		}
 	}
 
-	private static final int SC_E = 8, SC_TAB = 43;
+	private static final int SC_E = 8, SC_TAB = 43, SC_ESCAPE = 41;
 
 	/**
 	 * The host's keys as Minecraft should see them. E is Portal's "use" (grab cubes, press
@@ -422,6 +454,11 @@ public final class HostDriver {
 		}
 		if (scancode == SC_TAB) {
 			return false;
+		}
+		if (scancode == SC_ESCAPE) {
+			// Esc closes Minecraft's screens (the host keeps its keys while one is open); with none
+			// open it's the host's pause menu, and Minecraft's would just get in the way.
+			return s.keyDown(SC_ESCAPE) && Minecraft.getInstance().gui.screen() != null;
 		}
 		return s.keyDown(scancode);
 	}

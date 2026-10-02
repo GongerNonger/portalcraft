@@ -21,6 +21,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.BlockDestructionProgress;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.SortedSet;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -125,7 +126,10 @@ public final class EntityExporter {
 	private static int sentParticleGeneration = Integer.MIN_VALUE;
 	private static int sentCracksGeneration = Integer.MIN_VALUE;
 	private static final ParticlesRenderState PARTICLES = new ParticlesRenderState();
+	/** Mob and other players' textures, packed for the host. */
+	static final MobAtlas MOBS = new MobAtlas();
 	private static boolean otherFailureLogged;
+	private static final java.util.Set<Object> LOGGED_TYPES = new java.util.HashSet<>();
 
 	private record Near(double distance2, ItemEntity item) {
 	}
@@ -188,6 +192,7 @@ public final class EntityExporter {
 		addParticles(minecraft, partial);
 		addCracks(minecraft, level, player, range2);
 		addAvatar(minecraft, partial);
+		MOBS.flush();
 		publish(taken);
 	}
 
@@ -203,14 +208,18 @@ public final class EntityExporter {
 	private static void addOthers(Minecraft minecraft, ClientLevel level, float partial, Vec3 player, double range2) {
 		syncCamera(minecraft);
 		for (Entity e : level.entitiesForRendering()) {
-			if (e instanceof ItemEntity || e instanceof LivingEntity || e.isInvisible() || e == minecraft.player) {
-				continue; // items have their own path; mobs and players need textures we don't send yet
+			if (e instanceof ItemEntity || e.isInvisible() || e == minecraft.player) {
+				continue; // items have their own path; the player is the avatar
 			}
 			Vec3 at = e.getPosition(partial);
 			if (at.distanceToSqr(player) > range2) {
 				continue;
 			}
 			int[] before = CAPTURE.counts();
+			if (e instanceof PrimedTnt tnt) {
+				addTnt(tnt, at, partial);
+				continue;
+			}
 			try {
 				@SuppressWarnings({"unchecked", "rawtypes"})
 				EntityRenderer<Entity, EntityRenderState> renderer = (EntityRenderer) minecraft.getEntityRenderDispatcher().getRenderer(e);
@@ -220,6 +229,10 @@ public final class EntityExporter {
 				pose.translate(offset.x, offset.y, offset.z);
 				CAPTURE.begin(at);
 				renderer.submit(state, pose, CAPTURE, AVATAR_CAMERA);
+				if (LOGGED_TYPES.add(e.getType())) {
+					int got = CAPTURE.total() - java.util.Arrays.stream(before).sum();
+					LOG.info("PortalCraft: exporting {} ({}): {} vertices", e.getType(), renderer.getClass().getSimpleName(), got);
+				}
 			} catch (RuntimeException ex) {
 				CAPTURE.truncate(before);
 				if (!otherFailureLogged) {
@@ -232,6 +245,24 @@ public final class EntityExporter {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Primed TNT, drawn from its block model the way TntRenderer poses it (the swell before it
+	 * goes off). Its renderer's block submit arrives without model parts under Fabric's renderer,
+	 * so we take the parts from the block model ourselves, as for falling blocks.
+	 */
+	private static void addTnt(PrimedTnt tnt, Vec3 at, float partial) {
+		PoseStack pose = new PoseStack();
+		pose.translate(0.0F, 0.5F, 0.0F);
+		float fuse = tnt.getFuse() - partial + 1.0F;
+		if (fuse < 10.0F) {
+			float scale = 1.0F + net.minecraft.client.renderer.entity.TntRenderer.getSwellAmount(fuse);
+			pose.scale(scale, scale, scale);
+		}
+		pose.translate(-0.5F, -0.5F, -0.5F);
+		CAPTURE.begin(at);
+		CAPTURE.blockState(pose, tnt.getBlockState(), net.minecraft.client.renderer.entity.TntRenderer.isLit(fuse));
 	}
 
 	/**
@@ -563,10 +594,12 @@ public final class EntityExporter {
 		final WorldFormat.Vertices particleSolid = new WorldFormat.Vertices(1024);
 		final WorldFormat.Vertices particleTranslucent = new WorldFormat.Vertices(1024);
 		final WorldFormat.Vertices crack = new WorldFormat.Vertices(64);
+		final WorldFormat.Vertices mobSolid = new WorldFormat.Vertices(4096);
+		final WorldFormat.Vertices mobTranslucent = new WorldFormat.Vertices(256);
 		/** In slot order (WorldFormat.H_ENTITY_RANGES). */
 		final WorldFormat.Vertices[] ranges = {this.blockSolid, this.blockTranslucent, this.itemSolid, this.itemTranslucent, this.avatarSkin,
 			this.avatarBlockSolid, this.avatarBlockTranslucent, this.avatarItemSolid, this.avatarItemTranslucent, this.particleSolid,
-			this.particleTranslucent, this.crack};
+			this.particleTranslucent, this.crack, this.mobSolid, this.mobTranslucent};
 		private final ParticleQuads particleQuads = new ParticleQuads();
 		private final List<BlockStateModelPart> movingParts = new ArrayList<>();
 		private final RandomSource movingRandom = RandomSource.create();
@@ -742,6 +775,26 @@ public final class EntityExporter {
 			private final float[] xyz = new float[12], uv = new float[8];
 			private int corner, color = -1;
 			private float nx, ny, nz;
+			private double ox, oy, oz;
+			private float u0, v0, us = 1.0F, vs = 1.0F;
+
+			/** Quads go to `out`, offset by the origin, UVs into `rect` ({u0, v0, uScale, vScale}; null: as is). */
+			void start(WorldFormat.Vertices out, double ox, double oy, double oz, float @Nullable [] rect) {
+				this.out = out;
+				this.ox = ox;
+				this.oy = oy;
+				this.oz = oz;
+				this.corner = 0;
+				if (rect == null) {
+					this.u0 = this.v0 = 0.0F;
+					this.us = this.vs = 1.0F;
+				} else {
+					this.u0 = rect[0];
+					this.v0 = rect[1];
+					this.us = rect[2];
+					this.vs = rect[3];
+				}
+			}
 
 			@Override
 			public void addVertex(float x, float y, float z, int color, float u, float v, int overlayCoords, int lightCoords, float nx, float ny,
@@ -786,7 +839,8 @@ public final class EntityExporter {
 					this.corner = 0;
 					int shaded = WorldFormat.d3dColor(WorldFormat.shadeArgb(this.color, WorldFormat.shade(this.nx, this.ny, this.nz)), false);
 					for (int k : WorldFormat.QUAD_TRIANGLES) {
-						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], shaded, this.uv[k * 2], this.uv[k * 2 + 1]);
+						this.out.add(this.ox + this.xyz[k * 3], this.oy + this.xyz[k * 3 + 1], this.oz + this.xyz[k * 3 + 2], shaded,
+							this.u0 + this.uv[k * 2] * this.us, this.v0 + this.uv[k * 2 + 1] * this.vs);
 					}
 				}
 				return this;
@@ -846,21 +900,54 @@ public final class EntityExporter {
 		public void submitLeash(PoseStack poseStack, EntityRenderState.LeashState leashState) {
 		}
 
-		/** Keeps the avatar's body (skin-textured); other models (armour, cape, parrots) aren't sent. */
+		/**
+		 * The avatar's body (skin-textured, feet-relative), and every other entity model: mobs,
+		 * their layers (saddles, wool, armour), other players. Those are textured from the mob
+		 * atlas, their UVs moved into their texture's place in it. The avatar's own armour and cape
+		 * aren't sent yet.
+		 */
 		@Override
 		public <S> void submitModel(Model<? super S> model, S state, PoseStack poseStack, RenderType renderType, int lightCoords, int overlayCoords,
 			int tintedColor, @Nullable UvMapping uvMapping, int outlineColor) {
-			if (this.avatarModel == null || model != this.avatarModel || outlineColor != 0) {
+			if (outlineColor != 0) {
+				return;
+			}
+			if (this.avatarModel != null) {
+				if (model != this.avatarModel) {
+					return;
+				}
+				model.setupAnim(state);
+				this.skinQuads.start(this.avatarSkin, 0, 0, 0, null);
+				model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
+				return;
+			}
+			Identifier texture = MobAtlas.textureOf(renderType);
+			float[] rect = texture == null ? null : MOBS.rect(Minecraft.getInstance(), texture);
+			if (rect == null) {
 				return;
 			}
 			model.setupAnim(state);
-			this.skinQuads.out = this.avatarSkin;
+			this.skinQuads.start(renderType.hasBlending() ? this.mobTranslucent : this.mobSolid, this.ox, this.oy, this.oz, rect);
 			model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
+			this.captured = true;
 		}
 
 		@Override
 		public <S> void submitCrumblingOverlay(Model<? super S> model, S state, PoseStack poseStack, RenderType renderType, int lightCoords,
 			int overlayCoords, int tintedColor, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
+		}
+
+		/** A block state's model at the pose (TNT); `flash` whitens it like TNT's fuse blink. */
+		void blockState(PoseStack poseStack, BlockState state, boolean flash) {
+			BlockStateModel model = Minecraft.getInstance().getModelManager().getBlockStateModelSet().get(state);
+			this.movingParts.clear();
+			this.movingRandom.setSeed(42L);
+			model.collectParts(this.movingRandom, this.movingParts);
+			int from = this.blockSolid.count();
+			this.blockParts(poseStack, this.movingParts, new int[0], false);
+			if (flash) {
+				this.blockSolid.brighten(from, 0.55F);
+			}
 		}
 
 		/** A falling block: its block model, at the pose. */

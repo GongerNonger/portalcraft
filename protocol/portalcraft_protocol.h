@@ -187,6 +187,11 @@ struct OverlayHeader {
 // blend), textured from the crack strip: the ten destroy stages side by side, u = (stage + s) / 10.
 //   [kWorldParticleAtlasOffset, + kWorldParticleAtlasBytes)  the particle atlas, RGBA8, rows TOP-DOWN
 //   [kWorldCrackOffset, + kWorldCrackBytes)                    the crack strip, RGBA8, rows TOP-DOWN
+//
+// PCW5 adds mobs (and other players): Minecraft packs the entity textures it meets (pig, sheep,
+// armour layers, skins) into the mob atlas and remaps each model's UVs into it; two ranges after
+// the cracks, world space, solid then translucent.
+//   [kWorldMobAtlasOffset, + kWorldMobAtlasBytes)              the mob atlas, RGBA8, rows TOP-DOWN, mobAtlasWidth x mobAtlasHeight
 constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
 constexpr uint32_t kWorldAtlasMaxW = 2048;
 constexpr uint32_t kWorldAtlasMaxH = 2048;
@@ -222,7 +227,12 @@ constexpr uint32_t kWorldCrackMaxW = 512; // ten 16-pixel stages; room for 32-pi
 constexpr uint32_t kWorldCrackMaxH = 64;
 constexpr uint32_t kWorldCrackOffset = kWorldParticleAtlasOffset + kWorldParticleAtlasBytes;
 constexpr uint32_t kWorldCrackBytes = kWorldCrackMaxW * kWorldCrackMaxH * 4;
-constexpr uint32_t kWorldBytes = kWorldCrackOffset + kWorldCrackBytes;
+constexpr uint32_t kWorldPcw4Bytes = kWorldCrackOffset + kWorldCrackBytes;
+constexpr uint32_t kWorldMobAtlasMaxW = 1024;
+constexpr uint32_t kWorldMobAtlasMaxH = 1024;
+constexpr uint32_t kWorldMobAtlasOffset = kWorldPcw4Bytes;
+constexpr uint32_t kWorldMobAtlasBytes = kWorldMobAtlasMaxW * kWorldMobAtlasMaxH * 4;
+constexpr uint32_t kWorldBytes = kWorldMobAtlasOffset + kWorldMobAtlasBytes;
 
 struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 	float x, y, z;  // host world space, Source units
@@ -231,7 +241,7 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 };
 
 struct WorldHeader {
-	char magic[4];            // "PCW4", written by the host
+	char magic[4];            // "PCW5", written by the host
 	uint32_t atlasWidth;      // Minecraft
 	uint32_t atlasHeight;
 	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
@@ -270,12 +280,21 @@ struct WorldHeader {
 	uint32_t particleSolid[2];      // after the avatar ranges: particle atlas, alpha tested
 	uint32_t particleTranslucent[2]; // then particle atlas, blended
 	uint32_t crack[2];              // then the breaking overlay, multiplied
+	// ---- PCW5: mobs ----
+	uint32_t mobAtlasWidth; // Minecraft
+	uint32_t mobAtlasHeight;
+	volatile uint32_t mobAtlasSeq; // bumped after the mob atlas pixels are written; 0 = none
+	uint32_t mobSolid[2];          // after the cracks: mob atlas, alpha tested
+	uint32_t mobTranslucent[2];    // then mob atlas, blended
 };
 
 #pragma pack(pop)
 
 static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
-static_assert(sizeof(WorldHeader) == 200, "WorldHeader layout");
+static_assert(sizeof(WorldHeader) == 228, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, mobAtlasWidth) == 200, "WorldHeader PCW4 offsets unchanged");
+static_assert(offsetof(WorldHeader, mobSolid) == 212, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, mobTranslucent) == 220, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, particleAtlasWidth) == 152, "WorldHeader PCW3 offsets unchanged");
 static_assert(offsetof(WorldHeader, crackSeq) == 172, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, particleSolid) == 176, "WorldHeader layout");
@@ -305,7 +324,8 @@ static_assert(kWorldEntitySlotBytes == 1572864, "world layout");
 static_assert(kWorldPcw2Bytes == 33558528, "world layout"); // where the PCW2 mapping ended
 static_assert(kWorldPcw3Bytes == 33820672, "world layout");
 static_assert(kWorldCrackOffset == 38014976, "world layout");
-static_assert(kWorldBytes == 38146048, "world layout");
+static_assert(kWorldPcw4Bytes == 38146048, "world layout");
+static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");

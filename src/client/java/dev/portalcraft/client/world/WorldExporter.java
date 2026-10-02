@@ -108,6 +108,7 @@ public final class WorldExporter {
 			}
 		}
 		EntityExporter.frame(minecraft);
+		LightExporter.frame(minecraft);
 	}
 
 	private static void run(Minecraft minecraft) {
@@ -167,6 +168,7 @@ public final class WorldExporter {
 		blockRenderer = new ModelBlockRenderer(minecraft.options.ambientOcclusion().get(), true, minecraft.getBlockColors());
 		fluidRenderer = new FluidRenderer(minecraft.getModelManager().getFluidStateModelSet());
 		SECTIONS.clear();
+		LightExporter.clear();
 		overBudgetLogged = false;
 		needPublish = true; // an empty mesh at once, so the host drops anything stale
 
@@ -232,12 +234,14 @@ public final class WorldExporter {
 			if (SECTIONS.remove(key) != null) {
 				needPublish = true;
 			}
+			LightExporter.section(key, null);
 			return;
 		}
 		int ox = SectionPos.sectionToBlockCoord(sx), oy = SectionPos.sectionToBlockCoord(sy), oz = SectionPos.sectionToBlockCoord(sz);
 		BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
 		MESH.begin(ox, oy, oz);
 		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		it.unimi.dsi.fastutil.ints.IntArrayList emitters = new it.unimi.dsi.fastutil.ints.IntArrayList();
 		for (int y = 0; y < 16; y++) {
 			for (int z = 0; z < 16; z++) {
 				for (int x = 0; x < 16; x++) {
@@ -246,6 +250,11 @@ public final class WorldExporter {
 						continue;
 					}
 					pos.set(ox + x, oy + y, oz + z);
+					int emission = state.getLightEmission();
+					if (emission > 0) {
+						emitters.add(LightExporter.pack(x, y, z, emission));
+						emitters.add(LightExporter.color(state));
+					}
 					FluidState fluid = state.getFluidState();
 					if (!fluid.isEmpty()) {
 						fluidRenderer.tesselate(level, pos.immutable(), MESH, state, fluid);
@@ -257,6 +266,7 @@ public final class WorldExporter {
 				}
 			}
 		}
+		LightExporter.section(key, emitters.toIntArray());
 		if (MESH.solid.count() == 0 && MESH.translucent.count() == 0) {
 			if (SECTIONS.remove(key) != null) {
 				needPublish = true;

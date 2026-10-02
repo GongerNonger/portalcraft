@@ -30,7 +30,8 @@ class WorldFormatTest {
 		assertEquals(33558528L, WorldFormat.SKIN_OFFSET); // kWorldSkinOffset
 		assertEquals(33820672L, WorldFormat.PCW3_BYTES); // kWorldPcw3Bytes
 		assertEquals(38014976L, WorldFormat.CRACK_OFFSET); // kWorldCrackOffset
-		assertEquals(38146048L, WorldFormat.TOTAL_BYTES); // kWorldBytes
+		assertEquals(38146048L, WorldFormat.PCW4_BYTES); // kWorldPcw4Bytes
+		assertEquals(42340352L, WorldFormat.TOTAL_BYTES); // kWorldBytes
 	}
 
 	@Test
@@ -62,16 +63,21 @@ class WorldFormatTest {
 		assertEquals(172, WorldFormat.H_CRACK_SEQ);
 		assertEquals(176, WorldFormat.H_PARTICLE_SOLID);
 		assertEquals(192, WorldFormat.H_CRACK);
-		assertEquals(200, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
-		assertEquals(WorldFormat.H_CRACK + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
+		// PCW5 fields
+		assertEquals(200, WorldFormat.H_MOB_ATLAS_W);
+		assertEquals(212, WorldFormat.H_MOB_SOLID);
+		assertEquals(220, WorldFormat.H_MOB_TRANSLUCENT);
+		assertEquals(228, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
+		assertEquals(WorldFormat.H_MOB_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
 		assertTrue(WorldFormat.HEADER_STRUCT_BYTES <= WorldFormat.HEADER_BYTES);
 	}
 
 	@Test
 	void mappingFitsTheAddressBudget() {
 		// hl2.exe is 32-bit: the overlay (42.2 MB) plus this must stay well under 100 MB of views.
-		// PCW4's particle atlas and crack strip took it from 32 to 36.4 MB.
-		assertTrue(WorldFormat.TOTAL_BYTES <= 40L << 20, "world mapping " + WorldFormat.TOTAL_BYTES);
+		// PCW4's particle atlas and crack strip took it from 32 to 36.4 MB, PCW5's mob atlas to 40.4.
+		assertTrue(WorldFormat.TOTAL_BYTES <= 44L << 20, "world mapping " + WorldFormat.TOTAL_BYTES);
+		assertEquals(0, WorldFormat.MOB_ATLAS_OFFSET % 4096);
 		assertEquals(0, WorldFormat.PARTICLE_ATLAS_OFFSET % 4096);
 		assertEquals(0, WorldFormat.CRACK_OFFSET % 4096);
 		// Every region is page aligned, so the views map without surprises.

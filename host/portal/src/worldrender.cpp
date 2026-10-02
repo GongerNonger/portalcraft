@@ -68,6 +68,8 @@ IDirect3DTexture9* g_particleAtlas = nullptr;
 uint32_t g_particleAtlasSeq = 0;
 IDirect3DTexture9* g_cracks = nullptr;
 uint32_t g_cracksSeq = 0;
+IDirect3DTexture9* g_mobAtlas = nullptr;
+uint32_t g_mobAtlasSeq = 0;
 bool g_loggedAvatar = false;
 void* g_renderView = nullptr;
 
@@ -302,6 +304,13 @@ void uploadAtlases(IDirect3DDevice9* dev) {
 			uploadAtlas(dev, &g_particleAtlas, g_shm + pcproto::kWorldParticleAtlasOffset, w, h, "particle");
 		}
 	}
+	if (g_header->mobAtlasSeq != g_mobAtlasSeq) {
+		g_mobAtlasSeq = g_header->mobAtlasSeq;
+		uint32_t w = g_header->mobAtlasWidth, h = g_header->mobAtlasHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldMobAtlasMaxW && h <= pcproto::kWorldMobAtlasMaxH) {
+			uploadAtlas(dev, &g_mobAtlas, g_shm + pcproto::kWorldMobAtlasOffset, w, h, "mob");
+		}
+	}
 	if (g_header->crackSeq != g_cracksSeq) {
 		g_cracksSeq = g_header->crackSeq;
 		uint32_t w = g_header->crackWidth, h = g_header->crackHeight;
@@ -404,6 +413,8 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	uint32_t aSkin = 0, aBlockSolid = 0, aBlockTranslucent = 0, aItemSolid = 0, aItemTranslucent = 0;
 	const pcproto::WorldVertex* particles = nullptr; // particle-atlas solid then translucent, then the cracks
 	uint32_t pSolid = 0, pTranslucent = 0, cracks = 0;
+	const pcproto::WorldVertex* mobs = nullptr; // mob atlas solid then translucent
+	uint32_t mSolid = 0, mTranslucent = 0;
 	if (g_header->entitySeq != 0) {
 		uint32_t slot = claimSlot(g_header->entityFront, g_header->entityReading);
 		if (slot != kNoSlot) {
@@ -419,12 +430,15 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			pSolid = g_header->particleSolid[slot];
 			pTranslucent = g_header->particleTranslucent[slot];
 			cracks = g_header->crack[slot];
+			mSolid = g_header->mobSolid[slot];
+			mTranslucent = g_header->mobTranslucent[slot];
 			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent + aSkin + aBlockSolid + aBlockTranslucent +
-				aItemSolid + aItemTranslucent + pSolid + pTranslucent + cracks;
+				aItemSolid + aItemTranslucent + pSolid + pTranslucent + cracks + mSolid + mTranslucent;
 			if (total == 0 || total > pcproto::kWorldEntityMaxVertices) {
 				eBlockSolid = eBlockTranslucent = eItemSolid = eItemTranslucent = 0;
 				aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
 				pSolid = pTranslucent = cracks = 0;
+				mSolid = mTranslucent = 0;
 				g_header->entityReading = kNoSlot;
 			} else {
 				entities = reinterpret_cast<const pcproto::WorldVertex*>(
@@ -432,6 +446,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 				eItems = entities + eBlockSolid + eBlockTranslucent;
 				avatar = eItems + eItemSolid + eItemTranslucent;
 				particles = avatar + aSkin + aBlockSolid + aBlockTranslucent + aItemSolid + aItemTranslucent;
+				mobs = particles + pSolid + pTranslucent + cracks;
 			}
 		}
 	}
@@ -459,6 +474,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			appendLit(g_litEntities, avatar, aTotal, haveFeet ? feet : sdk::Vector{});
 			appendLit(g_litEntities, particles, pSolid + pTranslucent, sdk::Vector{});
 			g_litEntities.insert(g_litEntities.end(), particles + pSolid + pTranslucent, particles + pSolid + pTranslucent + cracks); // multiplied: unlit
+			appendLit(g_litEntities, mobs, mSolid + mTranslucent, sdk::Vector{});
 			g_litEntitySlot = slot;
 			g_litEntitySeq = g_header->entitySeq;
 			g_litFeet = feet;
@@ -467,6 +483,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		eItems = lit + (eItems - entities);
 		avatar = lit + eTotal;
 		particles = avatar + aTotal;
+		mobs = particles + pSolid + pTranslucent + cracks;
 		entities = lit;
 	}
 	// The avatar only while Portal's camera is out of the player's head, placed on the player.
@@ -492,6 +509,9 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	}
 	if (!g_cracks) {
 		cracks = 0;
+	}
+	if (!g_mobAtlas) {
+		mSolid = mTranslucent = 0;
 	}
 	D3DMATRIX atFeet = {};
 	atFeet._11 = atFeet._22 = atFeet._33 = atFeet._44 = 1.0f;
@@ -589,6 +609,10 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			dev->SetTexture(0, g_particleAtlas);
 			drawTriangles(dev, particles, pSolid);
 		}
+		if (mSolid) {
+			dev->SetTexture(0, g_mobAtlas);
+			drawTriangles(dev, mobs, mSolid);
+		}
 		if (cracks) { // Minecraft's crumbling blend: what's behind, times the crack texture
 			// The blend doubles (dst*src + src*dst), so a texel must be dropped where the crack texture
 			// is clear, or its white-ish RGB brightens the whole face.
@@ -605,7 +629,7 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		}
 	}
 	if ((passes & kPassTranslucent) &&
-		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3 || pTranslucent >= 3)) {
+		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3 || pTranslucent >= 3 || mTranslucent >= 3)) {
 		setTranslucent(dev);
 		dev->SetTexture(0, g_atlas);
 		if (blocks) {
@@ -629,6 +653,10 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 		if (pTranslucent) {
 			dev->SetTexture(0, g_particleAtlas);
 			drawTriangles(dev, particles + pSolid, pTranslucent);
+		}
+		if (mTranslucent) {
+			dev->SetTexture(0, g_mobAtlas);
+			drawTriangles(dev, mobs + mSolid, mTranslucent);
 		}
 	}
 
@@ -830,6 +858,11 @@ void releaseDeviceObjects() {
 		g_cracks->Release();
 		g_cracks = nullptr;
 	}
+	if (g_mobAtlas) {
+		g_mobAtlas->Release();
+		g_mobAtlas = nullptr;
+	}
+	g_mobAtlasSeq = 0;
 	g_particleAtlasSeq = 0;
 	g_cracksSeq = 0;
 	g_atlasSeq = 0; // upload them again after the reset
@@ -848,7 +881,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	g_header = reinterpret_cast<pcproto::WorldHeader*>(g_shm);
 	g_header->reading = kNoSlot;
 	g_header->entityReading = kNoSlot;
-	std::memcpy(g_header->magic, "PCW4", 4);
+	std::memcpy(g_header->magic, "PCW5", 4);
 
 	g_engineClient = engineFactory("VEngineClient013", nullptr);
 	void* renderView = engineFactory("VEngineRenderView014", nullptr);

@@ -186,6 +186,74 @@ bool mcReady() {
 	return (g_mc.flags & pcproto::kMcReady) && GetTickCount() - g_mcTime < 500;
 }
 
+// ---- Minecraft's light in Portal ----------------------------------------------------------
+// Lava, torches and glowstone light Portal's own walls: Minecraft sends its nearest emitters
+// ("PCL1", see LightExporter.java) and each becomes one of the engine's dynamic lights
+// (IVEfx::CL_AllocDlight, slot 4 of VEngineEffects001), the kind a muzzle flash makes, which
+// light the world's brushes and its models alike.
+struct McLight {
+	float x, y, z;
+	uint8_t r, g, b, level;
+};
+static_assert(sizeof(McLight) == 16, "PCL1 entry");
+constexpr int kMaxMcLights = 16;
+McLight g_mcLights[kMaxMcLights];
+int g_mcLightCount = 0, g_dlightsUsed = 0;
+float g_lightExponent = 3.0f, g_lightRadiusPerLevel = 22.0f;
+void* g_effects = nullptr; // VEngineEffects001
+
+void receiveLights(const char* buf, int n) {
+	uint32_t count;
+	std::memcpy(&count, buf + 4, 4);
+	if (count > uint32_t(kMaxMcLights) || 8 + int(count) * 16 > n) {
+		return;
+	}
+	std::memcpy(g_mcLights, buf + 8, size_t(count) * 16);
+	g_mcLightCount = int(count);
+}
+
+// dlight_t (SP 2013): flags 0, origin 4, radius 16, color 20 (r, g, b, exponent), die 24, decay 28,
+// minlight 32, key 36, style 40, direction 44, inner angle 56, outer angle 60.
+void applyLights() {
+	if (!g_effects && g_engineFactory) {
+		g_effects = g_engineFactory("VEngineEffects001", nullptr);
+	}
+	if (!g_effects) {
+		return;
+	}
+	int lit = mcReady() && g_inLevel ? g_mcLightCount : 0;
+	int total = lit > g_dlightsUsed ? lit : g_dlightsUsed;
+	for (int i = 0; i < total; i++) {
+		auto* dl = sdk::vcall<uint8_t*>(g_effects, 4, 0x50430000 + i); // CL_AllocDlight(key): ours, reused by key
+		if (!dl) {
+			continue;
+		}
+		if (i >= lit) {
+			*reinterpret_cast<float*>(dl + 16) = 0.0f; // radius 0, already dead: gone
+			*reinterpret_cast<float*>(dl + 24) = 0.0f;
+			continue;
+		}
+		const McLight& l = g_mcLights[i];
+		*reinterpret_cast<int*>(dl + 0) = 0;
+		*reinterpret_cast<Vector*>(dl + 4) = {l.x, l.y, l.z};
+		*reinterpret_cast<float*>(dl + 16) = (float(l.level) + 1.0f) * g_lightRadiusPerLevel;
+		dl[20] = l.r;
+		dl[21] = l.g;
+		dl[22] = l.b;
+		dl[23] = uint8_t(int8_t(g_lightExponent));
+		*reinterpret_cast<float*>(dl + 24) = 1e9f; // never expires; we take it away ourselves
+		*reinterpret_cast<float*>(dl + 28) = 0.0f;
+		*reinterpret_cast<float*>(dl + 32) = 0.0f;
+	}
+	static bool logged = false;
+	if (!logged && lit > 0) {
+		logged = true;
+		logf("lights: %d of Minecraft's lights in Portal (first at %.0f %.0f %.0f, level %u, rgb %u %u %u)", lit, g_mcLights[0].x, g_mcLights[0].y,
+			g_mcLights[0].z, g_mcLights[0].level, g_mcLights[0].r, g_mcLights[0].g, g_mcLights[0].b);
+	}
+	g_dlightsUsed = lit;
+}
+
 void linkPoll() {
 	char buf[512];
 	for (int i = 0; i < 64; i++) {
@@ -237,6 +305,12 @@ void linkPoll() {
 			std::memcpy(pitchYaw, buf + 4, 8);
 			sdk::QAngle view{pitchYaw[0], pitchYaw[1], 0.0f};
 			sdk::clientSetViewAngles(g_engineClient, &view);
+		} else if (n >= 8 && std::memcmp(buf, "PCL1", 4) == 0) {
+			receiveLights(buf, n);
+		} else if (n == 12 && std::memcmp(buf, "PCX2", 4) == 0) {
+			std::memcpy(&g_lightExponent, buf + 4, 4); // dev: dynamic light brightness (fake_mc.py --lights)
+			std::memcpy(&g_lightRadiusPerLevel, buf + 8, 4);
+			logf("lights: exponent %.1f, %.0f units per level", g_lightExponent, g_lightRadiusPerLevel);
 		} else if (n == 8 && std::memcmp(buf, "PCX1", 4) == 0) {
 			float exposure; // dev: lighting exposure (tools/fake_mc.py --exposure)
 			std::memcpy(&exposure, buf + 4, 4);
@@ -266,7 +340,8 @@ const KeyMap kKeys[] = {
 	{'K', 14}, {'L', 15}, {'M', 16}, {'N', 17}, {'O', 18}, {'P', 19}, {'Q', 20}, {'R', 21}, {'S', 22}, {'T', 23},
 	{'U', 24}, {'V', 25}, {'W', 26}, {'X', 27}, {'Y', 28}, {'Z', 29},
 	{'1', 30}, {'2', 31}, {'3', 32}, {'4', 33}, {'5', 34}, {'6', 35}, {'7', 36}, {'8', 37}, {'9', 38}, {'0', 39},
-	{VK_RETURN, 40}, {VK_TAB, 43}, {VK_SPACE, 44},
+	{VK_RETURN, 40}, {VK_ESCAPE, 41}, {VK_BACK, 42}, {VK_TAB, 43}, {VK_SPACE, 44}, {VK_OEM_2, 56},
+	{VK_HOME, 74}, {VK_DELETE, 76}, {VK_END, 77}, {VK_RIGHT, 79}, {VK_LEFT, 80}, {VK_DOWN, 81}, {VK_UP, 82},
 	{VK_F1, 58}, {VK_F2, 59}, {VK_F3, 60}, {VK_F5, 62},
 	{VK_LCONTROL, 224}, {VK_LSHIFT, 225}, {VK_LMENU, 226}, {VK_RCONTROL, 228}, {VK_RSHIFT, 229},
 };
@@ -796,6 +871,51 @@ HWND portalWindow() {
 	return cached;
 }
 
+// Portal takes its mouse back every frame (IInput::ActivateMouse from its own input code), which
+// recentres the cursor: blocked while a Minecraft screen is open. IInput is found from
+// IN_ActivateMouse's code (`mov ecx, [input]; mov eax, [ecx]; jmp [eax + 4 * slot]`).
+using VoidFn = void(__thiscall*)(void* self);
+VoidFn g_activateMouseOriginal = nullptr;
+void** g_inputVtable = nullptr;
+int g_activateSlot = -1;
+
+void __fastcall hkActivateMouse(void* self, void* /*edx*/) {
+	if (g_mouseFreed) {
+		return;
+	}
+	g_activateMouseOriginal(self);
+}
+
+void hookActivateMouse() {
+	static bool tried = false;
+	if (tried || !g_clientDll) {
+		return;
+	}
+	tried = true;
+	const uint8_t* code = static_cast<const uint8_t*>((*static_cast<void***>(g_clientDll))[14]);
+	void** inputGlobal = nullptr;
+	for (int i = 0; i + 6 < 16 && !inputGlobal; i++) {
+		if (code[i] == 0x8B && code[i + 1] == 0x0D) {
+			std::memcpy(&inputGlobal, code + i + 2, 4);
+			for (int j = i + 6; j + 2 < 20; j++) {
+				if (code[j] == 0xFF && code[j + 1] == 0x60) {
+					g_activateSlot = code[j + 2] / 4;
+					break;
+				}
+			}
+		}
+	}
+	void* input = inputGlobal ? *inputGlobal : nullptr;
+	if (!input || g_activateSlot < 0) {
+		logf("mouse: couldn't find IInput::ActivateMouse; the cursor may snap back in Minecraft screens");
+		return;
+	}
+	g_inputVtable = *static_cast<void***>(input);
+	if (hookSlot(input, g_activateSlot, reinterpret_cast<void*>(&hkActivateMouse), reinterpret_cast<void**>(&g_activateMouseOriginal))) {
+		logf("mouse: hooked IInput::ActivateMouse (slot %d)", g_activateSlot);
+	}
+}
+
 void updateMouseCapture() {
 	bool want = mcReady() && (g_mc.flags & pcproto::kMcScreen) && g_inLevel;
 	if (!g_clientDll) {
@@ -804,6 +924,7 @@ void updateMouseCapture() {
 			return;
 		}
 	}
+	hookActivateMouse();
 	if (want) {
 		// Every frame while open: Portal takes the mouse back by itself when its window regains focus.
 		sdk::vcall<void>(g_clientDll, 15); // IN_DeactivateMouse
@@ -824,11 +945,37 @@ WNDPROC g_portalWndProc = nullptr;
 HWND g_subclassed = nullptr;
 int g_wheelDelta = 0; // WHEEL_DELTA units so far
 
+// Typing into Minecraft's chat and sign/book screens: while one of its screens is open, the
+// characters typed into Portal's window go to Minecraft ("PCY1", UTF-16 units) and Portal doesn't
+// see the keyboard at all, so typing "e" doesn't grab and Esc closes Minecraft's screen, not
+// Portal's menu. (Key presses still reach Minecraft through HostState.keys.)
+uint16_t g_typed[64];
+int g_typedCount = 0;
+
 LRESULT CALLBACK wheelWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	if (msg == WM_MOUSEWHEEL) {
 		g_wheelDelta += GET_WHEEL_DELTA_WPARAM(wParam);
 	}
+	if (g_mouseFreed) {
+		if (msg == WM_CHAR && wParam >= 32 && g_typedCount < 64) {
+			g_typed[g_typedCount++] = uint16_t(wParam);
+		}
+		if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP || msg == WM_SYSCHAR) {
+			return 0; // Minecraft's, not Portal's
+		}
+	}
 	return CallWindowProcA(g_portalWndProc, hwnd, msg, wParam, lParam);
+}
+
+void sendTyped() {
+	if (g_typedCount == 0) {
+		return;
+	}
+	char buf[4 + 64 * 2];
+	std::memcpy(buf, "PCY1", 4);
+	std::memcpy(buf + 4, g_typed, size_t(g_typedCount) * 2);
+	sendto(g_sock, buf, 4 + g_typedCount * 2, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
+	g_typedCount = 0;
 }
 
 void watchWheel() {
@@ -905,6 +1052,7 @@ void sendState() {
 	}
 	fillCursor(s);
 	s.wheel = int8_t(g_wheelDelta / WHEEL_DELTA);
+	sendTyped();
 	sendto(g_sock, reinterpret_cast<const char*>(&s), sizeof s, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
 
 	static DWORD lastTrace = 0;
@@ -1006,6 +1154,7 @@ public:
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
 		watchWheel();
+		applyLights();
 		if (g_inLevel && g_edicts) {
 			checkCollideableLayout();
 			sendEntities();

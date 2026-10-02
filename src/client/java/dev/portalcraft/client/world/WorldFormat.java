@@ -46,7 +46,12 @@ public final class WorldFormat {
 	public static final long CRACK_BYTES = (long) CRACK_MAX_W * CRACK_MAX_H * 4;
 	/** Minecraft's destroy stages, side by side in the crack strip. */
 	public static final int CRACK_STAGES = 10;
-	public static final long TOTAL_BYTES = CRACK_OFFSET + CRACK_BYTES; // kWorldBytes
+	/** Where the PCW4 mapping ended; the PCW5 mob atlas follows. */
+	public static final long PCW4_BYTES = CRACK_OFFSET + CRACK_BYTES; // kWorldPcw4Bytes
+	public static final int MOB_ATLAS_SIZE = 1024; // kWorldMobAtlasMaxW/H
+	public static final long MOB_ATLAS_OFFSET = PCW4_BYTES; // kWorldMobAtlasOffset
+	public static final long MOB_ATLAS_BYTES = (long) MOB_ATLAS_SIZE * MOB_ATLAS_SIZE * 4;
+	public static final long TOTAL_BYTES = MOB_ATLAS_OFFSET + MOB_ATLAS_BYTES; // kWorldBytes
 	public static final int NO_SLOT = 0xFFFFFFFF;
 
 	// WorldHeader field offsets (static_asserts in the protocol header)
@@ -59,11 +64,12 @@ public final class WorldFormat {
 		H_AVATAR_BLOCK_TRANSLUCENT = 128, H_AVATAR_ITEM_SOLID = 136, H_AVATAR_ITEM_TRANSLUCENT = 144;
 	public static final long H_PARTICLE_ATLAS_W = 152, H_PARTICLE_ATLAS_H = 156, H_PARTICLE_ATLAS_SEQ = 160, H_CRACK_W = 164, H_CRACK_H = 168,
 		H_CRACK_SEQ = 172, H_PARTICLE_SOLID = 176, H_PARTICLE_TRANSLUCENT = 184, H_CRACK = 192;
+	public static final long H_MOB_ATLAS_W = 200, H_MOB_ATLAS_H = 204, H_MOB_ATLAS_SEQ = 208, H_MOB_SOLID = 212, H_MOB_TRANSLUCENT = 220;
 	/** Every per-slot count array of the entity slot, in the order its ranges sit in the slot. */
 	public static final long[] H_ENTITY_RANGES = {H_ENTITY_BLOCK_SOLID, H_ENTITY_BLOCK_TRANSLUCENT, H_ENTITY_ITEM_SOLID, H_ENTITY_ITEM_TRANSLUCENT,
 		H_AVATAR_SKIN, H_AVATAR_BLOCK_SOLID, H_AVATAR_BLOCK_TRANSLUCENT, H_AVATAR_ITEM_SOLID, H_AVATAR_ITEM_TRANSLUCENT, H_PARTICLE_SOLID,
-		H_PARTICLE_TRANSLUCENT, H_CRACK};
-	public static final long HEADER_STRUCT_BYTES = 200; // sizeof(WorldHeader)
+		H_PARTICLE_TRANSLUCENT, H_CRACK, H_MOB_SOLID, H_MOB_TRANSLUCENT};
+	public static final long HEADER_STRUCT_BYTES = 228; // sizeof(WorldHeader)
 
 	/** ItemEntityRenderer.ITEM_MIN_HOVER_HEIGHT: how far a dropped item's model floats off the ground. */
 	public static final float ITEM_MIN_HOVER = 0.0625F;
@@ -193,6 +199,19 @@ public final class WorldFormat {
 			this.data[o + 4] = Float.floatToRawIntBits(u);
 			this.data[o + 5] = Float.floatToRawIntBits(v);
 			this.count++;
+		}
+
+		/** Mixes vertices from {@code from} on towards white by {@code amount} (0..1): TNT's fuse blink. */
+		public void brighten(int from, float amount) {
+			for (int i = Math.max(0, from); i < this.count; i++) {
+				int o = i * VERTEX_INTS + 3;
+				int c = this.data[o];
+				int r = (c >>> 16) & 0xFF, g = (c >>> 8) & 0xFF, b = c & 0xFF;
+				r += Math.round((255 - r) * amount);
+				g += Math.round((255 - g) * amount);
+				b += Math.round((255 - b) * amount);
+				this.data[o] = (c & 0xFF000000) | r << 16 | g << 8 | b;
+			}
 		}
 
 		/** A copy trimmed to the vertices in use. */
