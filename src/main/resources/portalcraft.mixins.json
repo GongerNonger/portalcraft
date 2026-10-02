@@ -5,6 +5,8 @@
 	"mixins": [
 		"AvatarDimensionsMixin",
 		"BlockCollisionsMixin",
+		"BlockPlaceContextMixin",
+		"ClipContextMixin",
 		"EntityBelowWorldMixin"
 	],
 	"injectors": {

@@ -66,6 +66,7 @@ How it fits together:
 | Look | the mouse, natively | copies Portal's view angles |
 | Portals | fires and renders its real ones; teleports the player | follows each teleport (seq/ack) |
 | Keys | reads WASD etc. while its window has focus | replays them as its own input |
+| Clicks | fires its gun while Steve holds the portal gun | otherwise attacks/places/picks; aims at the map's walls too, and a block placed against a wall goes in the cell in front of it (to the nearer half-cell, since walls don't sit on the block grid) |
 
 Link: UDP on 127.0.0.1 ports 27515/27516, layout in `protocol/portalcraft_protocol.h`.
 Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.log`.
