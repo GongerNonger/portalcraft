@@ -22,6 +22,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
+#include "launcher.h"
 #include "overlay.h"
 #include "worldrender.h"
 #include "sdk.h"
@@ -1643,6 +1644,8 @@ public:
 			logf("hooked server GameMovement001");
 		}
 		linkOpen();
+		launcher::init(&logf, g_self);
+		launcher::frame(false, false, nullptr); // start Minecraft now, while Portal is still on its menu
 		return true;
 	}
 	virtual void Unload() {
@@ -1704,6 +1707,7 @@ public:
 			worldrender::init(&logf, g_engineFactory);
 		}
 		linkPoll();
+		launcher::frame(mcReady(), g_inLevel, g_engineClient);
 		bridgeHealth();
 		updateBlockPhysics();
 		sendState();

@@ -1,6 +1,6 @@
 @echo off
-rem Starts Steam Portal (with the PortalCraft plugin) and the PortalCraft Minecraft, linked.
-rem Play in the Portal window; leave the Minecraft window open behind it.
+rem Starts Steam Portal with the PortalCraft plugin. The plugin starts the PortalCraft Minecraft
+rem itself, hidden (portal\addons\portalcraft.ini); it quits again when Portal closes.
 setlocal
 cd /d "%~dp0"
 
@@ -13,5 +13,4 @@ if not defined PORTAL (
 set "PORTALCRAFT_MAPS=%PORTAL%\portal\maps"
 
 tasklist /FI "IMAGENAME eq hl2.exe" | find /I "hl2.exe" >nul || start "" /D "%PORTAL%" "%PORTAL%\hl2.exe" -game portal -windowed -novid -w 1600 -h 900 -insecure +cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0 +cl_interp_ratio 1 +mat_queue_mode 0 +engine_no_focus_sleep 0
-start "PortalCraft Minecraft" cmd /c gradle.cmd runClient --no-configuration-cache --args="--quickPlaySingleplayer PortalCraft"
-echo Portal and Minecraft are starting. Click into the Portal window to play.
+echo Portal is starting; it starts Minecraft by itself (about a minute). Play in the Portal window.

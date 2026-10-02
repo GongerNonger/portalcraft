@@ -48,6 +48,9 @@ public class PortalCraftClient implements ClientModInitializer {
 		HostLink.start();
 		ClientTickEvents.START_CLIENT_TICK.register(HostDriver::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(HostDriver::tickEnd);
+		// Started by Portal: hidden, and gone again when Portal closes.
+		net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STARTED.register(HostLifecycle::started);
+		ClientTickEvents.END_CLIENT_TICK.register(client -> HostLifecycle.tick(client, HostLink.current() != null));
 	}
 
 	/**
