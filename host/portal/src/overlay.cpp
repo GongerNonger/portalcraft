@@ -15,11 +15,13 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "overlay.h"
+#include "worldrender.h"
 
 namespace overlay {
 namespace {
 
 LogFn g_log = nullptr;
+IDirect3DDevice9* g_gameDevice = nullptr;
 HANDLE g_mapping = nullptr;
 uint8_t* g_shm = nullptr;
 pcproto::OverlayHeader* g_header = nullptr;
@@ -60,6 +62,7 @@ Hooked* forDevice(void* device) {
 }
 
 void releaseDeviceObjects() {
+	worldrender::releaseDeviceObjects();
 	if (g_tex) {
 		g_tex->Release();
 		g_tex = nullptr;
@@ -231,11 +234,13 @@ void draw(IDirect3DDevice9* dev) {
 
 HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst, HWND wnd, const RGNDATA* dirty) {
 	draw(dev);
+	worldrender::frameDone();
 	return forDevice(dev)->present(dev, src, dst, wnd, dirty);
 }
 
 HRESULT WINAPI hkPresentEx(IDirect3DDevice9Ex* dev, const RECT* src, const RECT* dst, HWND wnd, const RGNDATA* dirty, DWORD flags) {
 	draw(dev);
+	worldrender::frameDone();
 	return forDevice(dev)->presentEx(dev, src, dst, wnd, dirty, flags);
 }
 
@@ -402,6 +407,14 @@ IDirect3DDevice9* findGameDevice() {
 
 } // namespace
 
+void* device() {
+	return g_gameDevice;
+}
+
+bool overlayFresh() {
+	return g_header && g_header->frameSeq != 0 && GetTickCount() - g_lastSeqChange < 500;
+}
+
 bool init(LogFn log) {
 	g_log = log;
 	if (g_hooked) {
@@ -442,6 +455,7 @@ bool init(LogFn log) {
 			GetModuleFileNameA(owner, ownerName, MAX_PATH);
 		}
 		log("overlay: found Portal's device %p (%s), vtable %p, Present currently in %s", dev, isEx ? "D3D9Ex" : "D3D9", vt, ownerName);
+		g_gameDevice = dev; // lives as long as Portal does
 		dev->Release();
 	} else {
 		log("overlay: Portal's device not found in shaderapidx9 (%d d3d9 objects checked); falling back to probe devices", g_candidates);

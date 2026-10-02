@@ -21,6 +21,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "overlay.h"
+#include "worldrender.h"
 #include "sdk.h"
 
 using sdk::Vector;
@@ -51,6 +52,7 @@ void logf(const char* fmt, ...) {
 // ---- engine handles ------------------------------------------------------------------
 
 HMODULE g_self = nullptr;
+sdk::CreateInterfaceFn g_engineFactory = nullptr;
 void* g_engineServer = nullptr;  // VEngineServer021
 void* g_playerInfoMgr = nullptr; // PlayerInfoManager002
 void* g_engineClient = nullptr;  // VEngineClient013 (lazy: engine.dll exposes it)
@@ -722,6 +724,7 @@ public:
 		if (HMODULE tier0 = GetModuleHandleA("tier0.dll")) {
 			g_msg = reinterpret_cast<MsgFn>(GetProcAddress(tier0, "Msg"));
 		}
+		g_engineFactory = interfaceFactory;
 		g_engineServer = interfaceFactory("VEngineServer021", nullptr);
 		g_playerInfoMgr = gameServerFactory("PlayerInfoManager002", nullptr);
 		void* gm = gameServerFactory("GameMovement001", nullptr);
@@ -778,6 +781,7 @@ public:
 		if (!overlayStarted) {
 			overlayStarted = true;
 			overlay::init(&logf);
+			worldrender::init(&logf, g_engineFactory);
 		}
 		linkPoll();
 		sendState();
