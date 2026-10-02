@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.List;
 
 import dev.portalcraft.PortalCraft;
+import dev.portalcraft.client.world.WorldExporter;
+import dev.portalcraft.client.world.WorldLink;
 import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
 import dev.portalcraft.host.HostLink;
@@ -63,6 +65,7 @@ public final class HostDriver {
 				LOG.info("PortalCraft: host gone, releasing control");
 				releaseAll(minecraft);
 				OverlayLink.close();
+				WorldLink.close();
 				linked = false;
 			}
 			return;
@@ -147,6 +150,11 @@ public final class HostDriver {
 		}
 		HostLink.send(Proto.writeMcState(++seq, ready ? Proto.MC_READY : 0, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN)));
+
+		// The placed blocks, for the host to draw in its own 3D pass.
+		if (ready && WorldLink.open()) {
+			WorldExporter.frame(minecraft);
+		}
 	}
 
 	/**
