@@ -517,6 +517,7 @@ void quietPortalMovement(uint8_t* mv) {
 }
 
 void logSolidNear(const Vector& at);
+void logHostSolid(const Vector& at, void* playerEntity);
 
 using ProcessMovementFn = void(__thiscall*)(void* self, void* player, void* mv);
 ProcessMovementFn g_serverOriginal = nullptr;
@@ -548,6 +549,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				g_lastSet.z, origin.x, origin.y, origin.z);
 			if (pushLogs == 1 || d > 0.5f) {
 				logSolidNear(origin); // who did it (a handed-over shove, or the first nudge)
+				logHostSolid(g_lastSet, player);
 			}
 		}
 	}
@@ -869,6 +871,54 @@ void sendEntities() {
 		logged = true;
 		logf("streaming %u solid entities (first: #%u %s solid %u)", n, packet.entities[0].index, packet.entities[0].model, packet.entities[0].solid);
 	}
+}
+
+// Dev: what Portal itself finds solid at a spot. A player-hull trace (IEngineTrace::TraceRay, slot 4
+// of EngineTraceServer003) from `top` down to `at`: where it stops, and the surface and contents.
+void* g_serverTrace = nullptr;
+struct alignas(16) TraceRayArgs {
+	float start[4], delta[4], startOffset[4], extents[4];
+	bool isRay, isSwept;
+};
+class TraceAll {
+public:
+	virtual bool ShouldHitEntity(void* entity, int) { return entity != skip; }
+	virtual int GetTraceType() { return 0; }
+	void* skip = nullptr;
+};
+
+void logHostSolid(const Vector& at, void* playerEntity) {
+	if (!g_serverTrace && g_engineFactory) {
+		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);
+	}
+	if (!g_serverTrace) {
+		return;
+	}
+	TraceRayArgs ray{};
+	ray.start[0] = at.x, ray.start[1] = at.y, ray.start[2] = at.z + 24.0f + 36.0f; // hull centre, 24 above
+	ray.delta[2] = -24.0f;
+	ray.extents[0] = ray.extents[1] = 16.0f, ray.extents[2] = 36.0f; // the player's standing hull
+	ray.isSwept = true;
+	TraceAll filter;
+	filter.skip = playerEntity;
+	alignas(16) uint8_t tr[256] = {};
+	__try {
+		sdk::vcall<void>(g_serverTrace, 4, static_cast<const void*>(&ray), 0x201400Bu /* MASK_PLAYERSOLID */, static_cast<void*>(&filter),
+			static_cast<void*>(tr));
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return;
+	}
+	float fraction;
+	int contents;
+	Vector end;
+	const char* surface = *reinterpret_cast<const char**>(tr + 60);
+	std::memcpy(&fraction, tr + 44, 4);
+	std::memcpy(&contents, tr + 48, 4);
+	std::memcpy(&end, tr + 12, 12);
+	void* hit = *reinterpret_cast<void**>(tr + 76);
+	void* world = edictInUse(edictAt(0)) ? sdk::networkableBaseEntity(sdk::edictNetworkable(edictAt(0))) : nullptr;
+	logf("  portal's hull from %.1f down to %.1f: stops at z %.2f (fraction %.2f, startsolid %d) on '%s' contents 0x%x, %s", at.z + 24.0f, at.z,
+		end.z - 36.0f, fraction, tr[55], surface ? surface : "?", contents, hit == world ? "the world" : hit ? "an entity" : "nothing");
 }
 
 /** Every solid entity within 96 units: who might be shoving the player. */
