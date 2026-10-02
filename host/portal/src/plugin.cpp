@@ -325,8 +325,60 @@ bool serverToolsReady() {
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
 struct PlayerOffsets {
 	bool ready = false;
-	int health = -1, lifeState = -1;
+	int health = -1, lifeState = -1, flags = -1, viewEntity = -1;
 } g_pl;
+
+// Portal's player entity, its send-table offsets looked up the first time. Null between levels.
+uint8_t* playerFields() {
+	void* e = edictAt(1);
+	if (!g_inLevel || !edictInUse(e)) {
+		return nullptr;
+	}
+	void* networkable = sdk::edictNetworkable(e);
+	auto* base = static_cast<uint8_t*>(sdk::networkableBaseEntity(networkable));
+	if (base && !g_pl.ready) {
+		g_pl.ready = true;
+		auto* sc = static_cast<sdk::ServerClass*>(sdk::networkableServerClass(networkable));
+		if (sc && sc->table) {
+			g_pl.health = findProp(sc->table, "m_iHealth", 0);
+			g_pl.lifeState = findProp(sc->table, "m_lifeState", 0);
+			g_pl.flags = findProp(sc->table, "m_fFlags", 0);
+			g_pl.viewEntity = findProp(sc->table, "m_hViewEntity", 0);
+		}
+		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState, g_pl.flags,
+			g_pl.viewEntity);
+	}
+	return base;
+}
+
+// ---- scripted scenes ----------------------------------------------------------------------
+// Portal takes its player for a scene now and then (as Skyrim does for furniture and scenes, which
+// SkyCraft hands back to Skyrim): a point_viewcontrol camera (the chamber 00 wake-up, the escape
+// ending), or a frozen player. Meanwhile Portal moves the player itself, and Minecraft follows
+// it without input (kHostScripted).
+constexpr int FL_FROZEN = 1 << 5, FL_ATCONTROLS = 1 << 6;
+bool g_scripted = false;
+
+void updateScripted() {
+	uint8_t* base = playerFields();
+	bool scripted = false;
+	if (base && g_pl.flags >= 0) {
+		int flags = *reinterpret_cast<int*>(base + g_pl.flags);
+		scripted = (flags & (FL_FROZEN | FL_ATCONTROLS)) != 0;
+	}
+	if (base && g_pl.viewEntity >= 0 && !scripted) {
+		uint32_t view = *reinterpret_cast<uint32_t*>(base + g_pl.viewEntity);
+		uint32_t self = 0xFFFFFFFFu;
+		if (void* unknown = sdk::edictUnknown(edictAt(1))) {
+			self = *sdk::vcall<const uint32_t*>(unknown, 2); // IHandleEntity::GetRefEHandle
+		}
+		scripted = view != 0xFFFFFFFFu && view != self;
+	}
+	if (scripted != g_scripted) {
+		logf("scripted scene %s", scripted ? "started: Portal has the player" : "over: Minecraft drives again");
+		g_scripted = scripted;
+	}
+}
 constexpr int kFullHealth = 100;
 float g_hurtPending = 0.0f;
 DWORD g_hurtSentAt = 0;
@@ -361,23 +413,10 @@ void killPortalPlayer(void* player) {
 
 void bridgeHealth() {
 	void* e = edictAt(1);
-	if (!g_inLevel || !edictInUse(e)) {
+	uint8_t* base = playerFields();
+	if (!base) {
 		g_wasAlive = false;
 		return;
-	}
-	void* networkable = sdk::edictNetworkable(e);
-	auto* base = static_cast<uint8_t*>(sdk::networkableBaseEntity(networkable));
-	if (!base) {
-		return;
-	}
-	if (!g_pl.ready) {
-		g_pl.ready = true;
-		auto* sc = static_cast<sdk::ServerClass*>(sdk::networkableServerClass(networkable));
-		if (sc && sc->table) {
-			g_pl.health = findProp(sc->table, "m_iHealth", 0);
-			g_pl.lifeState = findProp(sc->table, "m_lifeState", 0);
-		}
-		logf("health: %s m_iHealth %d m_lifeState %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState);
 	}
 	if (g_pl.health < 0 || g_pl.lifeState < 0) {
 		return;
@@ -1018,7 +1057,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	}
 
 	bool wasDriving = g_drivingNow;
-	g_drivingNow = following();
+	g_drivingNow = following() && !g_scripted;
 	if (g_drivingNow) {
 		quietPortalMovement(mv);
 	}
@@ -1566,6 +1605,9 @@ void sendState() {
 	if (g_drivingNow) {
 		s.flags |= pcproto::kHostDriving;
 	}
+	if (g_scripted) {
+		s.flags |= pcproto::kHostScripted;
+	}
 	if (!g_engineClient) {
 		g_engineClient = engineInterface("engine.dll", "VEngineClient013");
 	}
@@ -1709,6 +1751,7 @@ public:
 		linkPoll();
 		launcher::frame(mcReady(), g_inLevel, g_engineClient);
 		bridgeHealth();
+		updateScripted();
 		updateBlockPhysics();
 		sendState();
 		camera::init(&logf);

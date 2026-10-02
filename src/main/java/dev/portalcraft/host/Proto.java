@@ -16,6 +16,8 @@ public final class Proto {
 	public static final int HOST_IN_GAME = 1;
 	public static final int HOST_FOREGROUND = 1 << 1;
 	public static final int HOST_DRIVING = 1 << 2;
+	/** A scripted scene has the host's player (its camera, or frozen): follow it, take no input. */
+	public static final int HOST_SCRIPTED = 1 << 3;
 
 	public static final int PORTAL_EXISTS = 1;
 	public static final int PORTAL_ACTIVE = 1 << 1;
@@ -47,6 +49,10 @@ public final class Proto {
 
 		public boolean foreground() {
 			return (flags & HOST_FOREGROUND) != 0;
+		}
+
+		public boolean scripted() {
+			return (flags & HOST_SCRIPTED) != 0;
 		}
 
 		public boolean keyDown(int scancode) {

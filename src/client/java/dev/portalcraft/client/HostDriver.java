@@ -56,6 +56,8 @@ public final class HostDriver {
 	private static int tickSeq;
 	/** The next resync follows a respawn (Minecraft's spawn point is not the host's player). */
 	private static boolean respawned;
+	/** We set hideGui for a scripted scene (and give it back after). */
+	private static boolean hidGuiForScene;
 	private static Vec3 tickPrevious = Vec3.ZERO, tickCurrent = Vec3.ZERO;
 	private static boolean resync;
 	private static int teleportAck;
@@ -162,6 +164,25 @@ public final class HostDriver {
 		HostHealth.tick(minecraft, player);
 		BlockSolids.tick(minecraft);
 
+		if (s.scripted()) {
+			// A scripted scene has Portal's player (its camera, or frozen): stand where it is, take no
+			// input, and keep Minecraft's HUD and hand out of Portal's camera (F1) until it's over.
+			player.setPos(Units.toMc(s.origin()));
+			player.setDeltaMovement(Vec3.ZERO);
+			player.resetFallDistance();
+			releaseAll(minecraft);
+			if (!minecraft.gui.hud.isHidden()) {
+				minecraft.gui.hud.toggle();
+				hidGuiForScene = true;
+			}
+			return;
+		}
+		if (hidGuiForScene) {
+			if (minecraft.gui.hud.isHidden()) {
+				minecraft.gui.hud.toggle();
+			}
+			hidGuiForScene = false;
+		}
 		if (s.foreground()) {
 			applyKeys(minecraft, s);
 			applyMouse(minecraft, player, s.mouse());
