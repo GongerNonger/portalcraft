@@ -1,9 +1,12 @@
-"""Stand-in for Minecraft's block exporter: publishes a test mesh into Portal's world mapping.
+"""Stand-in for Minecraft's world exporter: publishes a test mesh into Portal's world mapping.
 
-  python fake_world.py --at -600,-360,160      # one 40-unit cube with its min corner there
-  python fake_world.py --clear                 # publish an empty mesh
+  python fake_world.py --at -600,-360,160            # one 40-unit cube (block mesh) with its min corner there
+  python fake_world.py --at -600,-360,160 --entity   # a 10-unit cube in the entity mesh instead
+  python fake_world.py --clear                       # publish an empty block mesh (with --entity: entity mesh)
 
 Portal must be running (it creates the mapping). Layout: protocol/portalcraft_protocol.h, WorldHeader.
+The entity mesh is normally rewritten every frame by Minecraft; with Minecraft closed the host draws
+nothing at all (it waits for fresh overlay frames), so run fake_mc.py alongside or expect no output.
 """
 import argparse
 import mmap
@@ -15,8 +18,17 @@ ATLAS_OFFSET = 4096
 MESH_OFFSET = ATLAS_OFFSET + ATLAS_MAX * ATLAS_MAX * 4
 MAX_VERTICES = 196608
 SLOT_BYTES = MAX_VERTICES * 24
-TOTAL = MESH_OFFSET + 2 * SLOT_BYTES
+ITEM_ATLAS_OFFSET = MESH_OFFSET + 2 * SLOT_BYTES
+ITEM_ATLAS_BYTES = 1024 * 1024 * 4
+ENTITY_OFFSET = ITEM_ATLAS_OFFSET + ITEM_ATLAS_BYTES
+ENTITY_MAX_VERTICES = 65536
+ENTITY_SLOT_BYTES = ENTITY_MAX_VERTICES * 24
+TOTAL = ENTITY_OFFSET + 2 * ENTITY_SLOT_BYTES
 VERTEX = struct.Struct("<3fI2f")
+# WorldHeader offsets
+ATLAS_SEQ, MESH_SEQ, FRONT, READING, SLOT_SOLID, SLOT_TRANSLUCENT = 12, 16, 20, 24, 28, 36
+ENTITY_SEQ, ENTITY_FRONT, ENTITY_READING = 56, 60, 64
+ENTITY_COUNTS = (68, 76, 84, 92)  # block solid, block translucent, item solid, item translucent
 
 
 def atlas_pixels(size=64):
@@ -52,28 +64,56 @@ def cube(x0, y0, z0, s=40.0):
     return out
 
 
+def free_slot(front, reading):
+    for slot in (0, 1):
+        if slot != front and slot != reading:
+            return slot
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--at", default="-600,-360,160")
     ap.add_argument("--clear", action="store_true")
+    ap.add_argument("--entity", action="store_true", help="publish into the entity mesh (block-atlas solid range)")
     a = ap.parse_args()
     m = mmap.mmap(-1, TOTAL, tagname=MAPPING)
-    if m[0:4] != b"PCW1":
-        print("Portal's world mapping isn't there (start Portal with the plugin first)")
+    if m[0:4] != b"PCW2":
+        print(f"Portal's world mapping isn't there or isn't PCW2 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
         return
     size, pixels = atlas_pixels()
     struct.pack_into("<II", m, 4, size, size)
     m[ATLAS_OFFSET:ATLAS_OFFSET + len(pixels)] = pixels
-    atlas_seq, mesh_seq, front, reading = struct.unpack_from("<IIII", m, 12)
-    struct.pack_into("<I", m, 12, atlas_seq + 1)
-    verts = [] if a.clear else cube(*(float(v) for v in a.at.split(",")))
-    slot = 0 if front != 0 and reading != 0 else 1
+    (atlas_seq,) = struct.unpack_from("<I", m, ATLAS_SEQ)
+    struct.pack_into("<I", m, ATLAS_SEQ, atlas_seq + 1)
+    at = [float(v) for v in a.at.split(",")]
+    if a.entity:
+        verts = [] if a.clear else cube(*at, s=10.0)
+        seq, front, reading = struct.unpack_from("<III", m, ENTITY_SEQ)
+        slot = free_slot(front, reading)
+        if slot is None:
+            print("both entity slots busy; try again")
+            return
+        base = ENTITY_OFFSET + slot * ENTITY_SLOT_BYTES
+        m[base:base + 24 * len(verts)] = b"".join(verts)
+        for i, offset in enumerate(ENTITY_COUNTS):
+            struct.pack_into("<I", m, offset + slot * 4, len(verts) if i == 0 else 0)
+        struct.pack_into("<I", m, ENTITY_FRONT, slot)
+        struct.pack_into("<I", m, ENTITY_SEQ, (seq + 1) & 0xFFFFFFFF or 1)
+        print(f"published {len(verts)} entity vertices in slot {slot}; atlas {size}x{size}")
+        return
+    verts = [] if a.clear else cube(*at)
+    mesh_seq, front, reading = struct.unpack_from("<III", m, MESH_SEQ)
+    slot = free_slot(front, reading)
+    if slot is None:
+        print("both mesh slots busy; try again")
+        return
     base = MESH_OFFSET + slot * SLOT_BYTES
     m[base:base + 24 * len(verts)] = b"".join(verts)
-    struct.pack_into("<I", m, 28 + slot * 4, len(verts))  # slotSolid[slot]
-    struct.pack_into("<I", m, 36 + slot * 4, 0)           # slotTranslucent[slot]
-    struct.pack_into("<I", m, 20, slot)                    # front
-    struct.pack_into("<I", m, 16, mesh_seq + 1)            # meshSeq
+    struct.pack_into("<I", m, SLOT_SOLID + slot * 4, len(verts))
+    struct.pack_into("<I", m, SLOT_TRANSLUCENT + slot * 4, 0)
+    struct.pack_into("<I", m, FRONT, slot)
+    struct.pack_into("<I", m, MESH_SEQ, (mesh_seq + 1) & 0xFFFFFFFF or 1)
     print(f"published {len(verts)} vertices in slot {slot}; atlas {size}x{size}")
 
 

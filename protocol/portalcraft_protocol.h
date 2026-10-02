@@ -10,6 +10,7 @@
 // Mirrored in Java by dev.portalcraft.link.Proto. Keep both in step and bump the magic on change.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace pcproto {
@@ -134,15 +135,26 @@ struct OverlayHeader {
 	volatile uint32_t mcHeartbeat; // GetTickCount-ish millis from Minecraft; stale = draw nothing
 };
 
-// ---- world: blocks the player placed in Minecraft, drawn by the host in its own 3D pass ---------
+// ---- world: Minecraft's blocks and dropped items, drawn by the host in its own 3D pass ----------
 // A second named mapping created by the host: Local\PortalCraft_World_v1.
-//   [0, 4096)                                  WorldHeader
-//   [kWorldAtlasOffset, + kWorldAtlasBytes)    Minecraft's block atlas, RGBA8, rows TOP-DOWN, atlasWidth x atlasHeight
-//   [kWorldMeshOffset + i * kWorldSlotBytes)   mesh slot i of 2: WorldVertex[slotSolid[i] + slotTranslucent[i]]
-// A mesh is a triangle list (6 vertices per quad) in host space (Source units), solid/cutout
+//   [0, 4096)                                         WorldHeader
+//   [kWorldAtlasOffset, + kWorldAtlasBytes)           Minecraft's block atlas, RGBA8, rows TOP-DOWN, atlasWidth x atlasHeight
+//   [kWorldMeshOffset + i * kWorldSlotBytes)          block mesh slot i of 2: WorldVertex[slotSolid[i] + slotTranslucent[i]]
+//   [kWorldItemAtlasOffset, + kWorldItemAtlasBytes)   Minecraft's item atlas, RGBA8, rows TOP-DOWN, itemAtlasWidth x itemAtlasHeight
+//   [kWorldEntityOffset + i * kWorldEntitySlotBytes)  entity mesh slot i of 2 (see below)
+// The block mesh is a triangle list (6 vertices per quad) in host space (Source units), solid/cutout
 // triangles first, then translucent ones. Minecraft writes a slot that is neither `front` nor
-// `reading`, sets its counts, then `front`, then bumps `meshSeq`. The atlas is written once (and
-// again after a resource reload): size first, pixels, then `atlasSeq`.
+// `reading`, sets its counts, then `front`, then bumps `meshSeq`. Each atlas is written once (and
+// again after a resource reload): size first, pixels, then its seq.
+//
+// The entity mesh (dropped items; mobs later) is rebuilt by Minecraft every render frame, with the
+// same slot rules on entityFront / entityReading / entitySeq. A slot holds four consecutive ranges:
+// block-atlas solid, block-atlas translucent, item-atlas solid, item-atlas translucent, of
+// entityBlockSolid, entityBlockTranslucent, entityItemSolid, entityItemTranslucent vertices. Solid
+// ranges are drawn alpha tested, translucent ones blended, like the block mesh.
+//
+// PCW2 appended its fields to WorldHeader and its regions after the block mesh slots: every PCW1
+// offset is unchanged.
 constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
 constexpr uint32_t kWorldAtlasMaxW = 2048;
 constexpr uint32_t kWorldAtlasMaxH = 2048;
@@ -151,7 +163,19 @@ constexpr uint32_t kWorldAtlasBytes = kWorldAtlasMaxW * kWorldAtlasMaxH * 4;
 constexpr uint32_t kWorldMaxVertices = 196608; // 32768 quads
 constexpr uint32_t kWorldMeshOffset = kWorldAtlasOffset + kWorldAtlasBytes;
 constexpr uint32_t kWorldSlotBytes = kWorldMaxVertices * 24;
-constexpr uint32_t kWorldBytes = kWorldMeshOffset + 2 * kWorldSlotBytes;
+// Vanilla 26.3's item atlas is 1024x512. Room for twice that (1024x1024 or 2048x512), since mods and
+// resource packs grow an atlas by doubling one side; each side is capped too, for the texture.
+constexpr uint32_t kWorldItemAtlasMaxW = 2048;
+constexpr uint32_t kWorldItemAtlasMaxH = 2048;
+constexpr uint32_t kWorldItemAtlasMaxPixels = 1024 * 1024;
+constexpr uint32_t kWorldItemAtlasOffset = kWorldMeshOffset + 2 * kWorldSlotBytes;
+constexpr uint32_t kWorldItemAtlasBytes = kWorldItemAtlasMaxPixels * 4;
+// A flat item's extruded model is roughly 50-150 quads and a stack draws up to 5 copies, so this is
+// some 20-70 full stacks of tools, or ~1800 single blocks. Minecraft keeps the nearest that fit.
+constexpr uint32_t kWorldEntityMaxVertices = 65536;
+constexpr uint32_t kWorldEntityOffset = kWorldItemAtlasOffset + kWorldItemAtlasBytes;
+constexpr uint32_t kWorldEntitySlotBytes = kWorldEntityMaxVertices * 24;
+constexpr uint32_t kWorldBytes = kWorldEntityOffset + 2 * kWorldEntitySlotBytes;
 
 struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 	float x, y, z;  // host world space, Source units
@@ -160,7 +184,7 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 };
 
 struct WorldHeader {
-	char magic[4];            // "PCW1", written by the host
+	char magic[4];            // "PCW2", written by the host
 	uint32_t atlasWidth;      // Minecraft
 	uint32_t atlasHeight;
 	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
@@ -169,11 +193,40 @@ struct WorldHeader {
 	volatile uint32_t reading;  // slot the host is drawing from now, 0xFFFFFFFF = none (host)
 	uint32_t slotSolid[2];       // solid + cutout vertices in each slot (drawn with alpha test)
 	uint32_t slotTranslucent[2]; // translucent vertices after them (drawn blended, no depth write)
+	// ---- PCW2: item atlas and entity mesh ----
+	uint32_t itemAtlasWidth; // Minecraft
+	uint32_t itemAtlasHeight;
+	volatile uint32_t itemAtlasSeq;  // bumped by Minecraft after the item atlas pixels are written; 0 = none
+	volatile uint32_t entitySeq;     // bumped by Minecraft after each entity mesh publish; 0 = none
+	volatile uint32_t entityFront;   // newest complete entity slot (Minecraft)
+	volatile uint32_t entityReading; // entity slot the host is drawing from now, 0xFFFFFFFF = none (host)
+	uint32_t entityBlockSolid[2];       // block-atlas vertices first, alpha tested
+	uint32_t entityBlockTranslucent[2]; // then block-atlas blended
+	uint32_t entityItemSolid[2];        // then item-atlas alpha tested
+	uint32_t entityItemTranslucent[2];  // then item-atlas blended
 };
 
 #pragma pack(pop)
 
 static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
+static_assert(sizeof(WorldHeader) == 100, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, slotTranslucent) == 36, "WorldHeader PCW1 offsets unchanged");
+static_assert(offsetof(WorldHeader, itemAtlasWidth) == 44, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, itemAtlasSeq) == 52, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entitySeq) == 56, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityFront) == 60, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityReading) == 64, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityBlockSolid) == 68, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityBlockTranslucent) == 76, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityItemSolid) == 84, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, entityItemTranslucent) == 92, "WorldHeader layout");
+static_assert(sizeof(WorldHeader) <= kWorldAtlasOffset, "WorldHeader fits its page");
+static_assert(kWorldMeshOffset == 16781312 && kWorldSlotBytes == 4718592, "PCW1 offsets unchanged");
+static_assert(kWorldItemAtlasOffset == 26218496, "world layout"); // where the PCW1 mapping ended
+static_assert(kWorldEntityOffset == 30412800, "world layout");
+static_assert(kWorldEntitySlotBytes == 1572864, "world layout");
+static_assert(kWorldBytes == 33558528, "world layout"); // 32.0 MB
+
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 228, "HostState layout");

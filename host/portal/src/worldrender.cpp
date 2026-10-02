@@ -1,10 +1,11 @@
-// Draws the blocks the player placed in Minecraft inside Portal's own 3D scene.
+// Draws Minecraft's placed blocks and dropped items inside Portal's own 3D scene.
 //
-// Minecraft publishes a triangle mesh (host space) and its block atlas through shared memory
-// (protocol: WorldHeader). We hook IVRenderView::SceneEnd, which the client calls when a view's
-// 3D world is done but before the view model and HUD: the device's render target and depth buffer
-// still hold the scene, so the blocks are hidden behind Portal's walls and in front of nothing
-// they shouldn't be. The camera comes from IVEngineClient::WorldToScreenMatrix.
+// Minecraft publishes two triangle meshes (host space) and the block and item atlases through
+// shared memory (protocol: WorldHeader): the block mesh when blocks change, the entity mesh every
+// frame. We hook IVRenderView::SceneEnd, which the client calls when a view's 3D world is done but
+// before the view model and HUD: the device's render target and depth buffer still hold the scene,
+// so blocks and items are hidden behind Portal's walls and in front of nothing they shouldn't be.
+// The camera comes from IVEngineClient::WorldToScreenMatrix.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -22,6 +23,8 @@
 namespace worldrender {
 namespace {
 
+constexpr uint32_t kNoSlot = 0xFFFFFFFFu;
+
 overlay::LogFn g_log = nullptr;
 uint8_t* g_shm = nullptr;
 pcproto::WorldHeader* g_header = nullptr;
@@ -29,6 +32,8 @@ void* g_engineClient = nullptr;
 
 IDirect3DTexture9* g_atlas = nullptr;
 uint32_t g_atlasSeq = 0;
+IDirect3DTexture9* g_itemAtlas = nullptr;
+uint32_t g_itemAtlasSeq = 0;
 IDirect3DStateBlock9* g_state = nullptr;
 
 using SceneEndFn = void(__thiscall*)(void* self);
@@ -37,36 +42,35 @@ SceneEndFn g_sceneEndOriginal = nullptr;
 int g_scenesThisFrame = 0;
 int g_framesLogged = 0;
 bool g_loggedDraw = false;
+bool g_loggedEntities = false;
 
 // IVEngineClient (013): 36 WorldToScreenMatrix() -> const VMatrix& (row-major, clip = M * v).
 const float* worldToScreen() {
 	return g_engineClient ? sdk::vcall<const float*>(g_engineClient, 36) : nullptr;
 }
 
-void uploadAtlas(IDirect3DDevice9* dev) {
-	uint32_t w = g_header->atlasWidth, h = g_header->atlasHeight;
-	if (w == 0 || h == 0 || w > pcproto::kWorldAtlasMaxW || h > pcproto::kWorldAtlasMaxH) {
-		return;
-	}
-	if (g_atlas) {
-		g_atlas->Release();
-		g_atlas = nullptr;
+// (Re)creates `*tex` as a w x h texture from the RGBA8 pixels at `src` (rows top-down).
+void uploadAtlas(IDirect3DDevice9* dev, IDirect3DTexture9** tex, const uint8_t* src, uint32_t w, uint32_t h, const char* what) {
+	if (*tex) {
+		(*tex)->Release();
+		*tex = nullptr;
 	}
 	// Portal's device is D3D9Ex, which has no managed pool: a dynamic default-pool texture,
 	// released before a device reset and uploaded again after.
-	HRESULT hr = dev->CreateTexture(w, h, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_atlas, nullptr);
+	HRESULT hr = dev->CreateTexture(w, h, 1, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, tex, nullptr);
 	if (FAILED(hr)) {
-		g_atlas = nullptr;
+		*tex = nullptr;
 		if (g_log) {
-			g_log("world: atlas CreateTexture %ux%u failed hr=0x%08lX", w, h, static_cast<unsigned long>(hr));
+			g_log("world: %s atlas CreateTexture %ux%u failed hr=0x%08lX", what, w, h, static_cast<unsigned long>(hr));
 		}
 		return;
 	}
 	D3DLOCKED_RECT lr;
-	if (FAILED(g_atlas->LockRect(0, &lr, nullptr, D3DLOCK_DISCARD))) {
+	if (FAILED((*tex)->LockRect(0, &lr, nullptr, D3DLOCK_DISCARD))) {
+		(*tex)->Release();
+		*tex = nullptr;
 		return;
 	}
-	const uint8_t* src = g_shm + pcproto::kWorldAtlasOffset;
 	for (uint32_t y = 0; y < h; y++) {
 		const uint8_t* row = src + size_t(y) * w * 4;
 		uint8_t* out = static_cast<uint8_t*>(lr.pBits) + size_t(y) * lr.Pitch;
@@ -77,9 +81,27 @@ void uploadAtlas(IDirect3DDevice9* dev) {
 			out[x * 4 + 3] = row[x * 4 + 3];
 		}
 	}
-	g_atlas->UnlockRect(0);
+	(*tex)->UnlockRect(0);
 	if (g_log) {
-		g_log("world: atlas %ux%u uploaded", w, h);
+		g_log("world: %s atlas %ux%u uploaded", what, w, h);
+	}
+}
+
+void uploadAtlases(IDirect3DDevice9* dev) {
+	if (g_header->atlasSeq != g_atlasSeq) {
+		g_atlasSeq = g_header->atlasSeq;
+		uint32_t w = g_header->atlasWidth, h = g_header->atlasHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldAtlasMaxW && h <= pcproto::kWorldAtlasMaxH) {
+			uploadAtlas(dev, &g_atlas, g_shm + pcproto::kWorldAtlasOffset, w, h, "block");
+		}
+	}
+	if (g_header->itemAtlasSeq != g_itemAtlasSeq) {
+		g_itemAtlasSeq = g_header->itemAtlasSeq;
+		uint32_t w = g_header->itemAtlasWidth, h = g_header->itemAtlasHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldItemAtlasMaxW && h <= pcproto::kWorldItemAtlasMaxH
+			&& uint64_t(w) * h <= pcproto::kWorldItemAtlasMaxPixels) {
+			uploadAtlas(dev, &g_itemAtlas, g_shm + pcproto::kWorldItemAtlasOffset, w, h, "item");
+		}
 	}
 }
 
@@ -91,44 +113,118 @@ void skipped(const char* why) {
 	}
 }
 
+// Claims the newest slot of a double-buffered mesh: sets `reading` to it, then makes sure it's
+// still the newest, since Minecraft may have published the other one and started rewriting this one
+// between our read of `front` and the claim. Returns the slot, or kNoSlot (with `reading` cleared).
+uint32_t claimSlot(volatile uint32_t& front, volatile uint32_t& reading) {
+	uint32_t slot = front;
+	if (slot > 1) {
+		return kNoSlot;
+	}
+	reading = slot;
+	MemoryBarrier();
+	if (front != slot) {
+		slot = front;
+		if (slot > 1) {
+			reading = kNoSlot;
+			return kNoSlot;
+		}
+		reading = slot;
+		MemoryBarrier();
+	}
+	return slot;
+}
+
+void drawTriangles(IDirect3DDevice9* dev, const pcproto::WorldVertex* vertices, uint32_t count) {
+	if (count >= 3) {
+		dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, count / 3, vertices, sizeof(pcproto::WorldVertex));
+	}
+}
+
+void setSolid(IDirect3DDevice9* dev) { // solid and cutout (leaves, glass panes): alpha tested, writing depth
+	dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
+	dev->SetRenderState(D3DRS_ALPHAREF, 128);
+	dev->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
+}
+
+void setTranslucent(IDirect3DDevice9* dev) { // stained glass, water, ice: blended, not writing depth
+	dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+	dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+	dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+}
+
 void draw(IDirect3DDevice9* dev) {
-	if (!g_header || g_header->meshSeq == 0) {
+	if (!g_header || (g_header->meshSeq == 0 && g_header->entitySeq == 0)) {
 		return skipped("no mesh published yet");
 	}
 	if (!overlay::overlayFresh()) {
 		return skipped("Minecraft isn't sending frames");
 	}
-	if (g_header->atlasSeq != g_atlasSeq) {
-		g_atlasSeq = g_header->atlasSeq;
-		uploadAtlas(dev);
-	}
+	uploadAtlases(dev);
 	const float* m = worldToScreen();
-	uint32_t slot = g_header->front;
-	if (!g_atlas || !m || slot > 1) {
-		return skipped(!g_atlas ? "no atlas" : !m ? "no WorldToScreenMatrix" : "bad slot");
+	if (!m) {
+		return skipped("no WorldToScreenMatrix");
 	}
-	// Claim the slot, then make sure it's still the newest: Minecraft may have published the
-	// other one and started rewriting this one between our read of `front` and the claim.
-	g_header->reading = slot;
-	MemoryBarrier();
-	if (g_header->front != slot) {
-		slot = g_header->front;
-		if (slot > 1) {
-			g_header->reading = 0xFFFFFFFFu;
-			return;
-		}
-		g_header->reading = slot;
-		MemoryBarrier();
-	}
-	uint32_t solid = g_header->slotSolid[slot], translucent = g_header->slotTranslucent[slot];
-	if (solid + translucent > pcproto::kWorldMaxVertices) {
-		g_header->reading = 0xFFFFFFFFu;
-		return;
-	}
-	const auto* vertices = reinterpret_cast<const pcproto::WorldVertex*>(g_shm + pcproto::kWorldMeshOffset + size_t(slot) * pcproto::kWorldSlotBytes);
 
+	// The block mesh, if there is one and its atlas is up.
+	const pcproto::WorldVertex* blocks = nullptr;
+	uint32_t solid = 0, translucent = 0;
+	if (g_header->meshSeq != 0 && g_atlas) {
+		uint32_t slot = claimSlot(g_header->front, g_header->reading);
+		if (slot != kNoSlot) {
+			solid = g_header->slotSolid[slot];
+			translucent = g_header->slotTranslucent[slot];
+			if (uint64_t(solid) + translucent > pcproto::kWorldMaxVertices) {
+				solid = translucent = 0;
+				g_header->reading = kNoSlot;
+			} else {
+				blocks = reinterpret_cast<const pcproto::WorldVertex*>(g_shm + pcproto::kWorldMeshOffset + size_t(slot) * pcproto::kWorldSlotBytes);
+			}
+		}
+	}
+
+	// The entity mesh: block-atlas solid, block-atlas translucent, item-atlas solid, item-atlas translucent.
+	const pcproto::WorldVertex* entities = nullptr; // == the block-atlas ranges
+	const pcproto::WorldVertex* eItems = nullptr;   // the item-atlas ranges
+	uint32_t eBlockSolid = 0, eBlockTranslucent = 0, eItemSolid = 0, eItemTranslucent = 0;
+	if (g_header->entitySeq != 0) {
+		uint32_t slot = claimSlot(g_header->entityFront, g_header->entityReading);
+		if (slot != kNoSlot) {
+			eBlockSolid = g_header->entityBlockSolid[slot];
+			eBlockTranslucent = g_header->entityBlockTranslucent[slot];
+			eItemSolid = g_header->entityItemSolid[slot];
+			eItemTranslucent = g_header->entityItemTranslucent[slot];
+			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent;
+			if (total == 0 || total > pcproto::kWorldEntityMaxVertices) {
+				eBlockSolid = eBlockTranslucent = eItemSolid = eItemTranslucent = 0;
+				g_header->entityReading = kNoSlot;
+			} else {
+				entities = reinterpret_cast<const pcproto::WorldVertex*>(
+					g_shm + pcproto::kWorldEntityOffset + size_t(slot) * pcproto::kWorldEntitySlotBytes);
+				eItems = entities + eBlockSolid + eBlockTranslucent;
+			}
+		}
+	}
+	if (!g_atlas) { // the entity ranges that need it can't draw either
+		eBlockSolid = eBlockTranslucent = 0;
+	}
+	if (!g_itemAtlas) {
+		eItemSolid = eItemTranslucent = 0;
+	}
+	auto release = [] {
+		g_header->reading = kNoSlot;
+		g_header->entityReading = kNoSlot;
+	};
+	if (!blocks && !entities) {
+		release();
+		return skipped(!g_atlas ? "no atlas" : "no mesh slot");
+	}
 	if (!g_state && FAILED(dev->CreateStateBlock(D3DSBT_ALL, &g_state))) {
-		g_header->reading = 0xFFFFFFFFu;
+		release();
 		return;
 	}
 	g_state->Capture();
@@ -149,7 +245,6 @@ void draw(IDirect3DDevice9* dev) {
 	dev->SetVertexShader(nullptr);
 	dev->SetPixelShader(nullptr);
 	dev->SetFVF(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
-	dev->SetTexture(0, g_atlas);
 	dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
 	dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
 	dev->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
@@ -170,7 +265,7 @@ void draw(IDirect3DDevice9* dev) {
 	dev->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
 	dev->SetRenderState(D3DRS_LIGHTING, FALSE);
 	dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
-	dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE); // also makes flat item sprites two-sided
 	dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
 	dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 	dev->SetRenderState(D3DRS_CLIPPING, TRUE);
@@ -178,30 +273,46 @@ void draw(IDirect3DDevice9* dev) {
 	dev->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
 	dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
 
-	// Solid and cutout (leaves, glass panes): alpha tested, writing depth.
-	dev->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
-	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-	dev->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
-	dev->SetRenderState(D3DRS_ALPHAREF, 128);
-	dev->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
-	if (solid >= 3) {
-		dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, solid / 3, vertices, sizeof(pcproto::WorldVertex));
+	const pcproto::WorldVertex* eBlocks = entities;
+
+	// Opaque first, all of it, so the blended passes stack over every solid.
+	setSolid(dev);
+	dev->SetTexture(0, g_atlas);
+	if (blocks) {
+		drawTriangles(dev, blocks, solid);
 	}
-	// Translucent (stained glass, water, ice): blended over everything, not writing depth.
-	if (translucent >= 3) {
-		dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
-		dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
-		dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-		dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-		dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-		dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, translucent / 3, vertices + solid, sizeof(pcproto::WorldVertex));
+	if (eBlocks) {
+		drawTriangles(dev, eBlocks, eBlockSolid);
+	}
+	if (eItems && eItemSolid) {
+		dev->SetTexture(0, g_itemAtlas);
+		drawTriangles(dev, eItems, eItemSolid);
+	}
+	if (translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3) {
+		setTranslucent(dev);
+		dev->SetTexture(0, g_atlas);
+		if (blocks) {
+			drawTriangles(dev, blocks + solid, translucent);
+		}
+		if (eBlocks) {
+			drawTriangles(dev, eBlocks + eBlockSolid, eBlockTranslucent);
+		}
+		if (eItems && eItemTranslucent) {
+			dev->SetTexture(0, g_itemAtlas);
+			drawTriangles(dev, eItems + eItemSolid, eItemTranslucent);
+		}
 	}
 
 	g_state->Apply();
-	g_header->reading = 0xFFFFFFFFu;
-	if (!g_loggedDraw && g_log) {
+	release();
+	if (!g_loggedDraw && blocks && g_log) {
 		g_loggedDraw = true;
 		g_log("world: drawing %u solid + %u translucent vertices", solid, translucent);
+	}
+	if (!g_loggedEntities && entities && g_log) {
+		g_loggedEntities = true;
+		g_log("world: drawing entities: %u + %u block-atlas, %u + %u item-atlas vertices", eBlockSolid, eBlockTranslucent, eItemSolid,
+			eItemTranslucent);
 	}
 }
 
@@ -236,7 +347,12 @@ void releaseDeviceObjects() {
 		g_atlas->Release();
 		g_atlas = nullptr;
 	}
-	g_atlasSeq = 0; // upload it again after the reset
+	if (g_itemAtlas) {
+		g_itemAtlas->Release();
+		g_itemAtlas = nullptr;
+	}
+	g_atlasSeq = 0; // upload them again after the reset
+	g_itemAtlasSeq = 0;
 }
 
 bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
@@ -248,8 +364,9 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 		return false;
 	}
 	g_header = reinterpret_cast<pcproto::WorldHeader*>(g_shm);
-	g_header->reading = 0xFFFFFFFFu;
-	std::memcpy(g_header->magic, "PCW1", 4);
+	g_header->reading = kNoSlot;
+	g_header->entityReading = kNoSlot;
+	std::memcpy(g_header->magic, "PCW2", 4);
 
 	g_engineClient = engineFactory("VEngineClient013", nullptr);
 	void* renderView = engineFactory("VEngineRenderView014", nullptr);

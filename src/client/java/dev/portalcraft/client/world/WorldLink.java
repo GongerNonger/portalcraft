@@ -20,8 +20,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The host's world mapping (protocol/portalcraft_protocol.h, WorldHeader), opened through
- * kernel32 with the FFM API like {@code OverlayLink}. Minecraft writes the block atlas and the
- * placed blocks' mesh; the host draws them in its own 3D pass. Render thread only.
+ * kernel32 with the FFM API like {@code OverlayLink}. Minecraft writes the block and item atlases,
+ * the placed blocks' mesh and the per-frame entity mesh; the host draws them in its own 3D pass.
+ * Render thread only.
  */
 public final class WorldLink {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
@@ -29,10 +30,12 @@ public final class WorldLink {
 	private static final int FILE_MAP_ALL_ACCESS = 0xF001F;
 
 	// WorldHeader field offsets
-	private static final long MAGIC = 0, ATLAS_W = 4, ATLAS_H = 8, ATLAS_SEQ = 12, MESH_SEQ = 16, FRONT = 20, READING = 24, SLOT_SOLID = 28,
-		SLOT_TRANSLUCENT = 36;
+	private static final long MAGIC = WorldFormat.H_MAGIC, ATLAS_W = WorldFormat.H_ATLAS_W, ATLAS_H = WorldFormat.H_ATLAS_H,
+		ATLAS_SEQ = WorldFormat.H_ATLAS_SEQ, MESH_SEQ = WorldFormat.H_MESH_SEQ, FRONT = WorldFormat.H_FRONT, READING = WorldFormat.H_READING,
+		SLOT_SOLID = WorldFormat.H_SLOT_SOLID, SLOT_TRANSLUCENT = WorldFormat.H_SLOT_TRANSLUCENT;
 	private static final ValueLayout.OfInt INT = JAVA_INT.withByteAlignment(4);
 	private static final ValueLayout.OfInt INT_UNALIGNED = ValueLayout.JAVA_INT_UNALIGNED;
+	private static final int MAGIC_PCW2 = 'P' | 'C' << 8 | 'W' << 16 | '2' << 24;
 	private static final int MAGIC_PCW1 = 'P' | 'C' << 8 | 'W' << 16 | '1' << 24;
 
 	private static final MethodHandle OPEN;
@@ -84,14 +87,22 @@ public final class WorldLink {
 			}
 			MemorySegment v = (MemorySegment) MAP.invokeExact(h, FILE_MAP_ALL_ACCESS, 0, 0, WorldFormat.TOTAL_BYTES);
 			if (v.equals(MemorySegment.NULL)) {
+				// The usual cause: a PCW1 plugin made a smaller (25 MB) mapping than this mod's.
+				if (!warnedMagic) {
+					warnedMagic = true;
+					LOG.warn("PortalCraft: can't map {} bytes of the world mapping: the Portal plugin is probably older than this mod "
+						+ "(rerun setup with Portal closed); retrying every 2 s", WorldFormat.TOTAL_BYTES);
+				}
 				int ignored = (int) CLOSE.invokeExact(h);
 				return false;
 			}
 			v = v.reinterpret(WorldFormat.TOTAL_BYTES);
-			if (v.get(INT, MAGIC) != MAGIC_PCW1) {
+			int magic = v.get(INT, MAGIC);
+			if (magic != MAGIC_PCW2) {
 				if (!warnedMagic) {
 					warnedMagic = true;
-					LOG.warn("PortalCraft: world mapping has no PCW1 magic yet; retrying every 2 s");
+					LOG.warn(magic == MAGIC_PCW1 ? "PortalCraft: the Portal plugin speaks PCW1 (an older build; rerun setup with Portal closed); retrying every 2 s"
+						: "PortalCraft: world mapping has no PCW2 magic yet; retrying every 2 s");
 				}
 				int ignored = (int) UNMAP.invokeExact(v);
 				ignored = (int) CLOSE.invokeExact(h);
@@ -156,11 +167,65 @@ public final class WorldLink {
 
 	/** Copies {@code vertices} packed vertices into {@code slot}, starting at vertex {@code at}. */
 	public static void writeVertices(int slot, int at, int[] data, int vertices) {
-		if (!isOpen() || slot < 0 || slot >= WorldFormat.SLOTS || at < 0 || at + vertices > WorldFormat.MAX_VERTICES) {
+		writeVertices(WorldFormat.MESH_OFFSET, WorldFormat.SLOT_BYTES, WorldFormat.MAX_VERTICES, slot, at, data, vertices);
+	}
+
+	private static void writeVertices(long base, long slotBytes, int max, int slot, int at, int[] data, int vertices) {
+		if (!isOpen() || slot < 0 || slot >= WorldFormat.SLOTS || at < 0 || vertices < 0 || (long) at + vertices > max
+			|| (long) vertices * WorldFormat.VERTEX_INTS > data.length) {
 			return;
 		}
-		long offset = WorldFormat.MESH_OFFSET + slot * WorldFormat.SLOT_BYTES + (long) at * WorldFormat.VERTEX_BYTES;
+		long offset = base + slot * slotBytes + (long) at * WorldFormat.VERTEX_BYTES;
 		MemorySegment.copy(data, 0, view, INT_UNALIGNED, offset, vertices * WorldFormat.VERTEX_INTS);
+	}
+
+	/**
+	 * Writes the item atlas into its own region, like {@link #writeAtlas}: size, pixels, then
+	 * {@code itemAtlasSeq}.
+	 */
+	public static void writeItemAtlas(int width, int height, int[] rgba) {
+		if (!isOpen() || !WorldFormat.itemAtlasFits(width, height) || rgba.length < width * height) {
+			return;
+		}
+		view.set(INT, WorldFormat.H_ITEM_ATLAS_W, width);
+		view.set(INT, WorldFormat.H_ITEM_ATLAS_H, height);
+		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.ITEM_ATLAS_OFFSET, width * height);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_ITEM_ATLAS_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_ITEM_ATLAS_SEQ)));
+	}
+
+	/** The entity mesh slot Minecraft may write now, or -1 if the host holds both. */
+	public static int entityFreeSlot() {
+		if (!isOpen()) {
+			return -1;
+		}
+		int front = view.get(INT, WorldFormat.H_ENTITY_FRONT);
+		int reading = view.get(INT, WorldFormat.H_ENTITY_READING);
+		VarHandle.acquireFence();
+		return WorldFormat.freeSlot(front, reading);
+	}
+
+	/** Copies {@code vertices} packed vertices into entity {@code slot}, starting at vertex {@code at}. */
+	public static void writeEntityVertices(int slot, int at, int[] data, int vertices) {
+		writeVertices(WorldFormat.ENTITY_OFFSET, WorldFormat.ENTITY_SLOT_BYTES, WorldFormat.ENTITY_MAX_VERTICES, slot, at, data, vertices);
+	}
+
+	/**
+	 * Makes entity {@code slot} the newest: its four range counts (in slot order), then
+	 * {@code entityFront}, then {@code entitySeq}.
+	 */
+	public static void publishEntities(int slot, int blockSolid, int blockTranslucent, int itemSolid, int itemTranslucent) {
+		if (!isOpen() || slot < 0 || slot >= WorldFormat.SLOTS) {
+			return;
+		}
+		view.set(INT, WorldFormat.H_ENTITY_BLOCK_SOLID + slot * 4L, blockSolid);
+		view.set(INT, WorldFormat.H_ENTITY_BLOCK_TRANSLUCENT + slot * 4L, blockTranslucent);
+		view.set(INT, WorldFormat.H_ENTITY_ITEM_SOLID + slot * 4L, itemSolid);
+		view.set(INT, WorldFormat.H_ENTITY_ITEM_TRANSLUCENT + slot * 4L, itemTranslucent);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_ENTITY_FRONT, slot);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_ENTITY_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_ENTITY_SEQ)));
 	}
 
 	/** Makes {@code slot} the newest mesh: its counts, then {@code front}, then {@code meshSeq}. */

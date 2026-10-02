@@ -21,6 +21,7 @@ import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -96,7 +97,7 @@ public final class WorldExporter {
 		}
 	}
 
-	/** Once per frame while linked and the world mapping is open. */
+	/** Once per frame while linked and the world mapping is open: the blocks, then the entities. */
 	public static void frame(Minecraft minecraft) {
 		try {
 			run(minecraft);
@@ -106,6 +107,7 @@ public final class WorldExporter {
 				LOG.error("PortalCraft: world export failed (logged once)", e);
 			}
 		}
+		EntityExporter.frame(minecraft);
 	}
 
 	private static void run(Minecraft minecraft) {
@@ -144,7 +146,7 @@ public final class WorldExporter {
 		boolean newAtlas = atlas == null || atlas.stale(minecraft);
 		if (newAtlas) {
 			long t0 = System.nanoTime();
-			WorldAtlas built = WorldAtlas.build(minecraft);
+			WorldAtlas built = WorldAtlas.build(minecraft, AtlasIds.BLOCKS);
 			if (built == null) {
 				return false;
 			}
