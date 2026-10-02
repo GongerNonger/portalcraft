@@ -132,6 +132,26 @@ void resolvePortalOffsets(void* networkable) {
 SOCKET g_sock = INVALID_SOCKET;
 sockaddr_in g_mcAddr{};
 pcproto::McState g_mc{};
+// Minecraft's recent physics steps on a smoothed timeline (see interpolatedMinecraft).
+struct TickSample {
+	uint32_t seq;
+	pcproto::Vec3 pos;
+};
+constexpr int kTickHistory = 8;
+TickSample g_ticks[kTickHistory] = {};
+uint32_t g_tickSeq = 0;
+double g_tickOffset = 0.0; // seconds: our clock minus Minecraft's tick timeline (seq * 50 ms)
+bool g_haveOffset = false;
+
+double nowSeconds() {
+	static LARGE_INTEGER frequency{};
+	if (!frequency.QuadPart) {
+		QueryPerformanceFrequency(&frequency);
+	}
+	LARGE_INTEGER now;
+	QueryPerformanceCounter(&now);
+	return double(now.QuadPart) / double(frequency.QuadPart);
+}
 DWORD g_mcTime = 0; // GetTickCount of the last McState
 uint32_t g_hostSeq = 0;
 
@@ -172,10 +192,24 @@ void linkPoll() {
 		if (n <= 0) {
 			return;
 		}
-		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM1", 4) == 0) {
+		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM2", 4) == 0) {
 			bool wasReady = mcReady();
 			std::memcpy(&g_mc, buf, sizeof g_mc);
 			g_mcTime = GetTickCount();
+			if (g_mc.tickSeq != g_tickSeq) {
+				// A physics step just ended in Minecraft. Keep it, and fold its arrival time into a
+				// slow average of where Minecraft's 20 Hz timeline sits on our clock: arrival jitter
+				// averages out instead of jerking the camera.
+				g_tickSeq = g_mc.tickSeq;
+				g_ticks[g_tickSeq % kTickHistory] = {g_tickSeq, g_mc.tickCurrent};
+				double sample = nowSeconds() - g_tickSeq * 0.05;
+				if (!g_haveOffset || sample - g_tickOffset > 0.2 || sample - g_tickOffset < -0.2) {
+					g_tickOffset = sample; // first step, or Minecraft stalled: start over
+					g_haveOffset = true;
+				} else {
+					g_tickOffset += (sample - g_tickOffset) * 0.05;
+				}
+			}
 			if (!wasReady && mcReady()) {
 				logf("Minecraft linked");
 			}
@@ -273,8 +307,47 @@ Vector toVec(const pcproto::Vec3& v) {
 float g_zLift = 0.0f;
 Vector g_zLiftAt{};
 
+// Where Minecraft's player is "now": one physics step behind Minecraft's smoothed timeline,
+// between the two samples around that moment (the way Minecraft itself renders one step behind).
+// Evenly spaced every host tick, unlike sampling whatever position a render frame reported.
+const TickSample* tickAt(uint32_t seq) {
+	const TickSample& t = g_ticks[seq % kTickHistory];
+	return t.seq == seq && seq != 0 ? &t : nullptr;
+}
+
+Vector interpolatedMinecraft(Vector* velocity) {
+	*velocity = toVec(g_mc.velocity);
+	if (!g_haveOffset) {
+		return toVec(g_mc.origin);
+	}
+	double ticks = (nowSeconds() - g_tickOffset) / 0.05 - 1.0;
+	if (ticks > double(g_tickSeq)) {
+		ticks = double(g_tickSeq); // ahead of the newest step (it's late): hold it
+	}
+	uint32_t k = ticks < 1.0 ? 1u : uint32_t(ticks);
+	const TickSample* a = tickAt(k);
+	const TickSample* b = tickAt(k + 1);
+	if (!a) {
+		const TickSample* newest = tickAt(g_tickSeq);
+		return newest ? toVec(newest->pos) : toVec(g_mc.origin);
+	}
+	Vector pa = toVec(a->pos);
+	if (!b) {
+		return pa;
+	}
+	Vector pb = toVec(b->pos);
+	*velocity = {(pb.x - pa.x) * 20.0f, (pb.y - pa.y) * 20.0f, (pb.z - pa.z) * 20.0f};
+	if (dist(pa, pb) > 64.0f) {
+		return pb; // a teleport between the two steps: don't smear it across the map
+	}
+	float f = float(ticks - double(k));
+	f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+	return {pa.x + (pb.x - pa.x) * f, pa.y + (pb.y - pa.y) * f, pa.z + (pb.z - pa.z) * f};
+}
+
 void applyMinecraft(uint8_t* mv) {
-	Vector o = toVec(g_mc.origin);
+	Vector velocity{};
+	Vector o = interpolatedMinecraft(&velocity);
 	if (g_zLift != 0.0f) {
 		float dx = o.x - g_zLiftAt.x, dy = o.y - g_zLiftAt.y;
 		if (dx * dx + dy * dy > 24.0f * 24.0f) {
@@ -283,7 +356,7 @@ void applyMinecraft(uint8_t* mv) {
 	}
 	o.z += g_zLift;
 	*reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin) = o;
-	*reinterpret_cast<Vector*>(mv + sdk::kMvVelocity) = toVec(g_mc.velocity);
+	*reinterpret_cast<Vector*>(mv + sdk::kMvVelocity) = velocity;
 }
 
 void quietPortalMovement(uint8_t* mv) {
@@ -377,10 +450,11 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (g_needSync) {
 		g_zLift = 0.0f;
 	}
-	if (g_traceTicks > 0) {
+	if (g_traceTicks > 0 && g_log) {
 		g_traceTicks--;
-		logf("S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal,
+		fprintf(g_log, "S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal,
 			origin.z, g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, g_zLift, origin.x, origin.y);
+		fputc(10, g_log); // newline
 	}
 	g_origin = origin;
 	g_velocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
@@ -399,8 +473,9 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (drive) {
 		applyMinecraft(mv);
 	}
-	if (g_traceTicks > 0) {
-		logf("C %lu z in %.3f portal %.3f out %.3f", GetTickCount(), zIn, zPortal, reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z);
+	if (g_traceTicks > 0 && g_log) {
+		fprintf(g_log, "C %lu z in %.3f portal %.3f out %.3f", GetTickCount(), zIn, zPortal, reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z);
+		fputc(10, g_log); // newline
 	}
 }
 

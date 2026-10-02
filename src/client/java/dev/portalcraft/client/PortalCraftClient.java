@@ -42,6 +42,7 @@ public class PortalCraftClient implements ClientModInitializer {
 		// Playing inside a host game (Portal): listen for its plugin.
 		HostLink.start();
 		ClientTickEvents.START_CLIENT_TICK.register(HostDriver::tick);
+		ClientTickEvents.END_CLIENT_TICK.register(HostDriver::tickEnd);
 	}
 
 	/**

@@ -12,6 +12,6 @@ if not defined PORTAL (
 )
 set "PORTALCRAFT_MAPS=%PORTAL%\portal\maps"
 
-tasklist /FI "IMAGENAME eq hl2.exe" | find /I "hl2.exe" >nul || start "" /D "%PORTAL%" "%PORTAL%\hl2.exe" -game portal -windowed -novid -w 1600 -h 900 -insecure +cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0 +cl_interp_ratio 1 +mat_queue_mode 0
+tasklist /FI "IMAGENAME eq hl2.exe" | find /I "hl2.exe" >nul || start "" /D "%PORTAL%" "%PORTAL%\hl2.exe" -game portal -windowed -novid -w 1600 -h 900 -insecure +cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0 +cl_interp_ratio 1 +mat_queue_mode 0 +engine_no_focus_sleep 0
 start "PortalCraft Minecraft" cmd /c gradle.cmd runClient --no-configuration-cache --args="--quickPlaySingleplayer PortalCraft"
 echo Portal and Minecraft are starting. Click into the Portal window to play.

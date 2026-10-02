@@ -45,6 +45,8 @@ public final class HostDriver {
 	/** The host's mouse buttons Minecraft currently has down, as HostState.mouse bits. */
 	private static int buttons;
 	private static boolean linked;
+	private static int tickSeq;
+	private static Vec3 tickPrevious = Vec3.ZERO, tickCurrent = Vec3.ZERO;
 	private static boolean resync;
 	private static int teleportAck;
 	private static int seq;
@@ -144,11 +146,32 @@ public final class HostDriver {
 		}
 	}
 
+	/** END_CLIENT_TICK: a physics step just finished; send it now so the host can time it. */
+	public static void tickEnd(Minecraft minecraft) {
+		LocalPlayer player = minecraft.player;
+		if (!linked || player == null) {
+			return;
+		}
+		tickSeq++;
+		tickPrevious = Units.toSrc(new Vec3(player.xo, player.yo, player.zo));
+		tickCurrent = Units.toSrc(player.position());
+		sendState(minecraft);
+	}
+
 	/** Once per render frame: tell the host where Minecraft's player is. */
 	public static void frame(Minecraft minecraft) {
 		if (!linked) {
 			return;
 		}
+		boolean ready = sendState(minecraft);
+
+		// The placed blocks, for the host to draw in its own 3D pass.
+		if (ready && WorldLink.open()) {
+			WorldExporter.frame(minecraft);
+		}
+	}
+
+	private static boolean sendState(Minecraft minecraft) {
 		LocalPlayer player = minecraft.player;
 		boolean ready = player != null && minecraft.level != null;
 		Vec3 pos = Vec3.ZERO, vel = Vec3.ZERO;
@@ -160,12 +183,9 @@ public final class HostDriver {
 			vel = Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo));
 		}
 		HostLink.send(Proto.writeMcState(++seq, ready ? Proto.MC_READY : 0, teleportAck, pos, vel,
-			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN)));
-
-		// The placed blocks, for the host to draw in its own 3D pass.
-		if (ready && WorldLink.open()) {
-			WorldExporter.frame(minecraft);
-		}
+			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN),
+			tickPrevious, tickCurrent, tickSeq));
+		return ready;
 	}
 
 	/**
@@ -273,9 +293,26 @@ public final class HostDriver {
 		}
 	}
 
+	private static final int SC_E = 8, SC_TAB = 43;
+
+	/**
+	 * The host's keys as Minecraft should see them. E is Portal's "use" (grab cubes, press
+	 * buttons), so Minecraft never gets it; Tab, which Portal leaves alone, is Minecraft's E
+	 * (the inventory) instead.
+	 */
+	private static boolean mapped(Proto.HostState s, int scancode) {
+		if (scancode == SC_E) {
+			return s.keyDown(SC_TAB);
+		}
+		if (scancode == SC_TAB) {
+			return false;
+		}
+		return s.keyDown(scancode);
+	}
+
 	private static void applyKeys(Minecraft minecraft, Proto.HostState s) {
 		for (int sc = 1; sc < KEYS.length; sc++) {
-			boolean down = s.keyDown(sc);
+			boolean down = mapped(s, sc);
 			if (down != KEYS[sc]) {
 				KEYS[sc] = down;
 				press(minecraft, sc, down);

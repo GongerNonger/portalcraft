@@ -64,7 +64,7 @@ enum McFlags : uint32_t {
 };
 
 struct McState {
-	char magic[4]; // "PCM1"
+	char magic[4]; // "PCM2"
 	uint32_t seq;
 	uint32_t flags;       // McFlags
 	uint32_t teleportAck; // last HostState.teleportSeq Minecraft has applied
@@ -74,6 +74,12 @@ struct McState {
 	uint8_t sneaking;
 	uint8_t holdingPortalGun;
 	uint8_t pad;
+	// Minecraft's last two physics steps (20 Hz), host units. The host interpolates between them
+	// on its own clock, starting when a new tickSeq arrives (sent the moment the tick ends), so the
+	// player moves the same amount every host tick instead of whatever the last render frame had.
+	Vec3 tickPrevious;
+	Vec3 tickCurrent;
+	uint32_t tickSeq;
 };
 
 struct Command {
@@ -177,6 +183,6 @@ static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 228, "HostState layout");
-static_assert(sizeof(McState) == 44, "McState layout");
+static_assert(sizeof(McState) == 72, "McState layout");
 
 } // namespace pcproto
