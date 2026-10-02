@@ -14,6 +14,16 @@ import net.minecraft.client.model.Model;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.renderer.state.level.ParticlesRenderState;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.server.level.BlockDestructionProgress;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import java.util.SortedSet;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.MovingBlockRenderState;
@@ -77,6 +87,13 @@ import org.slf4j.LoggerFactory;
  * and what he holds. Those vertices are relative to his feet; the host adds where it draws its
  * player, so the body sits exactly under the host's camera. Armour and capes aren't sent yet.
  *
+ * <p>Also every other non-living entity near the player, through its own renderer: primed TNT,
+ * falling blocks, block and item displays, thrown items and fireworks show as their block or item
+ * models (mobs need their own textures, which the host doesn't have yet). Particles go in through
+ * the particle engine's own extraction, debris from the block atlas and the rest from the particle
+ * atlas (sent once, like the item atlas), and the crack over a block being broken as a box around
+ * its shape, textured from the destroy stages (the crack strip).
+ *
  * <p>Adapted in part from SkyCraft's {@code WorldExporter.exportEntities/addItem/iconUv}
  * (chasmlol/SkyCraft, MIT): which entities to take, the interpolation, the icon fallback.
  */
@@ -104,6 +121,11 @@ public final class EntityExporter {
 	private static int sentSkinGeneration = Integer.MIN_VALUE;
 	private static boolean avatarFailureLogged;
 	private static boolean avatarLogged;
+	private static WorldAtlas particleAtlas;
+	private static int sentParticleGeneration = Integer.MIN_VALUE;
+	private static int sentCracksGeneration = Integer.MIN_VALUE;
+	private static final ParticlesRenderState PARTICLES = new ParticlesRenderState();
+	private static boolean otherFailureLogged;
 
 	private record Near(double distance2, ItemEntity item) {
 	}
@@ -162,8 +184,185 @@ public final class EntityExporter {
 			}
 			taken++;
 		}
+		addOthers(minecraft, level, partial, player, range2);
+		addParticles(minecraft, partial);
+		addCracks(minecraft, level, player, range2);
 		addAvatar(minecraft, partial);
 		publish(taken);
+	}
+
+	/** Fills the camera state renderers face things towards (thrown items, name tags) from Minecraft's camera. */
+	private static void syncCamera(Minecraft minecraft) {
+		var camera = minecraft.gameRenderer.mainCamera();
+		AVATAR_CAMERA.pos = camera.position();
+		AVATAR_CAMERA.orientation.set(camera.rotation());
+		AVATAR_CAMERA.initialized = true;
+	}
+
+	/** Primed TNT, falling blocks, displays, thrown items: anything else that draws blocks or items. */
+	private static void addOthers(Minecraft minecraft, ClientLevel level, float partial, Vec3 player, double range2) {
+		syncCamera(minecraft);
+		for (Entity e : level.entitiesForRendering()) {
+			if (e instanceof ItemEntity || e instanceof LivingEntity || e.isInvisible() || e == minecraft.player) {
+				continue; // items have their own path; mobs and players need textures we don't send yet
+			}
+			Vec3 at = e.getPosition(partial);
+			if (at.distanceToSqr(player) > range2) {
+				continue;
+			}
+			int[] before = CAPTURE.counts();
+			try {
+				@SuppressWarnings({"unchecked", "rawtypes"})
+				EntityRenderer<Entity, EntityRenderState> renderer = (EntityRenderer) minecraft.getEntityRenderDispatcher().getRenderer(e);
+				EntityRenderState state = renderer.createRenderState(e, partial);
+				Vec3 offset = renderer.getRenderOffset(state);
+				PoseStack pose = new PoseStack();
+				pose.translate(offset.x, offset.y, offset.z);
+				CAPTURE.begin(at);
+				renderer.submit(state, pose, CAPTURE, AVATAR_CAMERA);
+			} catch (RuntimeException ex) {
+				CAPTURE.truncate(before);
+				if (!otherFailureLogged) {
+					otherFailureLogged = true;
+					LOG.warn("PortalCraft: couldn't export a {} (logged once): {}", e.getType(), ex.toString());
+				}
+			}
+			if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
+				CAPTURE.truncate(before);
+				return;
+			}
+		}
+	}
+
+	/**
+	 * The particle engine's own extraction (positions relative to Minecraft's camera, quads facing
+	 * it), into the capture, which keeps block-, item- and particle-atlas quads. Culled to a box
+	 * around the camera rather than its frustum: Portal also looks through portals.
+	 */
+	private static void addParticles(Minecraft minecraft, float partial) {
+		if (!sendParticleAtlas(minecraft)) {
+			return;
+		}
+		var camera = minecraft.gameRenderer.mainCamera();
+		Vec3 cam = camera.position();
+		Frustum around = new Frustum(new org.joml.Matrix4f(), new org.joml.Matrix4f().ortho(-48, 48, -48, 48, -48, 48));
+		around.prepare(cam.x, cam.y, cam.z);
+		int[] before = CAPTURE.counts();
+		try {
+			PARTICLES.reset();
+			minecraft.particleEngine.extract(PARTICLES, around, camera, partial);
+			CAPTURE.begin(cam);
+			PARTICLES.submit(CAPTURE, AVATAR_CAMERA);
+		} catch (RuntimeException ex) {
+			CAPTURE.truncate(before);
+			if (!otherFailureLogged) {
+				otherFailureLogged = true;
+				LOG.warn("PortalCraft: couldn't export particles (logged once): {}", ex.toString());
+			}
+		}
+		if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
+			CAPTURE.truncate(before);
+		}
+	}
+
+	/** The crack over each block being broken (the player's own included), at its destroy stage. */
+	private static void addCracks(Minecraft minecraft, ClientLevel level, Vec3 player, double range2) {
+		if (!sendCracks(minecraft)) {
+			return;
+		}
+		Long2ObjectMap<SortedSet<BlockDestructionProgress>> progress = level.destructionProgress();
+		for (Long2ObjectMap.Entry<SortedSet<BlockDestructionProgress>> entry : progress.long2ObjectEntrySet()) {
+			SortedSet<BlockDestructionProgress> set = entry.getValue();
+			if (set == null || set.isEmpty()) {
+				continue;
+			}
+			int stage = set.last().getProgress();
+			BlockPos pos = BlockPos.of(entry.getLongKey());
+			if (stage < 0 || stage >= WorldFormat.CRACK_STAGES || Vec3.atCenterOf(pos).distanceToSqr(player) > range2) {
+				continue;
+			}
+			BlockState state = level.getBlockState(pos);
+			VoxelShape shape = state.getShape(level, pos);
+			if (shape.isEmpty()) {
+				continue;
+			}
+			for (AABB box : shape.toAabbs()) {
+				CAPTURE.crackBox(box.move(pos).inflate(0.002), pos, stage);
+			}
+		}
+	}
+
+	/** Sends the particle atlas when it, or the mapping, is new. False if it isn't there yet. */
+	private static boolean sendParticleAtlas(Minecraft minecraft) {
+		boolean newAtlas = particleAtlas == null || particleAtlas.stale(minecraft);
+		if (!newAtlas && sentParticleGeneration == WorldLink.generation()) {
+			return true;
+		}
+		if (newAtlas) {
+			WorldAtlas built = WorldAtlas.build(minecraft, AtlasIds.PARTICLES);
+			if (built == null) {
+				return false;
+			}
+			particleAtlas = built;
+		}
+		if (WorldFormat.particleAtlasFits(particleAtlas.width, particleAtlas.height)) {
+			WorldLink.writeParticleAtlas(particleAtlas.width, particleAtlas.height, particleAtlas.pixels);
+			LOG.info("PortalCraft: sent the {}x{} particle atlas to the host", particleAtlas.width, particleAtlas.height);
+		} else {
+			LOG.warn("PortalCraft: particle atlas {}x{} doesn't fit the mapping; particles from it won't show", particleAtlas.width,
+				particleAtlas.height);
+		}
+		sentParticleGeneration = WorldLink.generation();
+		return true;
+	}
+
+	/** Sends the ten destroy-stage textures side by side, once per mapping. False if they can't be read. */
+	private static boolean sendCracks(Minecraft minecraft) {
+		if (sentCracksGeneration == WorldLink.generation()) {
+			return true;
+		}
+		NativeImage[] stages = new NativeImage[WorldFormat.CRACK_STAGES];
+		try {
+			for (int i = 0; i < stages.length; i++) {
+				Identifier id = Identifier.withDefaultNamespace("textures/block/destroy_stage_" + i + ".png");
+				Resource resource = minecraft.getResourceManager().getResource(id).orElse(null);
+				if (resource == null) {
+					return false;
+				}
+				try (var in = resource.open()) {
+					stages[i] = NativeImage.read(in);
+				}
+			}
+			int w = stages[0].getWidth(), h = stages[0].getHeight(), strip = w * stages.length;
+			if (strip > WorldFormat.CRACK_MAX_W || h > WorldFormat.CRACK_MAX_H) {
+				LOG.warn("PortalCraft: destroy stages are {}x{}, too big for the crack strip", w, h);
+				sentCracksGeneration = WorldLink.generation();
+				return false;
+			}
+			int[] pixels = new int[strip * h];
+			for (int i = 0; i < stages.length; i++) {
+				for (int y = 0; y < h; y++) {
+					for (int x = 0; x < w; x++) {
+						int px = Math.min(x, stages[i].getWidth() - 1), py = Math.min(y, stages[i].getHeight() - 1);
+						pixels[y * strip + i * w + x] = WorldFormat.argbToRgba(stages[i].getPixel(px, py));
+					}
+				}
+			}
+			WorldLink.writeCracks(strip, h, pixels);
+			sentCracksGeneration = WorldLink.generation();
+			LOG.info("PortalCraft: sent the {}x{} crack strip to the host", strip, h);
+			return true;
+		} catch (java.io.IOException e) {
+			LOG.warn("PortalCraft: can't read the destroy stages: {}", e.toString());
+			sentCracksGeneration = WorldLink.generation();
+			return false;
+		} finally {
+			for (NativeImage image : stages) {
+				if (image != null) {
+					image.close();
+				}
+			}
+		}
 	}
 
 	/** Sends the item atlas when it, or the mapping, is new. False if it isn't stitched yet. */
@@ -361,9 +560,16 @@ public final class EntityExporter {
 		final WorldFormat.Vertices avatarBlockTranslucent = new WorldFormat.Vertices(64);
 		final WorldFormat.Vertices avatarItemSolid = new WorldFormat.Vertices(1024);
 		final WorldFormat.Vertices avatarItemTranslucent = new WorldFormat.Vertices(64);
+		final WorldFormat.Vertices particleSolid = new WorldFormat.Vertices(1024);
+		final WorldFormat.Vertices particleTranslucent = new WorldFormat.Vertices(1024);
+		final WorldFormat.Vertices crack = new WorldFormat.Vertices(64);
 		/** In slot order (WorldFormat.H_ENTITY_RANGES). */
 		final WorldFormat.Vertices[] ranges = {this.blockSolid, this.blockTranslucent, this.itemSolid, this.itemTranslucent, this.avatarSkin,
-			this.avatarBlockSolid, this.avatarBlockTranslucent, this.avatarItemSolid, this.avatarItemTranslucent};
+			this.avatarBlockSolid, this.avatarBlockTranslucent, this.avatarItemSolid, this.avatarItemTranslucent, this.particleSolid,
+			this.particleTranslucent, this.crack};
+		private final ParticleQuads particleQuads = new ParticleQuads();
+		private final List<BlockStateModelPart> movingParts = new ArrayList<>();
+		private final RandomSource movingRandom = RandomSource.create();
 		private final Vector3f p = new Vector3f();
 		private final Vector3f n = new Vector3f();
 		private final SkinQuads skinQuads = new SkinQuads();
@@ -430,7 +636,53 @@ public final class EntityExporter {
 			if (atlas.equals(TextureAtlas.LOCATION_ITEMS)) {
 				return avatar ? (translucent ? this.avatarItemTranslucent : this.avatarItemSolid) : translucent ? this.itemTranslucent : this.itemSolid;
 			}
+			if (atlas.equals(TextureAtlas.LOCATION_PARTICLES)) {
+				return translucent ? this.particleTranslucent : this.particleSolid;
+			}
 			return null; // another atlas: the host doesn't have it
+		}
+
+		/** The range for quads textured from `atlas` (particles name their atlas, not a sprite). */
+		private WorldFormat.Vertices range(Identifier atlas, boolean translucent) {
+			if (atlas.equals(TextureAtlas.LOCATION_BLOCKS)) {
+				return translucent ? this.blockTranslucent : this.blockSolid;
+			}
+			if (atlas.equals(TextureAtlas.LOCATION_ITEMS)) {
+				return translucent ? this.itemTranslucent : this.itemSolid;
+			}
+			if (atlas.equals(TextureAtlas.LOCATION_PARTICLES)) {
+				return translucent ? this.particleTranslucent : this.particleSolid;
+			}
+			return null;
+		}
+
+		/**
+		 * The six faces of `box` (Minecraft coordinates) with the crack of `stage`, its texture
+		 * projected per face the way Minecraft's crumbling decal is, one block per tile.
+		 */
+		void crackBox(AABB box, BlockPos block, int stage) {
+			float s0 = (float) stage / WorldFormat.CRACK_STAGES, sw = 1.0F / WorldFormat.CRACK_STAGES;
+			double[][] faces = {
+				{box.minX, box.maxY, box.minZ, box.maxX, box.maxY, box.minZ, box.maxX, box.maxY, box.maxZ, box.minX, box.maxY, box.maxZ}, // up
+				{box.minX, box.minY, box.maxZ, box.maxX, box.minY, box.maxZ, box.maxX, box.minY, box.minZ, box.minX, box.minY, box.minZ}, // down
+				{box.minX, box.minY, box.minZ, box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ, box.minX, box.maxY, box.minZ}, // north
+				{box.maxX, box.minY, box.maxZ, box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ, box.maxX, box.maxY, box.maxZ}, // south
+				{box.minX, box.minY, box.maxZ, box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ, box.minX, box.maxY, box.maxZ}, // west
+				{box.maxX, box.minY, box.minZ, box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ, box.maxX, box.maxY, box.minZ}, // east
+			};
+			float[] us = new float[4], vs = new float[4];
+			for (int f = 0; f < faces.length; f++) {
+				double[] q = faces[f];
+				for (int k = 0; k < 4; k++) {
+					double x = q[k * 3] - block.getX(), y = q[k * 3 + 1] - block.getY(), z = q[k * 3 + 2] - block.getZ();
+					double a = f < 4 ? x : z, b = f < 2 ? z : 1.0 - y; // the face's own two axes, within the block
+					us[k] = s0 + sw * (float) Math.clamp(a, 0.0, 1.0);
+					vs[k] = (float) Math.clamp(b, 0.0, 1.0);
+				}
+				for (int k : WorldFormat.QUAD_TRIANGLES) {
+					this.crack.add(q[k * 3], q[k * 3 + 1], q[k * 3 + 2], 0xFFFFFFFF, us[k], vs[k]);
+				}
+			}
 		}
 
 		private void vertex(WorldFormat.Vertices out, Matrix4f m, float x, float y, float z, int color, float u, float v) {
@@ -611,13 +863,55 @@ public final class EntityExporter {
 			int overlayCoords, int tintedColor, ModelFeatureRenderer.CrumblingOverlay crumblingOverlay) {
 		}
 
+		/** A falling block: its block model, at the pose. */
 		@Override
 		public void submitMovingBlock(PoseStack poseStack, MovingBlockRenderState movingBlockRenderState, int outlineColor) {
+			if (outlineColor != 0) {
+				return;
+			}
+			BlockState state = movingBlockRenderState.blockState;
+			BlockStateModel model = Minecraft.getInstance().getModelManager().getBlockStateModelSet().get(state);
+			this.movingParts.clear();
+			this.movingRandom.setSeed(state.getSeed(movingBlockRenderState.randomSeedPos));
+			model.collectParts(this.movingRandom, this.movingParts);
+			this.blockParts(poseStack, this.movingParts, new int[0], false);
 		}
 
+		/** Primed TNT, block displays, minecart contents: the block model's quads at the pose. */
 		@Override
 		public void submitBlockModel(PoseStack poseStack, RenderType renderType, List<BlockStateModelPart> parts, int[] tintLayers, int lightCoords,
 			int overlayCoords, int outlineColor) {
+			if (outlineColor == 0) {
+				this.blockParts(poseStack, parts, tintLayers, renderType.hasBlending());
+			}
+		}
+
+		private static final Direction[] FACES_AND_INSIDE = {Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST,
+			null};
+
+		private void blockParts(PoseStack poseStack, List<BlockStateModelPart> parts, int[] tintLayers, boolean translucent) {
+			PoseStack.Pose pose = poseStack.last();
+			Matrix4f m = pose.pose();
+			for (BlockStateModelPart part : parts) {
+				for (Direction side : FACES_AND_INSIDE) {
+					for (BakedQuad quad : part.getQuads(side)) {
+						BakedQuad.MaterialInfo material = quad.materialInfo();
+						WorldFormat.Vertices out = this.range(material.sprite(), translucent);
+						if (out == null) {
+							continue;
+						}
+						int tint = material.isTinted() && material.tintIndex() < tintLayers.length ? tintLayers[material.tintIndex()] : -1;
+						pose.transformNormal(quad.direction().getStepX(), quad.direction().getStepY(), quad.direction().getStepZ(), this.n);
+						int color = WorldFormat.d3dColor(WorldFormat.shadeArgb(tint, WorldFormat.shade(this.n.x, this.n.y, this.n.z)), translucent);
+						for (int k : WorldFormat.QUAD_TRIANGLES) {
+							var position = quad.position(k);
+							long uv = quad.packedUV(k);
+							this.vertex(out, m, position.x(), position.y(), position.z(), color, UVPair.unpackU(uv), UVPair.unpackV(uv));
+						}
+						this.captured = true;
+					}
+				}
+			}
 		}
 
 		@Override
@@ -632,8 +926,95 @@ public final class EntityExporter {
 		public void submitCustomGeometry(PoseStack poseStack, RenderType renderType, SubmitNodeCollector.CustomGeometryRenderer customGeometryRenderer) {
 		}
 
+		/** Particles, layer by layer: each layer names its atlas and whether it blends. */
 		@Override
 		public void submitQuadParticleGroup(QuadParticleRenderState particles) {
+			for (var layer : particles.layers()) {
+				WorldFormat.Vertices out = this.range(layer.textureAtlasLocation(), layer.translucent());
+				if (out == null) {
+					continue;
+				}
+				this.particleQuads.start(out, this.ox, this.oy, this.oz, layer.translucent());
+				particles.buildLayer(layer, this.particleQuads);
+			}
+		}
+
+		/** Particle quads: four corners (camera-relative) with uv and colour; two triangles each. */
+		private static final class ParticleQuads implements VertexConsumer {
+			private WorldFormat.Vertices out;
+			private double ox, oy, oz;
+			private boolean translucent;
+			private final double[] xyz = new double[12];
+			private final float[] uv = new float[8];
+			private final int[] colors = new int[4];
+			private int corner;
+
+			void start(WorldFormat.Vertices out, double ox, double oy, double oz, boolean translucent) {
+				this.out = out;
+				this.ox = ox;
+				this.oy = oy;
+				this.oz = oz;
+				this.translucent = translucent;
+				this.corner = 0;
+			}
+
+			@Override
+			public VertexConsumer addVertex(float x, float y, float z) {
+				this.xyz[this.corner * 3] = this.ox + x;
+				this.xyz[this.corner * 3 + 1] = this.oy + y;
+				this.xyz[this.corner * 3 + 2] = this.oz + z;
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv(float u, float v) {
+				this.uv[this.corner * 2] = u;
+				this.uv[this.corner * 2 + 1] = v;
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setColor(int r, int g, int b, int a) {
+				return this.setColor(a << 24 | r << 16 | g << 8 | b);
+			}
+
+			@Override
+			public VertexConsumer setColor(int color) {
+				this.colors[this.corner] = WorldFormat.d3dColor(color, this.translucent);
+				return this;
+			}
+
+			/** setLight is each particle vertex's last call (QuadParticleRenderState.renderVertex). */
+			@Override
+			public VertexConsumer setUv2(int u, int v) {
+				if (++this.corner == 4) {
+					this.corner = 0;
+					for (int k : WorldFormat.QUAD_TRIANGLES) {
+						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], this.colors[k], this.uv[k * 2], this.uv[k * 2 + 1]);
+					}
+				}
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv1(int u, int v) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setUv3(float u, float v) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setNormal(float x, float y, float z) {
+				return this;
+			}
+
+			@Override
+			public VertexConsumer setLineWidth(float width) {
+				return this;
+			}
 		}
 
 		@Override

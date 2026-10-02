@@ -56,7 +56,8 @@ struct HostState {
 	Vec3 teleportVelocity;
 	uint8_t keys[32];     // pressed SDL scancodes 0..255, bit per scancode
 	uint8_t mouse;        // bit0 left, bit1 right, bit2 middle
-	uint8_t pad[3];
+	int8_t wheel;         // mouse-wheel notches so far, wrapping (up is positive): Minecraft scrolls by the change
+	uint8_t pad[2];
 	HostPortal portals[2]; // [0] blue, [1] orange
 	// PCH2: the OS cursor over the host's window, 0..1 across its client area (top-left origin), or
 	// -1 when there is none. Only meaningful while Minecraft has a screen open (McFlags kMcScreen):
@@ -178,6 +179,14 @@ struct OverlayHeader {
 // position it renders its own player at, so the body never lags or leads the camera. The skin is a
 // third texture, written like the atlases (size, pixels, then skinSeq):
 //   [kWorldSkinOffset, + kWorldSkinBytes)             the player's skin, RGBA8, rows TOP-DOWN, skinWidth x skinHeight
+//
+// PCW4 adds particles and block-breaking cracks: three more ranges after the avatar's, in world
+// space like the entity ranges. particleSolid / particleTranslucent are textured from Minecraft's
+// particle atlas (block-debris particles use the block atlas and go in the entity block ranges);
+// crack is the breaking overlay, drawn multiplied over what is behind it (Minecraft's crumbling
+// blend), textured from the crack strip: the ten destroy stages side by side, u = (stage + s) / 10.
+//   [kWorldParticleAtlasOffset, + kWorldParticleAtlasBytes)  the particle atlas, RGBA8, rows TOP-DOWN
+//   [kWorldCrackOffset, + kWorldCrackBytes)                    the crack strip, RGBA8, rows TOP-DOWN
 constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
 constexpr uint32_t kWorldAtlasMaxW = 2048;
 constexpr uint32_t kWorldAtlasMaxH = 2048;
@@ -203,7 +212,17 @@ constexpr uint32_t kWorldSkinMaxW = 256; // 64x64 vanilla; room for HD skins
 constexpr uint32_t kWorldSkinMaxH = 256;
 constexpr uint32_t kWorldSkinOffset = kWorldPcw2Bytes;
 constexpr uint32_t kWorldSkinBytes = kWorldSkinMaxW * kWorldSkinMaxH * 4;
-constexpr uint32_t kWorldBytes = kWorldSkinOffset + kWorldSkinBytes;
+constexpr uint32_t kWorldPcw3Bytes = kWorldSkinOffset + kWorldSkinBytes;
+constexpr uint32_t kWorldParticleAtlasMaxW = 2048;
+constexpr uint32_t kWorldParticleAtlasMaxH = 2048;
+constexpr uint32_t kWorldParticleAtlasMaxPixels = 1024 * 1024;
+constexpr uint32_t kWorldParticleAtlasOffset = kWorldPcw3Bytes;
+constexpr uint32_t kWorldParticleAtlasBytes = kWorldParticleAtlasMaxPixels * 4;
+constexpr uint32_t kWorldCrackMaxW = 512; // ten 16-pixel stages; room for 32-pixel resource packs
+constexpr uint32_t kWorldCrackMaxH = 64;
+constexpr uint32_t kWorldCrackOffset = kWorldParticleAtlasOffset + kWorldParticleAtlasBytes;
+constexpr uint32_t kWorldCrackBytes = kWorldCrackMaxW * kWorldCrackMaxH * 4;
+constexpr uint32_t kWorldBytes = kWorldCrackOffset + kWorldCrackBytes;
 
 struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 	float x, y, z;  // host world space, Source units
@@ -212,7 +231,7 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 };
 
 struct WorldHeader {
-	char magic[4];            // "PCW3", written by the host
+	char magic[4];            // "PCW4", written by the host
 	uint32_t atlasWidth;      // Minecraft
 	uint32_t atlasHeight;
 	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
@@ -241,12 +260,26 @@ struct WorldHeader {
 	uint32_t avatarBlockTranslucent[2]; // then block-atlas blended
 	uint32_t avatarItemSolid[2];        // then item-atlas alpha tested
 	uint32_t avatarItemTranslucent[2];  // then item-atlas blended
+	// ---- PCW4: particles and cracks ----
+	uint32_t particleAtlasWidth; // Minecraft
+	uint32_t particleAtlasHeight;
+	volatile uint32_t particleAtlasSeq; // bumped after the particle atlas pixels are written; 0 = none
+	uint32_t crackWidth;
+	uint32_t crackHeight;
+	volatile uint32_t crackSeq;     // bumped after the crack strip is written; 0 = none
+	uint32_t particleSolid[2];      // after the avatar ranges: particle atlas, alpha tested
+	uint32_t particleTranslucent[2]; // then particle atlas, blended
+	uint32_t crack[2];              // then the breaking overlay, multiplied
 };
 
 #pragma pack(pop)
 
 static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
-static_assert(sizeof(WorldHeader) == 152, "WorldHeader layout");
+static_assert(sizeof(WorldHeader) == 200, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, particleAtlasWidth) == 152, "WorldHeader PCW3 offsets unchanged");
+static_assert(offsetof(WorldHeader, crackSeq) == 172, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, particleSolid) == 176, "WorldHeader layout");
+static_assert(offsetof(WorldHeader, crack) == 192, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, skinWidth) == 100, "WorldHeader PCW2 offsets unchanged");
 static_assert(offsetof(WorldHeader, skinSeq) == 108, "WorldHeader layout");
 static_assert(offsetof(WorldHeader, avatarSkin) == 112, "WorldHeader layout");
@@ -270,7 +303,9 @@ static_assert(kWorldItemAtlasOffset == 26218496, "world layout"); // where the P
 static_assert(kWorldEntityOffset == 30412800, "world layout");
 static_assert(kWorldEntitySlotBytes == 1572864, "world layout");
 static_assert(kWorldPcw2Bytes == 33558528, "world layout"); // where the PCW2 mapping ended
-static_assert(kWorldBytes == 33820672, "world layout");
+static_assert(kWorldPcw3Bytes == 33820672, "world layout");
+static_assert(kWorldCrackOffset == 38014976, "world layout");
+static_assert(kWorldBytes == 38146048, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");

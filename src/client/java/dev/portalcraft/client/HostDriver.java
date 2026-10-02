@@ -170,6 +170,7 @@ public final class HostDriver {
 		}
 		boolean ready = sendState(minecraft);
 		moveCursor(minecraft);
+		scroll(minecraft);
 
 		// The placed blocks, for the host to draw in its own 3D pass.
 		if (ready && WorldLink.open()) {
@@ -205,6 +206,28 @@ public final class HostDriver {
 	}
 
 	private static double cursorX = -1.0, cursorY = -1.0;
+	private static int lastWheel = Integer.MIN_VALUE;
+
+	/**
+	 * The host's mouse wheel (a wrapping notch count): each change scrolls Minecraft, which turns
+	 * the hotbar in game and scrolls lists in screens.
+	 */
+	private static void scroll(Minecraft minecraft) {
+		Proto.HostState s = HostLink.current();
+		if (s == null) {
+			return;
+		}
+		int wheel = s.wheel();
+		if (lastWheel == Integer.MIN_VALUE) {
+			lastWheel = wheel; // the first state: no movement yet
+			return;
+		}
+		int notches = (byte) (wheel - lastWheel);
+		lastWheel = wheel;
+		if (notches != 0 && minecraft.player != null && (s.foreground() || screenWantsCursor(minecraft))) {
+			minecraft.mouseHandler.onScroll(minecraft.getWindow().handle(), 0.0, notches);
+		}
+	}
 
 	/**
 	 * Every render frame while a screen is open: the host's cursor (0..1 over its window) becomes

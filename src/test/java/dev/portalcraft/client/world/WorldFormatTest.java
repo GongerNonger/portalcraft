@@ -28,7 +28,9 @@ class WorldFormatTest {
 		assertEquals(33558528L, WorldFormat.PCW2_BYTES); // kWorldPcw2Bytes
 		assertEquals(WorldFormat.ENTITY_OFFSET + 2 * WorldFormat.ENTITY_SLOT_BYTES, WorldFormat.PCW2_BYTES);
 		assertEquals(33558528L, WorldFormat.SKIN_OFFSET); // kWorldSkinOffset
-		assertEquals(33820672L, WorldFormat.TOTAL_BYTES); // kWorldBytes
+		assertEquals(33820672L, WorldFormat.PCW3_BYTES); // kWorldPcw3Bytes
+		assertEquals(38014976L, WorldFormat.CRACK_OFFSET); // kWorldCrackOffset
+		assertEquals(38146048L, WorldFormat.TOTAL_BYTES); // kWorldBytes
 	}
 
 	@Test
@@ -55,15 +57,23 @@ class WorldFormatTest {
 		assertEquals(108, WorldFormat.H_SKIN_SEQ);
 		assertEquals(112, WorldFormat.H_AVATAR_SKIN);
 		assertEquals(144, WorldFormat.H_AVATAR_ITEM_TRANSLUCENT);
-		assertEquals(152, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
-		assertEquals(WorldFormat.H_AVATAR_ITEM_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
+		// PCW4 fields
+		assertEquals(152, WorldFormat.H_PARTICLE_ATLAS_W);
+		assertEquals(172, WorldFormat.H_CRACK_SEQ);
+		assertEquals(176, WorldFormat.H_PARTICLE_SOLID);
+		assertEquals(192, WorldFormat.H_CRACK);
+		assertEquals(200, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
+		assertEquals(WorldFormat.H_CRACK + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
 		assertTrue(WorldFormat.HEADER_STRUCT_BYTES <= WorldFormat.HEADER_BYTES);
 	}
 
 	@Test
 	void mappingFitsTheAddressBudget() {
 		// hl2.exe is 32-bit: the overlay (42.2 MB) plus this must stay well under 100 MB of views.
-		assertTrue(WorldFormat.TOTAL_BYTES <= 34L << 20, "world mapping " + WorldFormat.TOTAL_BYTES);
+		// PCW4's particle atlas and crack strip took it from 32 to 36.4 MB.
+		assertTrue(WorldFormat.TOTAL_BYTES <= 40L << 20, "world mapping " + WorldFormat.TOTAL_BYTES);
+		assertEquals(0, WorldFormat.PARTICLE_ATLAS_OFFSET % 4096);
+		assertEquals(0, WorldFormat.CRACK_OFFSET % 4096);
 		// Every region is page aligned, so the views map without surprises.
 		assertEquals(0, WorldFormat.ITEM_ATLAS_OFFSET % 4096);
 		assertEquals(0, WorldFormat.ENTITY_OFFSET % 4096);

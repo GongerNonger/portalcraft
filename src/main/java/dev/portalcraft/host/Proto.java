@@ -36,7 +36,7 @@ public final class Proto {
 
 	public record HostState(
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
-		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, HostPortal[] portals,
+		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, HostPortal[] portals,
 		float cursorX, float cursorY
 	) {
 		public boolean inGame() {
@@ -77,13 +77,14 @@ public final class Proto {
 		byte[] keys = new byte[32];
 		b.get(keys);
 		int mouse = b.get() & 0xFF;
-		b.position(b.position() + 3);
+		int wheel = b.get(); // signed, wrapping
+		b.position(b.position() + 2);
 		HostPortal[] portals = new HostPortal[2];
 		for (int i = 0; i < 2; i++) {
 			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
 		}
 		float cursorX = b.getFloat(), cursorY = b.getFloat();
-		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, portals, cursorX,
+		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, portals, cursorX,
 			cursorY);
 	}
 

@@ -23,14 +23,24 @@
 // after them lands on top: our solid triangles go in just before the view's first translucent
 // world surface (IVRenderView::DrawTranslucentSurfaces, slot 18), and our translucent ones at the
 // view's end. A view with no translucent surfaces gets both at the end.
+//
+// Portal's lighting: every Minecraft triangle is tinted by what Portal would light a model with at
+// that spot, facing that way: IVEngineClient::ComputeLighting (slot 67; the ambient cube from the
+// map's light probes plus its nearby lights), the same lighting Portal gives its cubes and turrets.
+// Cached per 16-unit cell and face direction (Portal's lighting is baked); the block mesh is lit
+// once per publish, the entity mesh when it changes. That is what makes the blocks sit in the
+// chamber's cool light and darken in its shadows instead of glowing at full brightness.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <d3d9.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <unordered_map>
+#include <vector>
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
@@ -54,6 +64,10 @@ IDirect3DTexture9* g_itemAtlas = nullptr;
 uint32_t g_itemAtlasSeq = 0;
 IDirect3DTexture9* g_skin = nullptr;
 uint32_t g_skinSeq = 0;
+IDirect3DTexture9* g_particleAtlas = nullptr;
+uint32_t g_particleAtlasSeq = 0;
+IDirect3DTexture9* g_cracks = nullptr;
+uint32_t g_cracksSeq = 0;
 bool g_loggedAvatar = false;
 void* g_renderView = nullptr;
 
@@ -66,6 +80,128 @@ struct ViewEntry {
 	bool solidDone;       // our solid pass is in (before its glass)
 };
 bool g_mainSolidDone = false;
+
+// ---- Portal's lighting ----------------------------------------------------------------------
+
+std::unordered_map<uint64_t, uint32_t> g_lightCache; // cell + face -> 0x00RRGGBB tint
+std::vector<pcproto::WorldVertex> g_litBlocks, g_litEntities;
+uint32_t g_litBlocksSeq = 0, g_litBlocksSlot = kNoSlot, g_litEntitySeq = 0, g_litEntitySlot = kNoSlot;
+sdk::Vector g_litFeet{};
+
+// Linear light -> a multiplier for the gamma-space vertex colour. ComputeLighting's values are
+// model lighting before Portal's overbright and tone mapping (a lit chamber face reads ~0.1-0.3),
+// so they're scaled by an exposure first (tunable live: fake_mc.py --exposure).
+float g_exposure = 1.6f;
+// How much of a face's light is its own direction; the rest is the average of the ambient cube's six
+// sides. Portal's cube is very directional (lit side ~0.7, shadow side ~0.08), and Minecraft's own face
+// shading is already in the vertex colours, so taken straight it made unlit faces black.
+constexpr float kDirectional = 0.45f;
+// Bounce light the ambient cube misses: Portal's white walls fill shadowed sides far more than its
+// light probes say (a face turned from the lights read 0.08, next to a wall that looks half lit).
+// Added after exposure, in the probes' own hue, so shadow sides stay readable and keep the tint.
+constexpr float kBounceLift = 0.15f;
+constexpr float kLightFloor = 0.06f;
+int g_lightSamplesLogged = 0;
+
+uint8_t toTint(float linear) {
+	float c = linear > 0.0f ? std::pow(linear, 1.0f / 2.2f) : 0.0f;
+	c = c < kLightFloor ? kLightFloor : c > 1.0f ? 1.0f : c;
+	return uint8_t(c * 255.0f + 0.5f);
+}
+
+// Exposed light -> tint, scaled down as a whole when a channel would clip, so a bright face keeps
+// the chamber's blue cast instead of going white.
+uint32_t tintOf(sdk::Vector c) {
+	if (g_exposure <= 0.0f) {
+		return 0xFFFFFF; // lighting off: Minecraft's own brightness
+	}
+	c = {c.x * g_exposure, c.y * g_exposure, c.z * g_exposure};
+	float peak = c.x > c.y ? (c.x > c.z ? c.x : c.z) : (c.y > c.z ? c.y : c.z);
+	if (peak > 1.0f) {
+		c = {c.x / peak, c.y / peak, c.z / peak};
+	}
+	return uint32_t(toTint(c.x)) << 16 | uint32_t(toTint(c.y)) << 8 | toTint(c.z);
+}
+
+uint32_t lightTint(const sdk::Vector& p, const sdk::Vector& n) {
+	int face = 0;
+	float ax = std::fabs(n.x), ay = std::fabs(n.y), az = std::fabs(n.z);
+	if (ax >= ay && ax >= az) {
+		face = n.x >= 0 ? 0 : 1;
+	} else if (ay >= az) {
+		face = n.y >= 0 ? 2 : 3;
+	} else {
+		face = n.z >= 0 ? 4 : 5;
+	}
+	int64_t cx = int64_t(std::floor(p.x / 16.0f)) & 0xFFFFF, cy = int64_t(std::floor(p.y / 16.0f)) & 0xFFFFF,
+		cz = int64_t(std::floor(p.z / 16.0f)) & 0xFFFFF;
+	uint64_t key = uint64_t(cx) | uint64_t(cy) << 20 | uint64_t(cz) << 40 | uint64_t(face) << 60;
+	auto it = g_lightCache.find(key);
+	if (it != g_lightCache.end()) {
+		return it->second;
+	}
+	static const sdk::Vector kAxes[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+	const sdk::Vector& axis = kAxes[face];
+	sdk::Vector at{p.x + axis.x * 2.0f, p.y + axis.y * 2.0f, p.z + axis.z * 2.0f}; // just off the face, in the air
+	sdk::Vector color{1.0f, 1.0f, 1.0f};
+	sdk::Vector box[6] = {};
+	bool haveBox = false;
+	if (g_engineClient) {
+		__try {
+			sdk::vcall<void>(g_engineClient, 67, static_cast<const sdk::Vector*>(&at), static_cast<const sdk::Vector*>(&axis), true,
+				static_cast<sdk::Vector*>(&color), static_cast<sdk::Vector*>(box));
+			haveBox = true;
+		} __except (EXCEPTION_EXECUTE_HANDLER) {
+			color = {1.0f, 1.0f, 1.0f};
+		}
+	}
+	if (haveBox) {
+		sdk::Vector avg{};
+		for (const sdk::Vector& b : box) {
+			avg = {avg.x + b.x / 6.0f, avg.y + b.y / 6.0f, avg.z + b.z / 6.0f};
+		}
+		color = {color.x * kDirectional + avg.x * (1.0f - kDirectional), color.y * kDirectional + avg.y * (1.0f - kDirectional),
+			color.z * kDirectional + avg.z * (1.0f - kDirectional)};
+		float peak = avg.x > avg.y ? (avg.x > avg.z ? avg.x : avg.z) : (avg.y > avg.z ? avg.y : avg.z);
+		if (peak > 1e-4f && g_exposure > 0.0f) {
+			float lift = kBounceLift / g_exposure / peak; // tintOf multiplies by the exposure
+			color = {color.x + avg.x * lift, color.y + avg.y * lift, color.z + avg.z * lift};
+		}
+	}
+	uint32_t tint = tintOf(color);
+	if (g_lightSamplesLogged < 12 && g_log) {
+		g_lightSamplesLogged++;
+		g_log("world: Portal light at (%.0f %.0f %.0f) facing %d: (%.3f %.3f %.3f) -> tint %06X", at.x, at.y, at.z, face, color.x, color.y,
+			color.z, tint);
+	}
+	g_lightCache.emplace(key, tint);
+	return tint;
+}
+
+uint32_t modulate(uint32_t color, uint32_t tint) {
+	uint32_t r = ((color >> 16) & 0xFF) * ((tint >> 16) & 0xFF) / 255, g = ((color >> 8) & 0xFF) * ((tint >> 8) & 0xFF) / 255,
+		b = (color & 0xFF) * (tint & 0xFF) / 255;
+	return (color & 0xFF000000u) | r << 16 | g << 8 | b;
+}
+
+// Appends `count` vertices of `src` to `out`, each triangle tinted by Portal's light at its centre
+// (plus `offset`, for the avatar's feet-relative vertices) facing its normal.
+void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVertex* src, uint32_t count, const sdk::Vector& offset) {
+	size_t base = out.size();
+	out.insert(out.end(), src, src + count);
+	for (uint32_t i = 0; i + 2 < count; i += 3) {
+		pcproto::WorldVertex* t = out.data() + base + i;
+		float ux = t[1].x - t[0].x, uy = t[1].y - t[0].y, uz = t[1].z - t[0].z;
+		float vx = t[2].x - t[0].x, vy = t[2].y - t[0].y, vz = t[2].z - t[0].z;
+		sdk::Vector n{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx};
+		sdk::Vector c{(t[0].x + t[1].x + t[2].x) / 3.0f + offset.x, (t[0].y + t[1].y + t[2].y) / 3.0f + offset.y,
+			(t[0].z + t[1].z + t[2].z) / 3.0f + offset.z};
+		uint32_t tint = lightTint(c, n);
+		for (int k = 0; k < 3; k++) {
+			t[k].color = modulate(t[k].color, tint);
+		}
+	}
+}
 constexpr int kPassSolid = 1, kPassTranslucent = 2, kPassBoth = 3;
 constexpr int kMaxViews = 32;
 ViewEntry g_views[kMaxViews];
@@ -146,6 +282,21 @@ void uploadAtlases(IDirect3DDevice9* dev) {
 		uint32_t w = g_header->skinWidth, h = g_header->skinHeight;
 		if (w != 0 && h != 0 && w <= pcproto::kWorldSkinMaxW && h <= pcproto::kWorldSkinMaxH) {
 			uploadAtlas(dev, &g_skin, g_shm + pcproto::kWorldSkinOffset, w, h, "skin");
+		}
+	}
+	if (g_header->particleAtlasSeq != g_particleAtlasSeq) {
+		g_particleAtlasSeq = g_header->particleAtlasSeq;
+		uint32_t w = g_header->particleAtlasWidth, h = g_header->particleAtlasHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldParticleAtlasMaxW && h <= pcproto::kWorldParticleAtlasMaxH &&
+			uint64_t(w) * h <= pcproto::kWorldParticleAtlasMaxPixels) {
+			uploadAtlas(dev, &g_particleAtlas, g_shm + pcproto::kWorldParticleAtlasOffset, w, h, "particle");
+		}
+	}
+	if (g_header->crackSeq != g_cracksSeq) {
+		g_cracksSeq = g_header->crackSeq;
+		uint32_t w = g_header->crackWidth, h = g_header->crackHeight;
+		if (w != 0 && h != 0 && w <= pcproto::kWorldCrackMaxW && h <= pcproto::kWorldCrackMaxH) {
+			uploadAtlas(dev, &g_cracks, g_shm + pcproto::kWorldCrackOffset, w, h, "crack");
 		}
 	}
 }
@@ -241,6 +392,8 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	const pcproto::WorldVertex* avatar = nullptr;   // the avatar's skin range, then its block and item ranges
 	uint32_t eBlockSolid = 0, eBlockTranslucent = 0, eItemSolid = 0, eItemTranslucent = 0;
 	uint32_t aSkin = 0, aBlockSolid = 0, aBlockTranslucent = 0, aItemSolid = 0, aItemTranslucent = 0;
+	const pcproto::WorldVertex* particles = nullptr; // particle-atlas solid then translucent, then the cracks
+	uint32_t pSolid = 0, pTranslucent = 0, cracks = 0;
 	if (g_header->entitySeq != 0) {
 		uint32_t slot = claimSlot(g_header->entityFront, g_header->entityReading);
 		if (slot != kNoSlot) {
@@ -253,25 +406,63 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			aBlockTranslucent = g_header->avatarBlockTranslucent[slot];
 			aItemSolid = g_header->avatarItemSolid[slot];
 			aItemTranslucent = g_header->avatarItemTranslucent[slot];
+			pSolid = g_header->particleSolid[slot];
+			pTranslucent = g_header->particleTranslucent[slot];
+			cracks = g_header->crack[slot];
 			uint64_t total = uint64_t(eBlockSolid) + eBlockTranslucent + eItemSolid + eItemTranslucent + aSkin + aBlockSolid + aBlockTranslucent +
-				aItemSolid + aItemTranslucent;
+				aItemSolid + aItemTranslucent + pSolid + pTranslucent + cracks;
 			if (total == 0 || total > pcproto::kWorldEntityMaxVertices) {
 				eBlockSolid = eBlockTranslucent = eItemSolid = eItemTranslucent = 0;
 				aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
+				pSolid = pTranslucent = cracks = 0;
 				g_header->entityReading = kNoSlot;
 			} else {
 				entities = reinterpret_cast<const pcproto::WorldVertex*>(
 					g_shm + pcproto::kWorldEntityOffset + size_t(slot) * pcproto::kWorldEntitySlotBytes);
 				eItems = entities + eBlockSolid + eBlockTranslucent;
 				avatar = eItems + eItemSolid + eItemTranslucent;
+				particles = avatar + aSkin + aBlockSolid + aBlockTranslucent + aItemSolid + aItemTranslucent;
 			}
 		}
 	}
-	// The avatar only while Portal's camera is out of the player's head, placed on the player.
+	// Portal's lighting on all of it (see the top of the file). Pointers move to the lit copies.
 	sdk::Vector feet{};
+	bool haveFeet = camera::playerFeet(&feet);
+	if (blocks) {
+		uint32_t slot = g_header->reading;
+		if (slot != g_litBlocksSlot || g_header->meshSeq != g_litBlocksSeq) {
+			g_litBlocks.clear();
+			appendLit(g_litBlocks, blocks, solid + translucent, sdk::Vector{});
+			g_litBlocksSlot = slot;
+			g_litBlocksSeq = g_header->meshSeq;
+		}
+		blocks = g_litBlocks.data();
+	}
+	if (entities) {
+		uint32_t slot = g_header->entityReading;
+		uint32_t eTotal = uint32_t(avatar - entities);
+		uint32_t aTotal = aSkin + aBlockSolid + aBlockTranslucent + aItemSolid + aItemTranslucent;
+		bool feetMoved = haveFeet && (feet.x != g_litFeet.x || feet.y != g_litFeet.y || feet.z != g_litFeet.z);
+		if (slot != g_litEntitySlot || g_header->entitySeq != g_litEntitySeq || feetMoved) {
+			g_litEntities.clear();
+			appendLit(g_litEntities, entities, eTotal, sdk::Vector{});
+			appendLit(g_litEntities, avatar, aTotal, haveFeet ? feet : sdk::Vector{});
+			appendLit(g_litEntities, particles, pSolid + pTranslucent, sdk::Vector{});
+			g_litEntities.insert(g_litEntities.end(), particles + pSolid + pTranslucent, particles + pSolid + pTranslucent + cracks); // multiplied: unlit
+			g_litEntitySlot = slot;
+			g_litEntitySeq = g_header->entitySeq;
+			g_litFeet = feet;
+		}
+		const pcproto::WorldVertex* lit = g_litEntities.data();
+		eItems = lit + (eItems - entities);
+		avatar = lit + eTotal;
+		particles = avatar + aTotal;
+		entities = lit;
+	}
+	// The avatar only while Portal's camera is out of the player's head, placed on the player.
 	const pcproto::WorldVertex* aBlocks = avatar ? avatar + aSkin : nullptr;
 	const pcproto::WorldVertex* aItems = aBlocks ? aBlocks + aBlockSolid + aBlockTranslucent : nullptr;
-	if (!avatar || !(throughPortal || camera::thirdPerson()) || !camera::playerFeet(&feet)) {
+	if (!avatar || !(throughPortal || camera::thirdPerson()) || !haveFeet) {
 		aSkin = aBlockSolid = aBlockTranslucent = aItemSolid = aItemTranslucent = 0;
 	}
 	if (!g_skin) {
@@ -284,6 +475,13 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 	if (!g_itemAtlas) {
 		eItemSolid = eItemTranslucent = 0;
 		aItemSolid = aItemTranslucent = 0;
+	}
+	const pcproto::WorldVertex* crackVerts = particles ? particles + pSolid + pTranslucent : nullptr;
+	if (!g_particleAtlas) {
+		pSolid = pTranslucent = 0;
+	}
+	if (!g_cracks) {
+		cracks = 0;
 	}
 	D3DMATRIX atFeet = {};
 	atFeet._11 = atFeet._22 = atFeet._33 = atFeet._44 = 1.0f;
@@ -377,9 +575,23 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			drawTriangles(dev, aItems, aItemSolid);
 			dev->SetTransform(D3DTS_WORLD, &identity);
 		}
+		if (pSolid) {
+			dev->SetTexture(0, g_particleAtlas);
+			drawTriangles(dev, particles, pSolid);
+		}
+		if (cracks) { // Minecraft's crumbling blend: what's behind, times the crack texture
+			dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+			dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+			dev->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+			dev->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_DESTCOLOR);
+			dev->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCCOLOR);
+			dev->SetTexture(0, g_cracks);
+			drawTriangles(dev, crackVerts, cracks);
+			setSolid(dev);
+		}
 	}
 	if ((passes & kPassTranslucent) &&
-		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3)) {
+		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3 || pTranslucent >= 3)) {
 		setTranslucent(dev);
 		dev->SetTexture(0, g_atlas);
 		if (blocks) {
@@ -398,6 +610,11 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 			drawTriangles(dev, aBlocks + aBlockSolid, aBlockTranslucent);
 			dev->SetTexture(0, g_itemAtlas);
 			drawTriangles(dev, aItems + aItemSolid, aItemTranslucent);
+			dev->SetTransform(D3DTS_WORLD, &identity);
+		}
+		if (pTranslucent) {
+			dev->SetTexture(0, g_particleAtlas);
+			drawTriangles(dev, particles + pSolid, pTranslucent);
 		}
 	}
 
@@ -538,6 +755,20 @@ void hook(void** vt, int slot, void* replacement, void** original) {
 
 } // namespace
 
+void levelChanged() {
+	g_lightCache.clear(); // another map's light
+	g_litBlocksSlot = g_litEntitySlot = kNoSlot;
+	g_lightSamplesLogged = 0;
+}
+
+void setExposure(float exposure) {
+	g_exposure = exposure;
+	levelChanged(); // relight everything
+	if (g_log) {
+		g_log("world: lighting exposure %.2f", exposure);
+	}
+}
+
 void frameDone() {
 	if (g_framesLogged < 3 && g_scenesThisFrame > 0 && g_log) {
 		g_framesLogged++;
@@ -577,6 +808,16 @@ void releaseDeviceObjects() {
 		g_skin->Release();
 		g_skin = nullptr;
 	}
+	if (g_particleAtlas) {
+		g_particleAtlas->Release();
+		g_particleAtlas = nullptr;
+	}
+	if (g_cracks) {
+		g_cracks->Release();
+		g_cracks = nullptr;
+	}
+	g_particleAtlasSeq = 0;
+	g_cracksSeq = 0;
 	g_atlasSeq = 0; // upload them again after the reset
 	g_itemAtlasSeq = 0;
 	g_skinSeq = 0;
@@ -593,7 +834,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	g_header = reinterpret_cast<pcproto::WorldHeader*>(g_shm);
 	g_header->reading = kNoSlot;
 	g_header->entityReading = kNoSlot;
-	std::memcpy(g_header->magic, "PCW3", 4);
+	std::memcpy(g_header->magic, "PCW4", 4);
 
 	g_engineClient = engineFactory("VEngineClient013", nullptr);
 	void* renderView = engineFactory("VEngineRenderView014", nullptr);

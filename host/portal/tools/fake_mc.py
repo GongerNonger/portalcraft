@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--mouse", type=int, default=0, help="dev: with --keys, also hold mouse buttons (1 left, 2 right, 4 middle)")
     ap.add_argument("--view", help="dev: set Portal's camera to pitch,yaw")
     ap.add_argument("--give", help="dev: give Minecraft's player an item, e.g. minecraft:stone")
+    ap.add_argument("--exposure", type=float, help="dev: how bright Portal's lighting makes Minecraft's blocks (0 = off)")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
@@ -39,6 +40,9 @@ def main():
     if a.view:
         p, y = (float(v) for v in a.view.split(","))
         sock.sendto(b"PCV1" + struct.pack("<2f", p, y), HOST)
+        return
+    if a.exposure is not None:
+        sock.sendto(b"PCX1" + struct.pack("<f", a.exposure), HOST)
         return
     if a.give:
         sock.sendto(b"PCG1" + a.give.encode() + b"\0", ("127.0.0.1", 27516))

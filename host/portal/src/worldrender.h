@@ -9,6 +9,10 @@ namespace worldrender {
 bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory);
 // Once per presented frame (from the overlay's Present hook).
 void frameDone();
+// A new map: forget the cached lighting.
+void levelChanged();
+// Dev: how bright Portal's lighting makes Minecraft's geometry (0 = lighting off).
+void setExposure(float exposure);
 // Before a device reset.
 void releaseDeviceObjects();
 } // namespace worldrender

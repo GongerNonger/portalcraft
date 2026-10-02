@@ -35,6 +35,7 @@ public final class WorldLink {
 		SLOT_SOLID = WorldFormat.H_SLOT_SOLID, SLOT_TRANSLUCENT = WorldFormat.H_SLOT_TRANSLUCENT;
 	private static final ValueLayout.OfInt INT = JAVA_INT.withByteAlignment(4);
 	private static final ValueLayout.OfInt INT_UNALIGNED = ValueLayout.JAVA_INT_UNALIGNED;
+	private static final int MAGIC_PCW4 = 'P' | 'C' << 8 | 'W' << 16 | '4' << 24;
 	private static final int MAGIC_PCW3 = 'P' | 'C' << 8 | 'W' << 16 | '3' << 24;
 	private static final int MAGIC_PCW2 = 'P' | 'C' << 8 | 'W' << 16 | '2' << 24;
 	private static final int MAGIC_PCW1 = 'P' | 'C' << 8 | 'W' << 16 | '1' << 24;
@@ -99,12 +100,12 @@ public final class WorldLink {
 			}
 			v = v.reinterpret(WorldFormat.TOTAL_BYTES);
 			int magic = v.get(INT, MAGIC);
-			if (magic != MAGIC_PCW3) {
+			if (magic != MAGIC_PCW4) {
 				if (!warnedMagic) {
 					warnedMagic = true;
-					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2
+					LOG.warn(magic == MAGIC_PCW1 || magic == MAGIC_PCW2 || magic == MAGIC_PCW3
 						? "PortalCraft: the Portal plugin speaks an older world format (rerun setup with Portal closed); retrying every 2 s"
-						: "PortalCraft: world mapping has no PCW3 magic yet; retrying every 2 s");
+						: "PortalCraft: world mapping has no PCW4 magic yet; retrying every 2 s");
 				}
 				int ignored = (int) UNMAP.invokeExact(v);
 				ignored = (int) CLOSE.invokeExact(h);
@@ -227,8 +228,32 @@ public final class WorldLink {
 		view.set(INT, WorldFormat.H_SKIN_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_SKIN_SEQ)));
 	}
 
+	/** The particle atlas, like {@link #writeItemAtlas}. */
+	public static void writeParticleAtlas(int width, int height, int[] rgba) {
+		if (!isOpen() || !WorldFormat.particleAtlasFits(width, height) || rgba.length < width * height) {
+			return;
+		}
+		view.set(INT, WorldFormat.H_PARTICLE_ATLAS_W, width);
+		view.set(INT, WorldFormat.H_PARTICLE_ATLAS_H, height);
+		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.PARTICLE_ATLAS_OFFSET, width * height);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_PARTICLE_ATLAS_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_PARTICLE_ATLAS_SEQ)));
+	}
+
+	/** The crack strip (the destroy stages side by side), like {@link #writeAtlas}. */
+	public static void writeCracks(int width, int height, int[] rgba) {
+		if (!isOpen() || width <= 0 || height <= 0 || width > WorldFormat.CRACK_MAX_W || height > WorldFormat.CRACK_MAX_H || rgba.length < width * height) {
+			return;
+		}
+		view.set(INT, WorldFormat.H_CRACK_W, width);
+		view.set(INT, WorldFormat.H_CRACK_H, height);
+		MemorySegment.copy(rgba, 0, view, INT_UNALIGNED, WorldFormat.CRACK_OFFSET, width * height);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.H_CRACK_SEQ, WorldFormat.nextSeq(view.get(INT, WorldFormat.H_CRACK_SEQ)));
+	}
+
 	/**
-	 * Makes entity {@code slot} the newest: its nine range counts (in slot order, as
+	 * Makes entity {@code slot} the newest: its range counts (in slot order, as
 	 * {@link WorldFormat#H_ENTITY_RANGES}), then {@code entityFront}, then {@code entitySeq}.
 	 */
 	public static void publishEntities(int slot, int[] counts) {

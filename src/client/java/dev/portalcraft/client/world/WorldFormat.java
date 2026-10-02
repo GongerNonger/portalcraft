@@ -36,7 +36,17 @@ public final class WorldFormat {
 	public static final int SKIN_MAX_H = 256; // kWorldSkinMaxH
 	public static final long SKIN_OFFSET = PCW2_BYTES; // kWorldSkinOffset
 	public static final long SKIN_BYTES = (long) SKIN_MAX_W * SKIN_MAX_H * 4;
-	public static final long TOTAL_BYTES = SKIN_OFFSET + SKIN_BYTES; // kWorldBytes
+	/** Where the PCW3 mapping ended; the PCW4 particle atlas and crack strip follow. */
+	public static final long PCW3_BYTES = SKIN_OFFSET + SKIN_BYTES; // kWorldPcw3Bytes
+	public static final int PARTICLE_ATLAS_MAX_W = 2048, PARTICLE_ATLAS_MAX_H = 2048, PARTICLE_ATLAS_MAX_PIXELS = 1024 * 1024;
+	public static final long PARTICLE_ATLAS_OFFSET = PCW3_BYTES; // kWorldParticleAtlasOffset
+	public static final long PARTICLE_ATLAS_BYTES = (long) PARTICLE_ATLAS_MAX_PIXELS * 4;
+	public static final int CRACK_MAX_W = 512, CRACK_MAX_H = 64; // kWorldCrackMaxW/H
+	public static final long CRACK_OFFSET = PARTICLE_ATLAS_OFFSET + PARTICLE_ATLAS_BYTES; // kWorldCrackOffset
+	public static final long CRACK_BYTES = (long) CRACK_MAX_W * CRACK_MAX_H * 4;
+	/** Minecraft's destroy stages, side by side in the crack strip. */
+	public static final int CRACK_STAGES = 10;
+	public static final long TOTAL_BYTES = CRACK_OFFSET + CRACK_BYTES; // kWorldBytes
 	public static final int NO_SLOT = 0xFFFFFFFF;
 
 	// WorldHeader field offsets (static_asserts in the protocol header)
@@ -47,10 +57,13 @@ public final class WorldFormat {
 		H_ENTITY_ITEM_TRANSLUCENT = 92;
 	public static final long H_SKIN_W = 100, H_SKIN_H = 104, H_SKIN_SEQ = 108, H_AVATAR_SKIN = 112, H_AVATAR_BLOCK_SOLID = 120,
 		H_AVATAR_BLOCK_TRANSLUCENT = 128, H_AVATAR_ITEM_SOLID = 136, H_AVATAR_ITEM_TRANSLUCENT = 144;
+	public static final long H_PARTICLE_ATLAS_W = 152, H_PARTICLE_ATLAS_H = 156, H_PARTICLE_ATLAS_SEQ = 160, H_CRACK_W = 164, H_CRACK_H = 168,
+		H_CRACK_SEQ = 172, H_PARTICLE_SOLID = 176, H_PARTICLE_TRANSLUCENT = 184, H_CRACK = 192;
 	/** Every per-slot count array of the entity slot, in the order its ranges sit in the slot. */
 	public static final long[] H_ENTITY_RANGES = {H_ENTITY_BLOCK_SOLID, H_ENTITY_BLOCK_TRANSLUCENT, H_ENTITY_ITEM_SOLID, H_ENTITY_ITEM_TRANSLUCENT,
-		H_AVATAR_SKIN, H_AVATAR_BLOCK_SOLID, H_AVATAR_BLOCK_TRANSLUCENT, H_AVATAR_ITEM_SOLID, H_AVATAR_ITEM_TRANSLUCENT};
-	public static final long HEADER_STRUCT_BYTES = 152; // sizeof(WorldHeader)
+		H_AVATAR_SKIN, H_AVATAR_BLOCK_SOLID, H_AVATAR_BLOCK_TRANSLUCENT, H_AVATAR_ITEM_SOLID, H_AVATAR_ITEM_TRANSLUCENT, H_PARTICLE_SOLID,
+		H_PARTICLE_TRANSLUCENT, H_CRACK};
+	public static final long HEADER_STRUCT_BYTES = 200; // sizeof(WorldHeader)
 
 	/** ItemEntityRenderer.ITEM_MIN_HOVER_HEIGHT: how far a dropped item's model floats off the ground. */
 	public static final float ITEM_MIN_HOVER = 0.0625F;
@@ -91,6 +104,12 @@ public final class WorldFormat {
 	public static boolean itemAtlasFits(int width, int height) {
 		return width > 0 && height > 0 && width <= ITEM_ATLAS_MAX_W && height <= ITEM_ATLAS_MAX_H
 			&& (long) width * height <= ITEM_ATLAS_MAX_PIXELS;
+	}
+
+	/** True if a particle atlas of this size fits its region. */
+	public static boolean particleAtlasFits(int width, int height) {
+		return width > 0 && height > 0 && width <= PARTICLE_ATLAS_MAX_W && height <= PARTICLE_ATLAS_MAX_H
+			&& (long) width * height <= PARTICLE_ATLAS_MAX_PIXELS;
 	}
 
 	/** True if a skin of this size fits the skin region. */

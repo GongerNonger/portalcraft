@@ -237,6 +237,10 @@ void linkPoll() {
 			std::memcpy(pitchYaw, buf + 4, 8);
 			sdk::QAngle view{pitchYaw[0], pitchYaw[1], 0.0f};
 			sdk::clientSetViewAngles(g_engineClient, &view);
+		} else if (n == 8 && std::memcmp(buf, "PCX1", 4) == 0) {
+			float exposure; // dev: lighting exposure (tools/fake_mc.py --exposure)
+			std::memcpy(&exposure, buf + 4, 4);
+			worldrender::setExposure(exposure);
 		} else if (n > 4 && std::memcmp(buf, "PCC1", 4) == 0 && g_engineServer) {
 			char cmd[260];
 			int len = n - 4 < 250 ? n - 4 : 250;
@@ -300,6 +304,7 @@ bool g_haveSet = false;   // we wrote the player's origin last server tick
 Vector g_lastSet{};       // ... to this
 bool g_drivingNow = false;
 Vector g_origin{}, g_velocity{}; // player state after the last server movement tick
+bool g_haveOrigin = false;       // a movement tick has run this level: g_origin is real
 
 bool following() {
 	return mcReady() && g_mc.teleportAck == g_teleportSeq;
@@ -468,6 +473,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	}
 	g_origin = origin;
 	g_velocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
+	g_haveOrigin = true;
 }
 
 void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, void* mvRaw) {
@@ -798,6 +804,36 @@ void updateMouseCapture() {
 	}
 }
 
+// The mouse wheel: GetAsyncKeyState can't see it, so we watch Portal's window messages
+// (WM_MOUSEWHEEL, passed on untouched) and count notches for HostState.wheel.
+WNDPROC g_portalWndProc = nullptr;
+HWND g_subclassed = nullptr;
+int g_wheelDelta = 0; // WHEEL_DELTA units so far
+
+LRESULT CALLBACK wheelWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	if (msg == WM_MOUSEWHEEL) {
+		g_wheelDelta += GET_WHEEL_DELTA_WPARAM(wParam);
+	}
+	return CallWindowProcA(g_portalWndProc, hwnd, msg, wParam, lParam);
+}
+
+void watchWheel() {
+	HWND w = portalWindow();
+	if (!w || w == g_subclassed) {
+		return;
+	}
+	g_portalWndProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(w, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&wheelWndProc)));
+	g_subclassed = g_portalWndProc ? w : nullptr;
+	logf(g_subclassed ? "watching the mouse wheel" : "couldn't watch the mouse wheel (%lu)", GetLastError());
+}
+
+void unwatchWheel() {
+	if (g_subclassed && IsWindow(g_subclassed) && g_portalWndProc) {
+		SetWindowLongPtrA(g_subclassed, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_portalWndProc));
+	}
+	g_subclassed = nullptr;
+}
+
 void fillCursor(pcproto::HostState& s) {
 	s.cursorX = s.cursorY = -1.0f;
 	HWND w = g_mouseFreed ? portalWindow() : nullptr;
@@ -817,7 +853,9 @@ void sendState() {
 	std::memcpy(s.magic, "PCH2", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
-	if (g_inLevel && g_edicts) {
+	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
+	// Minecraft would resync there, out in the void, before the level-start teleport.
+	if (g_inLevel && g_edicts && g_haveOrigin) {
 		s.flags |= pcproto::kHostInGame;
 	}
 	if (g_drivingNow) {
@@ -852,6 +890,7 @@ void sendState() {
 		fillPortals(s);
 	}
 	fillCursor(s);
+	s.wheel = int8_t(g_wheelDelta / WHEEL_DELTA);
 	sendto(g_sock, reinterpret_cast<const char*>(&s), sizeof s, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
 
 	static DWORD lastTrace = 0;
@@ -903,6 +942,7 @@ public:
 	virtual void Unload() {
 		logf("Unload");
 		camera::shutdown();
+		unwatchWheel();
 		if (g_mouseFreed && g_clientDll) {
 			sdk::vcall<void>(g_clientDll, 14); // give Portal its mouse back
 		}
@@ -916,6 +956,7 @@ public:
 		std::strncpy(g_map, mapName ? mapName : "", sizeof g_map - 1);
 		g_needSync = true;
 		g_haveSet = false;
+		g_haveOrigin = false;
 		g_checkedLayout = false;
 		g_po = PortalOffsets{};
 		g_portalCount = 0;
@@ -923,6 +964,7 @@ public:
 		g_entityCount = 0;
 		std::memset(g_lastEntityOrigin, 0, sizeof g_lastEntityOrigin);
 		logf("LevelInit %s", g_map);
+		worldrender::levelChanged();
 	}
 	virtual void ServerActivate(void* edictList, int edictCount, int clientMax) {
 		g_edicts = static_cast<uint8_t*>(edictList);
@@ -949,6 +991,7 @@ public:
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
+		watchWheel();
 		if (g_inLevel && g_edicts) {
 			checkCollideableLayout();
 			sendEntities();
