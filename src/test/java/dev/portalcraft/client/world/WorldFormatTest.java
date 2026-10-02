@@ -1,6 +1,8 @@
 package dev.portalcraft.client.world;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -16,7 +18,115 @@ class WorldFormatTest {
 		assertEquals(24, WorldFormat.VERTEX_BYTES); // sizeof(WorldVertex)
 		assertEquals(4096L + 2048L * 2048 * 4, WorldFormat.MESH_OFFSET); // kWorldMeshOffset
 		assertEquals(196608L * 24, WorldFormat.SLOT_BYTES); // kWorldSlotBytes
-		assertEquals(WorldFormat.MESH_OFFSET + 2 * WorldFormat.SLOT_BYTES, WorldFormat.TOTAL_BYTES); // kWorldBytes
+		// PCW2 appends after the PCW1 layout, which stays where it was.
+		assertEquals(16781312L, WorldFormat.MESH_OFFSET);
+		assertEquals(26218496L, WorldFormat.PCW1_BYTES);
+		assertEquals(26218496L, WorldFormat.ITEM_ATLAS_OFFSET); // kWorldItemAtlasOffset
+		assertEquals(1024L * 1024 * 4, WorldFormat.ITEM_ATLAS_BYTES); // kWorldItemAtlasBytes
+		assertEquals(30412800L, WorldFormat.ENTITY_OFFSET); // kWorldEntityOffset
+		assertEquals(65536L * 24, WorldFormat.ENTITY_SLOT_BYTES); // kWorldEntitySlotBytes
+		assertEquals(33558528L, WorldFormat.TOTAL_BYTES); // kWorldBytes
+		assertEquals(WorldFormat.ENTITY_OFFSET + 2 * WorldFormat.ENTITY_SLOT_BYTES, WorldFormat.TOTAL_BYTES);
+	}
+
+	@Test
+	void headerOffsetsMatchProtocol() {
+		// PCW1 fields, unchanged
+		assertEquals(12, WorldFormat.H_ATLAS_SEQ);
+		assertEquals(20, WorldFormat.H_FRONT);
+		assertEquals(24, WorldFormat.H_READING);
+		assertEquals(28, WorldFormat.H_SLOT_SOLID);
+		assertEquals(36, WorldFormat.H_SLOT_TRANSLUCENT);
+		// PCW2 fields: offsetof(WorldHeader, ...) as static_asserted in the header
+		assertEquals(44, WorldFormat.H_ITEM_ATLAS_W);
+		assertEquals(48, WorldFormat.H_ITEM_ATLAS_H);
+		assertEquals(52, WorldFormat.H_ITEM_ATLAS_SEQ);
+		assertEquals(56, WorldFormat.H_ENTITY_SEQ);
+		assertEquals(60, WorldFormat.H_ENTITY_FRONT);
+		assertEquals(64, WorldFormat.H_ENTITY_READING);
+		assertEquals(68, WorldFormat.H_ENTITY_BLOCK_SOLID);
+		assertEquals(76, WorldFormat.H_ENTITY_BLOCK_TRANSLUCENT);
+		assertEquals(84, WorldFormat.H_ENTITY_ITEM_SOLID);
+		assertEquals(92, WorldFormat.H_ENTITY_ITEM_TRANSLUCENT);
+		assertEquals(100, WorldFormat.HEADER_STRUCT_BYTES); // sizeof(WorldHeader)
+		assertEquals(WorldFormat.H_ENTITY_ITEM_TRANSLUCENT + 2 * 4, WorldFormat.HEADER_STRUCT_BYTES); // two slots per count
+		assertTrue(WorldFormat.HEADER_STRUCT_BYTES <= WorldFormat.HEADER_BYTES);
+	}
+
+	@Test
+	void mappingFitsTheAddressBudget() {
+		// hl2.exe is 32-bit: the overlay (42.2 MB) plus this must stay well under 100 MB of views.
+		assertTrue(WorldFormat.TOTAL_BYTES <= 34L << 20, "world mapping " + WorldFormat.TOTAL_BYTES);
+		// Every region is page aligned, so the views map without surprises.
+		assertEquals(0, WorldFormat.ITEM_ATLAS_OFFSET % 4096);
+		assertEquals(0, WorldFormat.ENTITY_OFFSET % 4096);
+		assertEquals(0, WorldFormat.ENTITY_SLOT_BYTES % 4096);
+	}
+
+	@Test
+	void entityBudgetHoldsTypicalDrops() {
+		// A full stack (5 copies) of a flat item with ~150 quads, and of a block (6 quads).
+		int toolStack = 5 * 150 * 6, blockStack = 5 * 6 * 6;
+		assertTrue(WorldFormat.ENTITY_MAX_VERTICES >= 14 * toolStack, "14 full stacks of tools");
+		assertTrue(WorldFormat.ENTITY_MAX_VERTICES >= 300 * blockStack, "300 full stacks of blocks");
+	}
+
+	@Test
+	void itemAtlasFitsVanillaAndOneDoubling() {
+		assertTrue(WorldFormat.itemAtlasFits(1024, 512)); // vanilla 26.3 (with PortalCraft's gun)
+		assertTrue(WorldFormat.itemAtlasFits(1024, 1024));
+		assertTrue(WorldFormat.itemAtlasFits(2048, 512));
+		assertFalse(WorldFormat.itemAtlasFits(2048, 1024));
+		assertFalse(WorldFormat.itemAtlasFits(4096, 256)); // too wide for the texture cap
+		assertFalse(WorldFormat.itemAtlasFits(0, 512));
+	}
+
+	@Test
+	void itemBobMatchesItemEntityRenderer() {
+		// sin(age / 10 + bobOffset) * 0.1 + 0.1: between 0 and 0.2 blocks, period 20*pi ticks.
+		assertEquals(0.1F, WorldFormat.itemBob(0.0F, 0.0F), 1e-6F);
+		assertEquals(0.2F, WorldFormat.itemBob((float) (5 * Math.PI), 0.0F), 1e-5F);
+		assertEquals(0.0F, WorldFormat.itemBob((float) (15 * Math.PI), 0.0F), 1e-5F);
+		assertEquals(WorldFormat.itemBob(3.0F, 1.5F), WorldFormat.itemBob(3.0F + (float) (20 * Math.PI), 1.5F), 1e-4F);
+		for (float t = 0; t < 200; t += 0.37F) {
+			float b = WorldFormat.itemBob(t, 2.0F);
+			assertTrue(b >= -1e-6F && b <= 0.2F + 1e-6F);
+		}
+	}
+
+	@Test
+	void shadeLikeBlockFaces() {
+		assertEquals(1.0F, WorldFormat.shade(0, 1, 0), 1e-6F);
+		assertEquals(0.5F, WorldFormat.shade(0, -1, 0), 1e-6F);
+		assertEquals(0.8F, WorldFormat.shade(0, 0, -1), 1e-6F);
+		assertEquals(0.6F, WorldFormat.shade(1, 0, 0), 1e-6F);
+		assertEquals(0.6F, WorldFormat.shade(4, 0, 0), 1e-6F); // not normalised going in
+		assertEquals(0.7F, WorldFormat.shade(1, 0, 1), 1e-6F); // halfway round a spin
+		assertEquals(1.0F, WorldFormat.shade(0, 0, 0), 1e-6F); // degenerate: unshaded
+	}
+
+	@Test
+	void shadeKeepsAlpha() {
+		assertEquals(0x80404040, WorldFormat.shadeArgb(0x80808080, 0.5F));
+		assertEquals(0xFF808080, WorldFormat.shadeArgb(-1, 0.5F)); // 127.5 rounds up
+		assertEquals(0xFF29527A, WorldFormat.shadeArgb(0xFF336699, 0.8F)); // 0x33*0.8=40.8, 0x66*0.8=81.6, 0x99*0.8=122.4
+		assertEquals(0xFFFFFFFF, WorldFormat.shadeArgb(-1, 1.0F));
+		assertEquals(0xFF000000, WorldFormat.shadeArgb(-1, 0.0F));
+	}
+
+	@Test
+	void truncateUndoesAnEntity() {
+		WorldFormat.Vertices v = new WorldFormat.Vertices(2);
+		for (int i = 0; i < 5; i++) {
+			v.add(i, 0, 0, -1, 0, 0);
+		}
+		v.truncate(3);
+		assertEquals(3, v.count());
+		v.truncate(10); // never grows
+		assertEquals(3, v.count());
+		v.add(9, 0, 0, -1, 0, 0);
+		assertEquals(4, v.count());
+		assertEquals(9.0F * 40.0F, Float.intBitsToFloat(v.data()[3 * WorldFormat.VERTEX_INTS]));
 	}
 
 	@Test

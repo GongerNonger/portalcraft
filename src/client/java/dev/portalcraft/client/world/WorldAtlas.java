@@ -8,24 +8,28 @@ import dev.portalcraft.client.mixin.TextureAtlasAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.data.AtlasIds;
+import net.minecraft.resources.Identifier;
 
 /**
- * Minecraft's block atlas as one RGBA8 image, rows top-down, at the atlas's own size and in the
- * GPU atlas's layout, so a BakedQuad's packed UVs index it directly. Built on the CPU from each
- * sprite's first animation frame; animated sprites (water, lava, fire) stay on that frame.
+ * One of Minecraft's texture atlases (blocks, items) as one RGBA8 image, rows top-down, at the
+ * atlas's own size and in the GPU atlas's layout, so a BakedQuad's packed UVs index it directly.
+ * Built on the CPU from each sprite's first animation frame; animated sprites (water, lava, fire,
+ * the compass) stay on that frame.
  *
- * <p>Adapted from SkyCraft's {@code SkyAtlas} (chasmlol/SkyCraft, MIT), blocks atlas only.
+ * <p>Adapted from SkyCraft's {@code SkyAtlas} (chasmlol/SkyCraft, MIT), one atlas per image.
  */
 final class WorldAtlas {
+	/** AtlasIds.BLOCKS or AtlasIds.ITEMS. */
+	final Identifier id;
 	final int width, height;
 	/** One int per pixel whose little-endian bytes are R, G, B, A. */
 	final int[] pixels;
 	/** The atlas's sprite map: a new object after every resource reload. */
 	private final Object sprites;
 
-	private WorldAtlas(TextureAtlas atlas) {
+	private WorldAtlas(Identifier id, TextureAtlas atlas) {
 		TextureAtlasAccessor a = (TextureAtlasAccessor) atlas;
+		this.id = id;
 		this.width = a.portalcraft$width();
 		this.height = a.portalcraft$height();
 		this.sprites = a.portalcraft$sprites();
@@ -35,22 +39,23 @@ final class WorldAtlas {
 		}
 	}
 
-	/** The block atlas now, or null while it isn't stitched (during a resource reload). */
-	static WorldAtlas build(Minecraft minecraft) {
-		TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
+	/** The atlas {@code id} now, or null while it isn't stitched (during a resource reload). */
+	static WorldAtlas build(Minecraft minecraft, Identifier id) {
+		TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(id);
 		TextureAtlasAccessor a = (TextureAtlasAccessor) atlas;
 		if (a.portalcraft$sprites().isEmpty() || a.portalcraft$width() <= 0 || a.portalcraft$height() <= 0) {
 			return null;
 		}
-		return new WorldAtlas(atlas);
+		return new WorldAtlas(id, atlas);
 	}
 
-	/** True if the game's block atlas was rebuilt (resource reload) since this copy was made. */
+	/** True if the game's atlas was rebuilt (resource reload) since this copy was made. */
 	boolean stale(Minecraft minecraft) {
-		Map<?, ?> now = ((TextureAtlasAccessor) minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS)).portalcraft$sprites();
+		Map<?, ?> now = ((TextureAtlasAccessor) minecraft.getAtlasManager().getAtlasOrThrow(this.id)).portalcraft$sprites();
 		return now != this.sprites;
 	}
 
+	/** True if this fits the block atlas region. */
 	boolean fitsMapping() {
 		return this.width <= WorldFormat.ATLAS_MAX_W && this.height <= WorldFormat.ATLAS_MAX_H;
 	}

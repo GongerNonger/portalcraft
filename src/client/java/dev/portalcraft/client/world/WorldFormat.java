@@ -4,7 +4,8 @@ import java.util.Arrays;
 
 /**
  * The pure parts of the world mapping's format (protocol/portalcraft_protocol.h, "world"): sizes,
- * slot choice, vertex packing and colour conversion. No Minecraft types, so it can be unit tested.
+ * offsets, slot choice, vertex packing, colour conversion and the dropped-item math. No Minecraft
+ * types, so it can be unit tested.
  */
 public final class WorldFormat {
 	public static final int ATLAS_MAX_W = 2048;
@@ -19,8 +20,29 @@ public final class WorldFormat {
 	public static final long MESH_OFFSET = ATLAS_OFFSET + ATLAS_BYTES;
 	public static final long SLOT_BYTES = (long) MAX_VERTICES * VERTEX_BYTES;
 	public static final int SLOTS = 2;
-	public static final long TOTAL_BYTES = MESH_OFFSET + SLOTS * SLOT_BYTES;
+	/** Where the PCW1 mapping ended; the PCW2 regions follow. */
+	public static final long PCW1_BYTES = MESH_OFFSET + SLOTS * SLOT_BYTES;
+	public static final int ITEM_ATLAS_MAX_W = 2048; // kWorldItemAtlasMaxW
+	public static final int ITEM_ATLAS_MAX_H = 2048; // kWorldItemAtlasMaxH
+	public static final int ITEM_ATLAS_MAX_PIXELS = 1024 * 1024; // kWorldItemAtlasMaxPixels
+	public static final long ITEM_ATLAS_OFFSET = PCW1_BYTES; // kWorldItemAtlasOffset
+	public static final long ITEM_ATLAS_BYTES = (long) ITEM_ATLAS_MAX_PIXELS * 4;
+	public static final int ENTITY_MAX_VERTICES = 65536; // kWorldEntityMaxVertices
+	public static final long ENTITY_OFFSET = ITEM_ATLAS_OFFSET + ITEM_ATLAS_BYTES; // kWorldEntityOffset
+	public static final long ENTITY_SLOT_BYTES = (long) ENTITY_MAX_VERTICES * VERTEX_BYTES; // kWorldEntitySlotBytes
+	public static final long TOTAL_BYTES = ENTITY_OFFSET + SLOTS * ENTITY_SLOT_BYTES; // kWorldBytes
 	public static final int NO_SLOT = 0xFFFFFFFF;
+
+	// WorldHeader field offsets (static_asserts in the protocol header)
+	public static final long H_MAGIC = 0, H_ATLAS_W = 4, H_ATLAS_H = 8, H_ATLAS_SEQ = 12, H_MESH_SEQ = 16, H_FRONT = 20, H_READING = 24,
+		H_SLOT_SOLID = 28, H_SLOT_TRANSLUCENT = 36;
+	public static final long H_ITEM_ATLAS_W = 44, H_ITEM_ATLAS_H = 48, H_ITEM_ATLAS_SEQ = 52, H_ENTITY_SEQ = 56, H_ENTITY_FRONT = 60,
+		H_ENTITY_READING = 64, H_ENTITY_BLOCK_SOLID = 68, H_ENTITY_BLOCK_TRANSLUCENT = 76, H_ENTITY_ITEM_SOLID = 84,
+		H_ENTITY_ITEM_TRANSLUCENT = 92;
+	public static final long HEADER_STRUCT_BYTES = 100; // sizeof(WorldHeader)
+
+	/** ItemEntityRenderer.ITEM_MIN_HOVER_HEIGHT: how far a dropped item's model floats off the ground. */
+	public static final float ITEM_MIN_HOVER = 0.0625F;
 
 	/** A Minecraft quad's corners as two triangles. */
 	public static final int[] QUAD_TRIANGLES = {0, 1, 2, 0, 2, 3};
@@ -54,6 +76,37 @@ public final class WorldFormat {
 		return (argb & 0xFF00FF00) | ((argb >>> 16) & 0xFF) | ((argb & 0xFF) << 16);
 	}
 
+	/** True if an atlas of this size fits the item atlas region (and the host's texture limits). */
+	public static boolean itemAtlasFits(int width, int height) {
+		return width > 0 && height > 0 && width <= ITEM_ATLAS_MAX_W && height <= ITEM_ATLAS_MAX_H
+			&& (long) width * height <= ITEM_ATLAS_MAX_PIXELS;
+	}
+
+	/** A dropped item's bob height in blocks, as ItemEntityRenderer.submit computes it. */
+	public static float itemBob(float ageInTicks, float bobOffset) {
+		return (float) Math.sin(ageInTicks / 10.0F + bobOffset) * 0.1F + 0.1F;
+	}
+
+	/**
+	 * Directional shading for entity faces, which the host doesn't light: Minecraft's block face
+	 * shades (up 1.0, down 0.5, north/south 0.8, east/west 0.6) blended by the normal's squared
+	 * components, so a spinning item's faces brighten and darken as they turn.
+	 */
+	public static float shade(float nx, float ny, float nz) {
+		float len2 = nx * nx + ny * ny + nz * nz;
+		if (!(len2 > 1e-12F)) {
+			return 1.0F;
+		}
+		float s = (nx * nx * 0.6F + nz * nz * 0.8F + ny * ny * (ny > 0 ? 1.0F : 0.5F)) / len2;
+		return Math.clamp(s, 0.0F, 1.0F);
+	}
+
+	/** An ARGB colour with its RGB scaled by {@code shade} (0..1), alpha kept. */
+	public static int shadeArgb(int argb, float shade) {
+		int r = Math.round(((argb >>> 16) & 0xFF) * shade), g = Math.round(((argb >>> 8) & 0xFF) * shade), b = Math.round((argb & 0xFF) * shade);
+		return (argb & 0xFF000000) | (Math.clamp(r, 0, 255) << 16) | (Math.clamp(g, 0, 255) << 8) | Math.clamp(b, 0, 255);
+	}
+
 	/** Sequence counters skip 0, which means "nothing yet". */
 	public static int nextSeq(int seq) {
 		int next = seq + 1;
@@ -82,6 +135,11 @@ public final class WorldFormat {
 
 		public int count() {
 			return this.count;
+		}
+
+		/** Drops the vertices after the first {@code count} (to undo an entity that didn't fit). */
+		public void truncate(int count) {
+			this.count = Math.clamp(count, 0, this.count);
 		}
 
 		public int[] data() {
