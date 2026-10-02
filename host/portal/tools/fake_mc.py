@@ -7,9 +7,9 @@
 import argparse, math, socket, struct, time
 
 HOST = ("127.0.0.1", 27515)
-HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2)
+HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff")
 MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIf")
-assert HOST_STATE.size == 228 and MC_STATE.size == 76
+assert HOST_STATE.size == 236 and MC_STATE.size == 76
 
 
 def parse(data):

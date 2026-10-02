@@ -376,8 +376,9 @@ void quietPortalMovement(uint8_t* mv) {
 	if (g_mc.sneaking) {
 		buttons |= sdk::IN_DUCK;
 	}
-	// Portal's gun only fires while Steve holds the Minecraft portal gun; otherwise clicks are Minecraft's.
-	if (!g_mc.holdingPortalGun) {
+	// Portal's gun only fires while Steve holds the Minecraft portal gun; otherwise clicks are
+	// Minecraft's. With a Minecraft screen open (the inventory) every click is the screen's.
+	if (!g_mc.holdingPortalGun || (g_mc.flags & pcproto::kMcScreen)) {
 		buttons &= ~(sdk::IN_ATTACK | sdk::IN_ATTACK2);
 	}
 	*reinterpret_cast<float*>(mv + sdk::kMvForwardMove) = 0;
@@ -748,11 +749,72 @@ void logSolidNear(const Vector& at) {
 	}
 }
 
+// ---- the mouse while a Minecraft screen is open -----------------------------------------
+// Minecraft's inventory needs a pointer. While one of its screens is open, Portal lets go of the
+// mouse the way it does for its own menus (IBaseClientDLL::IN_DeactivateMouse, slot 15: the camera
+// stops turning and the OS cursor is free), and we send the cursor's place over Portal's window
+// with every HostState. IN_ActivateMouse (slot 14) takes it back when the screen closes. Both
+// checked in build 19017868's client.dll (they forward to IInput::Activate/DeactivateMouse).
+
+void* g_clientDll = nullptr; // VClient017
+bool g_mouseFreed = false;
+
+HWND portalWindow() {
+	static HWND cached = nullptr;
+	if (cached && IsWindow(cached)) {
+		return cached;
+	}
+	cached = nullptr;
+	for (HWND w = FindWindowA("Valve001", nullptr); w; w = FindWindowExA(nullptr, w, "Valve001", nullptr)) {
+		DWORD pid = 0;
+		GetWindowThreadProcessId(w, &pid);
+		if (pid == GetCurrentProcessId()) {
+			cached = w;
+			break;
+		}
+	}
+	return cached;
+}
+
+void updateMouseCapture() {
+	bool want = mcReady() && (g_mc.flags & pcproto::kMcScreen) && g_inLevel;
+	if (!g_clientDll) {
+		g_clientDll = engineInterface("client.dll", "VClient017");
+		if (!g_clientDll) {
+			return;
+		}
+	}
+	if (want) {
+		// Every frame while open: Portal takes the mouse back by itself when its window regains focus.
+		sdk::vcall<void>(g_clientDll, 15); // IN_DeactivateMouse
+		if (!g_mouseFreed) {
+			g_mouseFreed = true;
+			logf("Minecraft screen open: mouse freed for it");
+		}
+	} else if (g_mouseFreed) {
+		g_mouseFreed = false;
+		sdk::vcall<void>(g_clientDll, 14); // IN_ActivateMouse
+		logf("Minecraft screen closed: mouse back to Portal");
+	}
+}
+
+void fillCursor(pcproto::HostState& s) {
+	s.cursorX = s.cursorY = -1.0f;
+	HWND w = g_mouseFreed ? portalWindow() : nullptr;
+	POINT p;
+	RECT r;
+	if (!w || !GetCursorPos(&p) || !ScreenToClient(w, &p) || !GetClientRect(w, &r) || r.right <= 0 || r.bottom <= 0) {
+		return;
+	}
+	s.cursorX = float(p.x) / float(r.right);
+	s.cursorY = float(p.y) / float(r.bottom);
+}
+
 // ---- per-frame state out --------------------------------------------------------------
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH1", 4);
+	std::memcpy(s.magic, "PCH2", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	if (g_inLevel && g_edicts) {
@@ -789,6 +851,7 @@ void sendState() {
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
 	}
+	fillCursor(s);
 	sendto(g_sock, reinterpret_cast<const char*>(&s), sizeof s, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
 
 	static DWORD lastTrace = 0;
@@ -840,6 +903,9 @@ public:
 	virtual void Unload() {
 		logf("Unload");
 		camera::shutdown();
+		if (g_mouseFreed && g_clientDll) {
+			sdk::vcall<void>(g_clientDll, 14); // give Portal its mouse back
+		}
 	}
 	virtual void Pause() {}
 	virtual void UnPause() {}
@@ -882,6 +948,7 @@ public:
 		camera::init(&logf);
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
+		updateMouseCapture();
 		if (g_inLevel && g_edicts) {
 			checkCollideableLayout();
 			sendEntities();

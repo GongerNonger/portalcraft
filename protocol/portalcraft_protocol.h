@@ -44,7 +44,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH1"
+	char magic[4]; // "PCH2"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -58,10 +58,15 @@ struct HostState {
 	uint8_t mouse;        // bit0 left, bit1 right, bit2 middle
 	uint8_t pad[3];
 	HostPortal portals[2]; // [0] blue, [1] orange
+	// PCH2: the OS cursor over the host's window, 0..1 across its client area (top-left origin), or
+	// -1 when there is none. Only meaningful while Minecraft has a screen open (McFlags kMcScreen):
+	// the host then lets go of the mouse, so the player points at Minecraft's inventory with it.
+	float cursorX, cursorY;
 };
 
 enum McFlags : uint32_t {
-	kMcReady = 1u << 0, // in a world with a player: the host may follow origin/velocity
+	kMcReady = 1u << 0,  // in a world with a player: the host may follow origin/velocity
+	kMcScreen = 1u << 1, // a Minecraft screen (inventory, chest, chat) is open: the host frees the mouse
 };
 
 struct McState {
@@ -269,7 +274,7 @@ static_assert(kWorldBytes == 33820672, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 228, "HostState layout");
+static_assert(sizeof(HostState) == 236, "HostState layout");
 static_assert(sizeof(McState) == 76, "McState layout");
 
 } // namespace pcproto

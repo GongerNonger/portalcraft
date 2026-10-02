@@ -18,6 +18,11 @@
 // left on. Slots, checked in build 19017868's engine.dll (MSVC puts the 5-argument Push3DView
 // overload first): 37 Push3DView(+depth), 38 Push3DView, 39 Push2DView, 40 PopView,
 // 50 GetMatricesForView.
+//
+// Two passes per view. Glass and other see-through surfaces don't write depth, so anything drawn
+// after them lands on top: our solid triangles go in just before the view's first translucent
+// world surface (IVRenderView::DrawTranslucentSurfaces, slot 18), and our translucent ones at the
+// view's end. A view with no translucent surfaces gets both at the end.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -57,7 +62,11 @@ struct ViewEntry {
 	const uint8_t* setup; // the CViewSetup being drawn (alive until its PopView)
 	sdk::Vector origin;
 	bool throughPortal;   // draw our meshes into it when it is popped
+	bool isMain;          // the frame's first view straight to the screen: the player's own
+	bool solidDone;       // our solid pass is in (before its glass)
 };
+bool g_mainSolidDone = false;
+constexpr int kPassSolid = 1, kPassTranslucent = 2, kPassBoth = 3;
 constexpr int kMaxViews = 32;
 ViewEntry g_views[kMaxViews];
 int g_viewDepth = 0;
@@ -196,7 +205,7 @@ void setTranslucent(IDirect3DDevice9* dev) { // stained glass, water, ice: blend
 // Draws everything with the world-to-clip matrix `m` (row-major, clip = M * v). A view through a
 // portal keeps Portal's stencil test (its oval) and always shows the avatar; the main view shows
 // the avatar only in third person.
-void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal) {
+void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes) {
 	if (!g_header || (g_header->meshSeq == 0 && g_header->entitySeq == 0)) {
 		return skipped("no mesh published yet");
 	}
@@ -345,29 +354,32 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal) {
 	const pcproto::WorldVertex* eBlocks = entities;
 
 	// Opaque first, all of it, so the blended passes stack over every solid.
-	setSolid(dev);
-	dev->SetTexture(0, g_atlas);
-	if (blocks) {
-		drawTriangles(dev, blocks, solid);
-	}
-	if (eBlocks) {
-		drawTriangles(dev, eBlocks, eBlockSolid);
-	}
-	if (eItems && eItemSolid) {
-		dev->SetTexture(0, g_itemAtlas);
-		drawTriangles(dev, eItems, eItemSolid);
-	}
-	if (aSkin || aBlockSolid || aItemSolid) {
-		dev->SetTransform(D3DTS_WORLD, &atFeet);
-		dev->SetTexture(0, g_skin);
-		drawTriangles(dev, avatar, aSkin);
+	if (passes & kPassSolid) {
+		setSolid(dev);
 		dev->SetTexture(0, g_atlas);
-		drawTriangles(dev, aBlocks, aBlockSolid);
-		dev->SetTexture(0, g_itemAtlas);
-		drawTriangles(dev, aItems, aItemSolid);
-		dev->SetTransform(D3DTS_WORLD, &identity);
+		if (blocks) {
+			drawTriangles(dev, blocks, solid);
+		}
+		if (eBlocks) {
+			drawTriangles(dev, eBlocks, eBlockSolid);
+		}
+		if (eItems && eItemSolid) {
+			dev->SetTexture(0, g_itemAtlas);
+			drawTriangles(dev, eItems, eItemSolid);
+		}
+		if (aSkin || aBlockSolid || aItemSolid) {
+			dev->SetTransform(D3DTS_WORLD, &atFeet);
+			dev->SetTexture(0, g_skin);
+			drawTriangles(dev, avatar, aSkin);
+			dev->SetTexture(0, g_atlas);
+			drawTriangles(dev, aBlocks, aBlockSolid);
+			dev->SetTexture(0, g_itemAtlas);
+			drawTriangles(dev, aItems, aItemSolid);
+			dev->SetTransform(D3DTS_WORLD, &identity);
+		}
 	}
-	if (translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3) {
+	if ((passes & kPassTranslucent) &&
+		(translucent >= 3 || eBlockTranslucent >= 3 || eItemTranslucent >= 3 || aBlockTranslucent >= 3 || aItemTranslucent >= 3)) {
 		setTranslucent(dev);
 		dev->SetTexture(0, g_atlas);
 		if (blocks) {
@@ -413,7 +425,7 @@ void __fastcall hkSceneEnd(void* self, void* /*edx*/) {
 	// monitors and the like, which WorldToScreenMatrix doesn't describe.
 	if (g_scenesThisFrame == 1) {
 		if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-			draw(dev, worldToScreen(), false);
+			draw(dev, worldToScreen(), false, g_mainSolidDone ? kPassTranslucent : kPassBoth);
 		}
 	}
 	g_sceneEndOriginal(self);
@@ -431,7 +443,7 @@ PopViewFn g_popOriginal = nullptr;
 
 constexpr int kSetupOrigin = 64; // CViewSetup::origin
 
-void pushView(const void* view, bool candidate) {
+void pushView(const void* view, bool candidate, bool toScreen) {
 	if (g_viewDepth >= kMaxViews) {
 		g_viewDepth++; // keep counting so the pops still match
 		return;
@@ -440,6 +452,8 @@ void pushView(const void* view, bool candidate) {
 	e.setup = static_cast<const uint8_t*>(view);
 	e.origin = view ? *reinterpret_cast<const sdk::Vector*>(e.setup + kSetupOrigin) : sdk::Vector{};
 	e.throughPortal = false;
+	e.isMain = g_viewDepth == 0 && toScreen && view && !g_mainSolidDone;
+	e.solidDone = false;
 	if (candidate && view && g_viewDepth >= 1 && g_viewDepth - 1 < kMaxViews) {
 		const sdk::Vector& p = g_views[g_viewDepth - 1].origin;
 		float dx = e.origin.x - p.x, dy = e.origin.y - p.y, dz = e.origin.z - p.z;
@@ -452,19 +466,50 @@ void pushView(const void* view, bool candidate) {
 
 // Push3DView without a depth texture: the main view, world views, and the views through portals.
 void __fastcall hkPush3DView4(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum) {
-	pushView(view, target == nullptr); // render-to-texture views (water, monitors) aren't through portals
+	pushView(view, target == nullptr, target == nullptr); // render-to-texture views (water, monitors) aren't through portals
 	g_push3d4Original(self, view, flags, target, frustum);
 }
 
 // With a depth texture: the 3D skybox and shadow depth views, in their own coordinates.
 void __fastcall hkPush3DView5(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum, void* depth) {
-	pushView(view, false);
+	pushView(view, false, target == nullptr && depth == nullptr); // also the main view (no HDR)
 	g_push3d5Original(self, view, flags, target, frustum, depth);
 }
 
 void __fastcall hkPush2DView(void* self, void* /*edx*/, const void* view, int flags, void* target, void* frustum) {
-	pushView(nullptr, false);
+	pushView(nullptr, false, false);
 	g_push2dOriginal(self, view, flags, target, frustum);
+}
+
+// IVRenderView::GetMatricesForView for a view through a portal: its world-to-clip matrix.
+void portalMatrix(const ViewEntry& e, float* worldToProjection) {
+	float worldToView[16], viewToProjection[16], worldToPixels[16];
+	sdk::vcall<void>(g_renderView, 50, static_cast<const void*>(e.setup), static_cast<void*>(worldToView), static_cast<void*>(viewToProjection),
+		static_cast<void*>(worldToProjection), static_cast<void*>(worldToPixels));
+}
+
+using DrawTranslucentSurfacesFn = void(__thiscall*)(void* self, void* list, int sortIndex, unsigned long flags, bool shadowDepth);
+DrawTranslucentSurfacesFn g_translucentOriginal = nullptr;
+
+// The view's first translucent world surface: our solids go in now, under its glass.
+void __fastcall hkDrawTranslucentSurfaces(void* self, void* /*edx*/, void* list, int sortIndex, unsigned long flags, bool shadowDepth) {
+	if (!shadowDepth && g_viewDepth > 0 && g_viewDepth <= kMaxViews) {
+		ViewEntry& e = g_views[g_viewDepth - 1];
+		if (!e.solidDone && (e.isMain || e.throughPortal)) {
+			e.solidDone = true;
+			if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
+				if (e.isMain) {
+					g_mainSolidDone = true;
+					draw(dev, worldToScreen(), false, kPassSolid);
+				} else if (g_renderView) {
+					float worldToProjection[16];
+					portalMatrix(e, worldToProjection);
+					draw(dev, worldToProjection, true, kPassSolid);
+				}
+			}
+		}
+	}
+	g_translucentOriginal(self, list, sortIndex, flags, shadowDepth);
 }
 
 void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
@@ -472,12 +517,11 @@ void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
 		g_viewDepth--;
 		if (g_viewDepth < kMaxViews && g_views[g_viewDepth].throughPortal && g_renderView) {
 			auto* dev = static_cast<IDirect3DDevice9*>(overlay::device());
-			float worldToView[16], viewToProjection[16], worldToProjection[16], worldToPixels[16];
-			sdk::vcall<void>(g_renderView, 50, static_cast<const void*>(g_views[g_viewDepth].setup), static_cast<void*>(worldToView),
-				static_cast<void*>(viewToProjection), static_cast<void*>(worldToProjection), static_cast<void*>(worldToPixels));
+			float worldToProjection[16];
+			portalMatrix(g_views[g_viewDepth], worldToProjection);
 			if (dev) {
 				g_portalViewsThisFrame++;
-				draw(dev, worldToProjection, true);
+				draw(dev, worldToProjection, true, g_views[g_viewDepth].solidDone ? kPassTranslucent : kPassBoth);
 			}
 		}
 	}
@@ -511,6 +555,7 @@ void frameDone() {
 		}
 	}
 	g_viewDepth = 0;
+	g_mainSolidDone = false;
 	g_portalViewsThisFrame = 0;
 	g_scenesThisFrame = 0;
 }
@@ -564,6 +609,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	hook(vt, 38, reinterpret_cast<void*>(&hkPush3DView4), reinterpret_cast<void**>(&g_push3d4Original));
 	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
 	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
+	hook(vt, 18, reinterpret_cast<void*>(&hkDrawTranslucentSurfaces), reinterpret_cast<void**>(&g_translucentOriginal));
 	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
 	return true;
 }

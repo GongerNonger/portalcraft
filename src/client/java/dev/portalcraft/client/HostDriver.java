@@ -17,6 +17,7 @@ import dev.portalcraft.host.Units;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.client.player.LocalPlayer;
@@ -168,6 +169,7 @@ public final class HostDriver {
 			return;
 		}
 		boolean ready = sendState(minecraft);
+		moveCursor(minecraft);
 
 		// The placed blocks, for the host to draw in its own 3D pass.
 		if (ready && WorldLink.open()) {
@@ -186,10 +188,43 @@ public final class HostDriver {
 			// would hand the host about half the walking speed (and weak flings through portals).
 			vel = Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo));
 		}
-		HostLink.send(Proto.writeMcState(++seq, ready ? Proto.MC_READY : 0, teleportAck, pos, vel,
+		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0);
+		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F));
 		return ready;
+	}
+
+	/**
+	 * A screen the player points at (inventory, chests, crafting, chat): the host lets go of its
+	 * mouse while one is open and sends its cursor. Not the pause screen, which tick() closes.
+	 */
+	private static boolean screenWantsCursor(Minecraft minecraft) {
+		Screen screen = minecraft.gui.screen();
+		return screen != null && !(screen instanceof PauseScreen);
+	}
+
+	private static double cursorX = -1.0, cursorY = -1.0;
+
+	/**
+	 * Every render frame while a screen is open: the host's cursor (0..1 over its window) becomes
+	 * Minecraft's, in window coordinates, so items under it highlight and clicks land on it.
+	 */
+	private static void moveCursor(Minecraft minecraft) {
+		Proto.HostState s = HostLink.current();
+		if (s == null || !screenWantsCursor(minecraft) || s.cursorX() < 0.0F || s.cursorY() < 0.0F) {
+			cursorX = cursorY = -1.0;
+			return;
+		}
+		var window = minecraft.getWindow();
+		double x = s.cursorX() * window.getScreenWidth(), y = s.cursorY() * window.getScreenHeight();
+		if (x == cursorX && y == cursorY) {
+			return;
+		}
+		double dx = cursorX < 0.0 ? 0.0 : x - cursorX, dy = cursorY < 0.0 ? 0.0 : y - cursorY;
+		cursorX = x;
+		cursorY = y;
+		minecraft.mouseHandler.onMove(window.handle(), x, y, dx, dy);
 	}
 
 	/** Minecraft's third-person distance, before blocks or walls get in the way (Camera.setup). */
@@ -380,19 +415,23 @@ public final class HostDriver {
 
 	/**
 	 * Mouse clicks are Minecraft's (attack, use, pick block) unless Steve holds the portal gun: the
-	 * host fires its own gun then, so Minecraft gets none and lets go of any it had down.
+	 * host fires its own gun then, so Minecraft gets none and lets go of any it had down. With a
+	 * screen open every click is the screen's, at the host's cursor (moveCursor).
 	 */
 	private static void applyMouse(Minecraft minecraft, LocalPlayer player, int wanted) {
-		if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+		boolean screen = minecraft.gui.screen() != null;
+		if (screen) {
+			if (cursorX < 0.0) {
+				wanted &= buttons; // no cursor from the host (yet): let go, but don't click blind
+			}
+		} else if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
 			wanted = 0;
-		} else if (minecraft.gui.screen() != null) {
-			wanted &= buttons; // screens get no cursor from the host: let go, but don't click
 		}
 		for (int bit = 0; bit < MOUSE_BUTTONS.length; bit++) {
 			int mask = 1 << bit;
 			boolean down = (wanted & mask) != 0;
 			if (down != ((buttons & mask) != 0)) {
-				if (down) {
+				if (down && !screen) {
 					readyToClick(minecraft);
 				}
 				buttons ^= mask;

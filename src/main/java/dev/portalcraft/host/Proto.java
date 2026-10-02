@@ -10,7 +10,7 @@ import net.minecraft.world.phys.Vec3;
 public final class Proto {
 	public static final int HOST_PORT = 27515;
 	public static final int MC_PORT = 27516;
-	public static final int HOST_STATE_SIZE = 228;
+	public static final int HOST_STATE_SIZE = 236;
 	public static final int MC_STATE_SIZE = 76;
 
 	public static final int HOST_IN_GAME = 1;
@@ -22,6 +22,8 @@ public final class Proto {
 	public static final int PORTAL_LINKED = 1 << 2;
 
 	public static final int MC_READY = 1;
+	/** McFlags kMcScreen: a screen is open, so the host frees its mouse and sends the cursor. */
+	public static final int MC_SCREEN = 1 << 1;
 
 	private Proto() {
 	}
@@ -34,7 +36,8 @@ public final class Proto {
 
 	public record HostState(
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
-		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, HostPortal[] portals
+		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, HostPortal[] portals,
+		float cursorX, float cursorY
 	) {
 		public boolean inGame() {
 			return (flags & HOST_IN_GAME) != 0;
@@ -51,7 +54,7 @@ public final class Proto {
 
 	public static HostState readHostState(ByteBuffer b) {
 		b.order(ByteOrder.LITTLE_ENDIAN);
-		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '1') {
+		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '2') {
 			return null;
 		}
 		b.position(4);
@@ -79,7 +82,9 @@ public final class Proto {
 		for (int i = 0; i < 2; i++) {
 			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
 		}
-		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, portals);
+		float cursorX = b.getFloat(), cursorY = b.getFloat();
+		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, portals, cursorX,
+			cursorY);
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */
