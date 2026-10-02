@@ -256,8 +256,23 @@ Vector toVec(const pcproto::Vec3& v) {
 	return {v.x, v.y, v.z};
 }
 
+// Portal's physics sometimes rests the player a few units above Minecraft's floor (its hull
+// skin on a prop, a lip Minecraft's collision is a hair under). Fighting that every tick bobs;
+// handing it to Minecraft loops (Minecraft falls back to its own floor). So we remember the lift
+// here and add it to what we write, until the player walks away from where it was learned.
+float g_zLift = 0.0f;
+Vector g_zLiftAt{};
+
 void applyMinecraft(uint8_t* mv) {
-	*reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin) = toVec(g_mc.origin);
+	Vector o = toVec(g_mc.origin);
+	if (g_zLift != 0.0f) {
+		float dx = o.x - g_zLiftAt.x, dy = o.y - g_zLiftAt.y;
+		if (dx * dx + dy * dy > 24.0f * 24.0f) {
+			g_zLift = 0.0f;
+		}
+	}
+	o.z += g_zLift;
+	*reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin) = o;
 	*reinterpret_cast<Vector*>(mv + sdk::kMvVelocity) = toVec(g_mc.velocity);
 }
 
@@ -312,6 +327,15 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
+	if (g_haveSet) {
+		float dx = origin.x - g_lastSet.x, dy = origin.y - g_lastSet.y, dz = origin.z - g_lastSet.z;
+		if (dx * dx + dy * dy < 0.25f && dz > 0.1f && g_zLift + dz <= 4.0f) {
+			g_zLift += dz; // a small straight-up nudge: keep it (see applyMinecraft)
+			g_zLiftAt = origin;
+			g_lastSet = origin;
+		}
+	}
+
 	// Something other than us moved the player since last tick: a portal, a trigger_teleport, a
 	// fresh level, or Portal's physics shoving the player out of a prop. That move is Portal's;
 	// give it to Minecraft and wait for the ack, rather than fighting it every tick (which bobs).
@@ -340,10 +364,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	} else {
 		g_haveSet = false;
 	}
+	if (g_needSync) {
+		g_zLift = 0.0f;
+	}
 	if (g_traceTicks > 0) {
 		g_traceTicks--;
-		logf("S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal, origin.z,
-			g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, origin.x, origin.y);
+		logf("S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal,
+			origin.z, g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, g_zLift, origin.x, origin.y);
 	}
 	g_origin = origin;
 	g_velocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);

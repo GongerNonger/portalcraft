@@ -35,6 +35,7 @@ public final class LiveEntities {
 	private static @Nullable GameFiles files;
 	private static int lastSeq = -1;
 	private static boolean loggedFirst;
+	private static int movedLogs;
 
 	private LiveEntities() {
 	}
@@ -63,8 +64,9 @@ public final class LiveEntities {
 		}
 
 		List<Moved> moved = new ArrayList<>();
+		List<AABB> dirty = new ArrayList<>();
 		Map<Integer, Placed> next = new HashMap<>();
-		boolean changed = PLACED.size() != packet.entities().size();
+		boolean changed = false;
 		for (Proto.HostEntity e : packet.entities()) {
 			Placed old = PLACED.get(e.index());
 			if (old != null && samePlace(old.pose(), e)) {
@@ -76,8 +78,26 @@ public final class LiveEntities {
 			AABB bounds = union(brushes);
 			Placed placed = new Placed(e, brushes, bounds);
 			next.put(e.index(), placed);
+			if (bounds != null) {
+				dirty.add(bounds);
+			}
+			if (old != null && old.bounds() != null) {
+				dirty.add(old.bounds());
+			}
+			if (old != null && movedLogs < 40) {
+				movedLogs++;
+				LOG.info("PortalCraft: entity #{} {} moved to {}", e.index(), e.model(), e.origin());
+			}
 			if (old != null && old.bounds() != null && old.pose().model().equals(e.model())) {
 				moved.add(new Moved(old.bounds(), Units.toMc(e.origin()).subtract(Units.toMc(old.pose().origin()))));
+			}
+		}
+		for (Map.Entry<Integer, Placed> gone : PLACED.entrySet()) {
+			if (!next.containsKey(gone.getKey())) {
+				changed = true;
+				if (gone.getValue().bounds() != null) {
+					dirty.add(gone.getValue().bounds());
+				}
 			}
 		}
 		if (!changed) {
@@ -89,7 +109,7 @@ public final class LiveEntities {
 		for (Placed p : PLACED.values()) {
 			all.addAll(p.brushes());
 		}
-		HostCollision.setDynamic(all);
+		HostCollision.setDynamic(all, dirty);
 		if (!loggedFirst) {
 			loggedFirst = true;
 			LOG.info("PortalCraft: {} live solid entities, {} brushes", PLACED.size(), all.size());

@@ -28,10 +28,15 @@ def main():
     ap.add_argument("--cmd")
     ap.add_argument("--keys", help="dev: hold SDL scancodes in Portal, e.g. 26 for W, 26,225 for W+shift")
     ap.add_argument("--ms", type=int, default=1000)
+    ap.add_argument("--goto", help="dev: move Minecraft's player to x,y,z (host units); Portal follows")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if a.goto:
+        x, y, z = (float(v) for v in a.goto.split(","))
+        sock.sendto(b"PCD1" + struct.pack("<3f", x, y, z), ("127.0.0.1", 27516))
+        return
     if a.trace:
         sock.sendto(b"PCT1" + struct.pack("<i", a.trace), HOST)
         return

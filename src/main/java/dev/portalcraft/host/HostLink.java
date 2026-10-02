@@ -20,6 +20,8 @@ public final class HostLink {
 	private static @Nullable DatagramChannel channel;
 	private static volatile Proto.@Nullable HostState latest;
 	private static volatile Proto.@Nullable HostEntities entities;
+	/** Dev: a "PCD1" x y z packet (host units) asks Minecraft to move its player there. */
+	private static volatile net.minecraft.world.phys.@Nullable Vec3 devGoto;
 	private static volatile long latestAt;
 
 	private HostLink() {
@@ -50,6 +52,11 @@ public final class HostLink {
 				buf.clear();
 				channel.receive(buf);
 				buf.flip();
+				if (buf.remaining() == 16 && buf.get(2) == 'D') {
+					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+					devGoto = new net.minecraft.world.phys.Vec3(buf.getFloat(4), buf.getFloat(8), buf.getFloat(12));
+					continue;
+				}
 				if (buf.remaining() >= 4 && buf.get(2) == 'E') {
 					Proto.HostEntities e = Proto.readHostEntities(buf.slice());
 					if (e != null) {
@@ -73,6 +80,12 @@ public final class HostLink {
 	public static Proto.@Nullable HostState current() {
 		Proto.HostState s = latest;
 		return s != null && System.nanoTime() - latestAt < STALE_NANOS ? s : null;
+	}
+
+	public static net.minecraft.world.phys.@Nullable Vec3 takeDevGoto() {
+		var g = devGoto;
+		devGoto = null;
+		return g;
 	}
 
 	/** The newest solid-entity list from the host, or null before the first one. */

@@ -91,13 +91,32 @@ public final class HostCollision {
 	 * The host's live solid entities, already placed. The first call switches the baked brush
 	 * entities off: from then on the host says what's solid and where.
 	 */
-	public static void setDynamic(List<BspMap.Brush> brushes) {
+	public static void setDynamic(List<BspMap.Brush> brushes, List<AABB> dirty) {
 		dynamic = index(brushes);
 		if (!live) {
 			live = true;
 			CACHE.clear();
+			DYNAMIC_CACHE.clear();
+			return;
 		}
-		DYNAMIC_CACHE.clear();
+		// Only cells something moved through need rebuilding: sloped cells cost milliseconds each,
+		// and doors, buttons and lifts update about 16 times a second.
+		for (AABB box : dirty) {
+			int x0 = (int) Math.floor(box.minX) - 1, x1 = (int) Math.floor(box.maxX) + 1;
+			int y0 = (int) Math.floor(box.minY) - 1, y1 = (int) Math.floor(box.maxY) + 1;
+			int z0 = (int) Math.floor(box.minZ) - 1, z1 = (int) Math.floor(box.maxZ) + 1;
+			if ((long) (x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > 50_000) {
+				DYNAMIC_CACHE.clear();
+				return;
+			}
+			for (int x = x0; x <= x1; x++) {
+				for (int y = y0; y <= y1; y++) {
+					for (int z = z0; z <= z1; z++) {
+						DYNAMIC_CACHE.remove(BlockPos.asLong(x, y, z));
+					}
+				}
+			}
+		}
 	}
 
 	private static Index index(List<BspMap.Brush> brushes) {

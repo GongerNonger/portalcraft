@@ -104,6 +104,10 @@ public final class HostDriver {
 		}
 
 		carry(player, moved);
+		Vec3 devGoto = HostLink.takeDevGoto();
+		if (devGoto != null) {
+			teleport(minecraft, player, Units.toMc(devGoto), Vec3.ZERO);
+		}
 
 		float yaw = Units.yawToMc(s.yaw());
 		player.setYRot(yaw);
