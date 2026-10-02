@@ -11,8 +11,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
  * see the host's walls, and a block placed against one lands in front of it.
  *
  * Minecraft's own world is AIR wherever the host has geometry, so attacking such a cell does
- * nothing (vanilla skips air) and nothing there can be broken. The player's own blocks break
- * quickly (breakProgress).
+ * nothing (vanilla skips air) and nothing there can be broken.
  */
 public final class HostAim {
 	private HostAim() {
@@ -45,24 +44,5 @@ public final class HostAim {
 		double t = face.getAxis().choose(hit.x - pos.getX(), hit.y - pos.getY(), hit.z - pos.getZ());
 		double behind = face.getAxisDirection() == Direction.AxisDirection.POSITIVE ? t : 1.0 - t;
 		return behind > 0.5;
-	}
-
-	/** Ticks of holding left click that break any breakable block while a host map is loaded. */
-	public static final int BREAK_TICKS = 4;
-
-	/**
-	 * A block's mining progress per tick (BlockStateBase.getDestroyProgress), sped up while a host
-	 * map is loaded (BlockStateBaseMixin). Every Minecraft block there is one the player placed in
-	 * a void world, mostly stone, and stone by hand takes 150 ticks (7.5 s; five times that in the
-	 * air) with no cracks to show for it, since the host draws only the finished blocks. So
-	 * anything breakable goes in at most BREAK_TICKS: quick, but not instant, so a held click
-	 * sweeping across a wall doesn't eat a block every tick. Faster vanilla speeds are kept, and
-	 * so are unbreakable blocks (progress 0).
-	 */
-	public static float breakProgress(float vanilla) {
-		if (vanilla <= 0.0F || !HostCollision.active()) {
-			return vanilla;
-		}
-		return Math.max(vanilla, 1.0F / BREAK_TICKS);
 	}
 }

@@ -54,35 +54,6 @@ class HostAimTest {
 	}
 
 	@Test
-	void quickBreakOnlyWithAHostMap() {
-		HostCollision.clear();
-		float stoneByHand = 1.0F / 1.5F / 100.0F;
-		assertEquals(stoneByHand, HostAim.breakProgress(stoneByHand));
-	}
-
-	@Test
-	void quickBreakInAHostMap() throws Exception {
-		assumeTrue(Files.exists(MAP), "Portal not installed");
-		HostCollision.setMap(BspMap.load(MAP, "testchmb_a_00"));
-		float quick = 1.0F / HostAim.BREAK_TICKS;
-		// Stone by hand, and the same in the air (a fifth): both break in BREAK_TICKS.
-		assertEquals(quick, HostAim.breakProgress(1.0F / 1.5F / 100.0F));
-		assertEquals(quick, HostAim.breakProgress(1.0F / 1.5F / 100.0F / 5.0F));
-		// Already faster (or instant): vanilla's. Unbreakable (bedrock): still unbreakable.
-		assertEquals(0.5F, HostAim.breakProgress(0.5F));
-		assertEquals(30.0F, HostAim.breakProgress(30.0F));
-		assertEquals(0.0F, HostAim.breakProgress(0.0F));
-		// MultiPlayerGameMode adds the progress up once per tick held and breaks at 1.
-		float progress = 0.0F;
-		int ticks = 0;
-		while (progress < 1.0F) {
-			progress += HostAim.breakProgress(1.0F / 1.5F / 100.0F);
-			ticks++;
-		}
-		assertEquals(HostAim.BREAK_TICKS, ticks);
-	}
-
-	@Test
 	void aimFromTheSpawn() throws Exception {
 		assumeTrue(Files.exists(MAP), "Portal not installed");
 		HostCollision.setMap(BspMap.load(MAP, "testchmb_a_00"));

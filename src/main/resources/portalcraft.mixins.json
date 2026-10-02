@@ -6,7 +6,6 @@
 		"AvatarDimensionsMixin",
 		"BlockCollisionsMixin",
 		"BlockPlaceContextMixin",
-		"BlockStateBaseMixin",
 		"BucketItemMixin",
 		"ClipContextMixin",
 		"EntityBelowWorldMixin",
