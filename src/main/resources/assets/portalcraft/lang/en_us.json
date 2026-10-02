@@ -1,4 +1,6 @@
 {
   "item.portalcraft.portal_gun": "Portal Gun",
-  "entity.portalcraft.portal": "Portal"
+  "entity.portalcraft.portal": "Portal",
+  "death.attack.portalcraft.test": "%1$s failed the test",
+  "death.attack.portalcraft.test.player": "%1$s failed the test while fighting %2$s"
 }

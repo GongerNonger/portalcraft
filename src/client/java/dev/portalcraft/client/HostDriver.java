@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.portalcraft.PortalCraft;
+import dev.portalcraft.client.world.BlockSolids;
 import dev.portalcraft.client.world.WorldExporter;
 import dev.portalcraft.client.world.WorldLink;
 import dev.portalcraft.host.BspMap;
@@ -107,6 +108,7 @@ public final class HostDriver {
 			return;
 		}
 		if (player.isDeadOrDying()) {
+			HostHealth.died();
 			if (minecraft.gui.screen() != null) {
 				minecraft.gui.setScreen(null);
 			}
@@ -157,6 +159,8 @@ public final class HostDriver {
 		PortalAir.tick(player);
 		PortalAir.funnel(player, s.portals());
 		HostEvents.drainHits();
+		HostHealth.tick(minecraft, player);
+		BlockSolids.tick(minecraft);
 
 		if (s.foreground()) {
 			applyKeys(minecraft, s);

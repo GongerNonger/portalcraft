@@ -13,8 +13,9 @@ enemies around him. This is where that holds up, and where it doesn't.
 | `env_physexplosion` | 9 | Same impulse path. |
 | Doors, lifts, moving platforms (`func_door`, `func_tracktrain`) | ~400 | Live entity collision, ridden by `carry`, shoves are soft handoffs. |
 | Fizzlers (`trigger_portal_cleanser`) | 40 | Native: they act on the player's position and clear portals; Minecraft's portal holes follow. |
-| Goo, turrets, energy balls (`trigger_hurt`, turrets, launchers) | ~110 | Native: Portal damages its own player at our position. |
+| Goo, turrets, energy balls (`trigger_hurt`, turrets, launchers) | ~110 | Portal damages its player at Steve's place; the plugin refunds it and Steve takes it (x0.2: a full Chell is a full Steve), armor and all. A one-hit kill (goo, an energy ball) kills Steve. Steve dying (falls, lava, TNT, turrets) kills Portal's player, so Portal's own death and checkpoint reload follow. |
 | Cubes, buttons | many | Native (E grabs; floor buttons are triggers / physics). |
+| Props on Steve's blocks | - | Steve's blocks (32 blocks around him) are static physics boxes in Portal: cubes rest on them, turrets stand on them, energy balls bounce off. Turret bullets are traces and still go through. |
 | Floor-portal funneling | everywhere | Portal steers a falling player into a floor portal; PortalAir.funnel does it for Steve (within 1.5 blocks, 10 below). |
 | Minecraft explosions on props | - | TNT, creepers, beds become a Portal blast (`RadiusDamage`, DMG_BLAST, radius 2x power): cubes fly, turrets tip. The player is left out (Minecraft hurts Steve itself). |
 | Arrows, snowballs, punches on props | - | A projectile or a bare-hand punch that lands on a Portal entity hits it (`AddMultiDamage`, DMG_CLUB, force along the hit): cubes get shoved, turrets knocked over. |

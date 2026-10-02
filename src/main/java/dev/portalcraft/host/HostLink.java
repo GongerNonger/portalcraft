@@ -88,6 +88,13 @@ public final class HostLink {
 					devGoto = new net.minecraft.world.phys.Vec3(buf.getFloat(4), buf.getFloat(8), buf.getFloat(12));
 					continue;
 				}
+				if (buf.remaining() == 12 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'U' && buf.get(3) == '1') {
+					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+					if (HURTS.size() < 64) {
+						HURTS.add(new Hurt(buf.getFloat(4), (buf.getInt(8) & 1) != 0));
+					}
+					continue;
+				}
 				if (buf.remaining() >= 4 && buf.get(2) == 'E') {
 					Proto.HostEntities e = Proto.readHostEntities(buf.slice());
 					if (e != null) {
@@ -111,6 +118,20 @@ public final class HostLink {
 	public static Proto.@Nullable HostState current() {
 		Proto.HostState s = latest;
 		return s != null && System.nanoTime() - latestAt < STALE_NANOS ? s : null;
+	}
+
+	/**
+	 * "PCU1" damage float, flags uint32: Portal hurt its player (turrets, energy balls, goo), in
+	 * Portal health (100 is a full Chell). Minecraft owns the player's health: the host refunds it
+	 * and Minecraft takes it as damage. Flag 1: Portal's player died, so Steve dies too.
+	 */
+	public record Hurt(float damage, boolean kill) {
+	}
+
+	private static final java.util.concurrent.ConcurrentLinkedQueue<Hurt> HURTS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+	public static @Nullable Hurt takeHurt() {
+		return HURTS.poll();
 	}
 
 	/** "PCY1": characters the player typed into the host while a Minecraft screen was open. */

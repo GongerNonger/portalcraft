@@ -17,6 +17,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include <intrin.h>
 
 #include "../../../protocol/portalcraft_protocol.h"
@@ -314,6 +315,284 @@ bool serverToolsReady() {
 	return g_serverTools && g_inLevel && playerBase();
 }
 
+// ---- Minecraft owns the player's health (as SkyCraft does) ----------------------------------
+// Whatever hurts Portal's player (turrets, energy balls, goo, crushers) is refunded every server
+// frame and sent to Minecraft ("PCU1"), where Steve takes it, armor and all. A hit that kills
+// Portal's player outright (goo, an energy ball) kills Steve too (flag 1). When Steve dies
+// ("PCZ1": a fall, lava, TNT, or the turret damage above), Portal's player is killed here, so
+// Portal's own death and checkpoint reload follow. Health is kept at Portal's own maximum, never
+// above it, so nothing in Portal that clamps or regenerates health can look like a hit.
+struct PlayerOffsets {
+	bool ready = false;
+	int health = -1, lifeState = -1;
+} g_pl;
+constexpr int kFullHealth = 100;
+float g_hurtPending = 0.0f;
+DWORD g_hurtSentAt = 0;
+bool g_wasAlive = false;
+bool g_killedForMc = false; // Portal's player died because Steve did: don't kill Steve back
+bool g_killPending = false;
+uint32_t g_mcDeathSeq = 0;
+
+bool following();
+
+void sendHurt(float damage, uint32_t flags) {
+	char packet[12];
+	std::memcpy(packet, "PCU1", 4);
+	std::memcpy(packet + 4, &damage, 4);
+	std::memcpy(packet + 8, &flags, 4);
+	sendto(g_sock, packet, sizeof packet, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
+}
+
+void killPortalPlayer(void* player) {
+	if (!serverToolsReady()) {
+		return;
+	}
+	DamageInfo info = damageInfo(100000.0f, 0 /* DMG_GENERIC */);
+	__try {
+		sdk::vcall<void>(g_serverTools, 28);
+		sdk::vcall<void>(g_serverTools, 30, static_cast<const void*>(&info), player);
+		sdk::vcall<void>(g_serverTools, 29);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		logf("health: killing Portal's player faulted");
+	}
+}
+
+void bridgeHealth() {
+	void* e = edictAt(1);
+	if (!g_inLevel || !edictInUse(e)) {
+		g_wasAlive = false;
+		return;
+	}
+	void* networkable = sdk::edictNetworkable(e);
+	auto* base = static_cast<uint8_t*>(sdk::networkableBaseEntity(networkable));
+	if (!base) {
+		return;
+	}
+	if (!g_pl.ready) {
+		g_pl.ready = true;
+		auto* sc = static_cast<sdk::ServerClass*>(sdk::networkableServerClass(networkable));
+		if (sc && sc->table) {
+			g_pl.health = findProp(sc->table, "m_iHealth", 0);
+			g_pl.lifeState = findProp(sc->table, "m_lifeState", 0);
+		}
+		logf("health: %s m_iHealth %d m_lifeState %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState);
+	}
+	if (g_pl.health < 0 || g_pl.lifeState < 0) {
+		return;
+	}
+	int& health = *reinterpret_cast<int*>(base + g_pl.health);
+	bool alive = base[g_pl.lifeState] == 0; // LIFE_ALIVE
+	if (g_killPending) {
+		g_killPending = false;
+		if (alive) {
+			g_killedForMc = true;
+			logf("health: Steve died; killing Portal's player");
+			killPortalPlayer(base);
+			return;
+		}
+	}
+	if (!alive) {
+		if (g_wasAlive && !g_killedForMc && mcReady()) {
+			logf("health: Portal's player died; so does Steve");
+			sendHurt(0.0f, 1);
+		}
+		g_wasAlive = false;
+		g_hurtPending = 0.0f;
+		return;
+	}
+	bool fresh = !g_wasAlive; // a level start or a reload: whatever the save had isn't a new hit
+	g_wasAlive = true;
+	if (fresh) {
+		g_killedForMc = false;
+	}
+	if (!mcReady()) {
+		g_hurtPending = 0.0f;
+		return;
+	}
+	if (health < kFullHealth) {
+		if (!fresh) {
+			g_hurtPending += float(kFullHealth - health);
+		}
+		health = kFullHealth;
+		*static_cast<int*>(e) |= 1 | (1 << 8); // FL_EDICT_CHANGED | FL_FULL_EDICT_CHANGED
+	}
+	if (g_hurtPending > 0.0f && GetTickCount() - g_hurtSentAt >= 50) {
+		static int logged = 0;
+		if (logged++ < 5) {
+			logf("health: Portal hurt the player by %.0f; Minecraft takes it", g_hurtPending);
+		}
+		sendHurt(g_hurtPending, 0);
+		g_hurtPending = 0.0f;
+		g_hurtSentAt = GetTickCount();
+	}
+}
+
+// ---- Steve's blocks in Portal's physics --------------------------------------------------
+// As SkyCraft makes Skyrim's NPCs stand on Minecraft's blocks, Portal's physics props (cubes,
+// turrets, energy balls) collide with Steve's: Minecraft sends its blocks' collision boxes
+// ("PCS1", BlockSolids.java) and each becomes a static VPhysics box owned by the world entity, so
+// Portal treats it like its own brushes. Only boxes that changed are made or removed; a removed
+// one gets a tiny blast at its spot, which wakes whatever was resting on it (VPhysics has no
+// "wake what touches this", and a sleeping cube would hang in the air).
+// Slots checked in vphysics.dll: IPhysics (VPhysics031) 7 GetActiveEnvironmentByIndex;
+// IPhysicsCollision (VPhysicsCollision007) 29 BBoxToCollide(mins, maxs); IPhysicsEnvironment 8
+// CreatePolyObjectStatic(collide, material, position, angles, params), 10 DestroyObject.
+struct ObjectParams { // objectparams_t
+	Vector* massCenterOverride;
+	float mass, inertia, damping, rotdamping, rotInertiaLimit;
+	const char* name;
+	void* gameData;
+	float volume, dragCoefficient;
+	bool enableCollisions;
+};
+struct BlockBox {
+	float box[6]; // mins xyz, maxs xyz (host units)
+	void* object;
+};
+constexpr uint32_t kMaxBlockBoxes = 512;
+void* g_physics = nullptr;
+void* g_physCollision = nullptr;
+void* g_blockEnv = nullptr; // the environment g_blockBoxes live in
+std::vector<BlockBox> g_blockBoxes;
+std::vector<float> g_blockIncoming;
+bool g_blockDirty = false;
+
+void receiveSolids(const char* buf, int n) {
+	uint32_t count;
+	std::memcpy(&count, buf + 4, 4);
+	if (count > kMaxBlockBoxes || n != int(8 + count * 24)) {
+		return;
+	}
+	std::vector<float> boxes(count * 6);
+	std::memcpy(boxes.data(), buf + 8, count * 24);
+	if (boxes != g_blockIncoming) {
+		g_blockIncoming.swap(boxes);
+		g_blockDirty = true;
+	}
+}
+
+// A new level: the old boxes went with the old physics environment.
+void forgetBlockBoxes() {
+	g_blockBoxes.clear();
+	g_blockEnv = nullptr;
+	g_blockDirty = !g_blockIncoming.empty();
+}
+
+void* makeBlockBox(void* env, const float* b, void* world) {
+	Vector half{(b[3] - b[0]) * 0.5f, (b[4] - b[1]) * 0.5f, (b[5] - b[2]) * 0.5f};
+	Vector neg{-half.x, -half.y, -half.z};
+	Vector centre{b[0] + half.x, b[1] + half.y, b[2] + half.z};
+	Vector angles{0.0f, 0.0f, 0.0f};
+	ObjectParams params{nullptr, 1.0f, 1.0f, 0.1f, 0.1f, 0.05f, "portalcraft block", world, 0.0f, 1.0f, true};
+	__try {
+		void* collide = sdk::vcall<void*>(g_physCollision, 29, static_cast<const void*>(&neg), static_cast<const void*>(&half));
+		if (!collide) {
+			return nullptr;
+		}
+		return sdk::vcall<void*>(env, 8, collide, 0, static_cast<const void*>(&centre), static_cast<const void*>(&angles),
+			static_cast<void*>(&params));
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return nullptr;
+	}
+}
+
+void destroyBlockBox(void* env, void* object) {
+	__try {
+		sdk::vcall<void>(env, 10, object);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+}
+
+void wakeAround(const float* b) {
+	if (!serverToolsReady()) {
+		return;
+	}
+	float hx = (b[3] - b[0]) * 0.5f, hy = (b[4] - b[1]) * 0.5f, hz = (b[5] - b[2]) * 0.5f;
+	Vector at{b[0] + hx, b[1] + hy, b[2] + hz};
+	float radius = std::sqrt(hx * hx + hy * hy + hz * hz) + 32.0f;
+	DamageInfo info = damageInfo(0.5f, 0 /* DMG_GENERIC */);
+	info.position = info.reported = at;
+	__try {
+		sdk::vcall<void>(g_serverTools, 31, static_cast<const void*>(&info), static_cast<const void*>(&at), radius, 0, playerBase());
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+}
+
+void* activeEnvironment() {
+	__try {
+		return sdk::vcall<void*>(g_physics, 7, 0);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return nullptr;
+	}
+}
+
+void updateBlockPhysics() {
+	if (!g_inLevel || !g_blockDirty) {
+		return;
+	}
+	if (!g_physics) {
+		g_physics = engineInterface("vphysics.dll", "VPhysics031");
+		g_physCollision = engineInterface("vphysics.dll", "VPhysicsCollision007");
+		logf("blocks: vphysics %p collision %p", g_physics, g_physCollision);
+	}
+	void* worldEdict = edictAt(0);
+	void* world = edictInUse(worldEdict) ? sdk::networkableBaseEntity(sdk::edictNetworkable(worldEdict)) : nullptr;
+	if (!g_physics || !g_physCollision || !world) {
+		return;
+	}
+	void* env = activeEnvironment();
+	if (!env) {
+		return;
+	}
+	if (env != g_blockEnv) {
+		g_blockBoxes.clear();
+		g_blockEnv = env;
+	}
+	g_blockDirty = false;
+
+	size_t count = g_blockIncoming.size() / 6;
+	std::vector<bool> kept(g_blockBoxes.size(), false);
+	std::vector<BlockBox> next;
+	next.reserve(count);
+	int made = 0;
+	for (size_t i = 0; i < count; i++) {
+		const float* b = &g_blockIncoming[i * 6];
+		bool found = false;
+		for (size_t k = 0; k < g_blockBoxes.size(); k++) {
+			if (!kept[k] && std::memcmp(g_blockBoxes[k].box, b, sizeof(float) * 6) == 0) {
+				kept[k] = true;
+				next.push_back(g_blockBoxes[k]);
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			BlockBox box;
+			std::memcpy(box.box, b, sizeof box.box);
+			box.object = makeBlockBox(env, b, world);
+			if (box.object) {
+				next.push_back(box);
+				made++;
+			}
+		}
+	}
+	int removed = 0;
+	for (size_t k = 0; k < g_blockBoxes.size(); k++) {
+		if (!kept[k]) {
+			destroyBlockBox(env, g_blockBoxes[k].object);
+			if (removed++ < 16) {
+				wakeAround(g_blockBoxes[k].box);
+			}
+		}
+	}
+	g_blockBoxes.swap(next);
+	static int logged = 0;
+	if ((made || removed) && logged++ < 20) {
+		logf("blocks: %zu of Steve's block boxes in Portal's physics (+%d -%d)", g_blockBoxes.size(), made, removed);
+	}
+}
+
 void receiveBlast(const char* buf) {
 	pcproto::McBlast b;
 	std::memcpy(&b, buf, sizeof b);
@@ -365,7 +644,7 @@ void receiveHit(const char* buf) {
 }
 
 void linkPoll() {
-	char buf[512];
+	static char buf[16384]; // PCS1 carries up to 512 block boxes
 	for (int i = 0; i < 64; i++) {
 		int n = recv(g_sock, buf, sizeof buf, 0);
 		if (n <= 0) {
@@ -420,6 +699,15 @@ void linkPoll() {
 			std::memcpy(pitchYaw, buf + 4, 8);
 			sdk::QAngle view{pitchYaw[0], pitchYaw[1], 0.0f};
 			sdk::clientSetViewAngles(g_engineClient, &view);
+		} else if (n >= 8 && std::memcmp(buf, "PCS1", 4) == 0) {
+			receiveSolids(buf, n);
+		} else if (n == 8 && std::memcmp(buf, "PCZ1", 4) == 0) {
+			uint32_t seq;
+			std::memcpy(&seq, buf + 4, 4);
+			if (seq != g_mcDeathSeq) {
+				g_mcDeathSeq = seq;
+				g_killPending = true;
+			}
 		} else if (n == sizeof(pcproto::McBlast) && std::memcmp(buf, "PCB1", 4) == 0) {
 			receiveBlast(buf);
 		} else if (n == sizeof(pcproto::McHit) && std::memcmp(buf, "PCI1", 4) == 0) {
@@ -1389,6 +1677,7 @@ public:
 	virtual void ServerActivate(void* edictList, int edictCount, int clientMax) {
 		g_edicts = static_cast<uint8_t*>(edictList);
 		g_inLevel = true;
+		forgetBlockBoxes();
 		void* world = sdk::edictNetworkable(edictList);
 		logf("ServerActivate: %d edicts, %d clients, edict0 = %s", edictCount, clientMax,
 			world ? sdk::networkableClassName(world) : "(null)");
@@ -1415,6 +1704,8 @@ public:
 			worldrender::init(&logf, g_engineFactory);
 		}
 		linkPoll();
+		bridgeHealth();
+		updateBlockPhysics();
 		sendState();
 		camera::init(&logf);
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
@@ -1429,6 +1720,7 @@ public:
 	}
 	virtual void LevelShutdown() {
 		g_inLevel = false;
+		forgetBlockBoxes();
 		g_edicts = nullptr;
 		g_portalCount = 0;
 	}
