@@ -134,8 +134,46 @@ struct OverlayHeader {
 	volatile uint32_t mcHeartbeat; // GetTickCount-ish millis from Minecraft; stale = draw nothing
 };
 
+// ---- world: blocks the player placed in Minecraft, drawn by the host in its own 3D pass ---------
+// A second named mapping created by the host: Local\PortalCraft_World_v1.
+//   [0, 4096)                                  WorldHeader
+//   [kWorldAtlasOffset, + kWorldAtlasBytes)    Minecraft's block atlas, RGBA8, rows TOP-DOWN, atlasWidth x atlasHeight
+//   [kWorldMeshOffset + i * kWorldSlotBytes)   mesh slot i of 2: WorldVertex[slotSolid[i] + slotTranslucent[i]]
+// A mesh is a triangle list (6 vertices per quad) in host space (Source units), solid/cutout
+// triangles first, then translucent ones. Minecraft writes a slot that is neither `front` nor
+// `reading`, sets its counts, then `front`, then bumps `meshSeq`. The atlas is written once (and
+// again after a resource reload): size first, pixels, then `atlasSeq`.
+constexpr const char* kWorldMapping = "Local\\PortalCraft_World_v1";
+constexpr uint32_t kWorldAtlasMaxW = 2048;
+constexpr uint32_t kWorldAtlasMaxH = 2048;
+constexpr uint32_t kWorldAtlasOffset = 4096;
+constexpr uint32_t kWorldAtlasBytes = kWorldAtlasMaxW * kWorldAtlasMaxH * 4;
+constexpr uint32_t kWorldMaxVertices = 196608; // 32768 quads
+constexpr uint32_t kWorldMeshOffset = kWorldAtlasOffset + kWorldAtlasBytes;
+constexpr uint32_t kWorldSlotBytes = kWorldMaxVertices * 24;
+constexpr uint32_t kWorldBytes = kWorldMeshOffset + 2 * kWorldSlotBytes;
+
+struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
+	float x, y, z;  // host world space, Source units
+	uint32_t color; // D3DCOLOR 0xAARRGGBB: tint x ambient occlusion x face shade
+	float u, v;     // into the atlas, 0..1, v down
+};
+
+struct WorldHeader {
+	char magic[4];            // "PCW1", written by the host
+	uint32_t atlasWidth;      // Minecraft
+	uint32_t atlasHeight;
+	volatile uint32_t atlasSeq; // bumped by Minecraft after the atlas pixels are written; 0 = none
+	volatile uint32_t meshSeq;  // bumped by Minecraft after each mesh publish; 0 = none
+	volatile uint32_t front;    // newest complete mesh slot (Minecraft)
+	volatile uint32_t reading;  // slot the host is drawing from now, 0xFFFFFFFF = none (host)
+	uint32_t slotSolid[2];       // solid + cutout vertices in each slot (drawn with alpha test)
+	uint32_t slotTranslucent[2]; // translucent vertices after them (drawn blended, no depth write)
+};
+
 #pragma pack(pop)
 
+static_assert(sizeof(WorldVertex) == 24, "WorldVertex layout");
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
 static_assert(sizeof(HostState) == 228, "HostState layout");
