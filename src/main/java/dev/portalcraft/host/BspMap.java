@@ -25,8 +25,8 @@ import org.slf4j.LoggerFactory;
  * stand still and block players (func_brush, func_wall, ...). Each brush is a convex volume: the
  * intersection of its sides' half-spaces. vbsp adds axial bevel planes to every brush, so the
  * six axial sides give its exact bounding box; brushes with any other side are "sloped" and get
- * voxelised by {@link HostCollision}. Solid prop_statics are appended as more convex brushes
- * ({@link StaticProps}), their models read from the game folder the map sits in.
+ * cut into vertical columns by {@link HostCollision}. Solid prop_statics are appended as more
+ * convex brushes ({@link StaticProps}), their models read from the game folder the map sits in.
  */
 public final class BspMap {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);

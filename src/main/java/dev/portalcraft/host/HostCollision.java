@@ -28,7 +28,8 @@ public final class HostCollision {
 	/** How far behind the surface the hole reaches, in units. Thicker than any Portal wall. */
 	private static final double HOLE_DEPTH = 72.0;
 	private static final int BUCKET = 8;
-	private static final int SUBCELLS = 8;
+	/** Columns per block edge for sloped brushes: 1/16 block = 2.5 units. */
+	private static final int COLUMNS = 16;
 
 	/** Brushes bucketed by 8-block region; ones too big to bucket are checked everywhere. */
 	private record Index(Map<Long, List<BspMap.Brush>> buckets, List<BspMap.Brush> huge) {
@@ -179,7 +180,7 @@ public final class HostCollision {
 			lists.add(source.near(x, y, z));
 			lists.add(source.huge());
 		}
-		VoxelShape shape = Shapes.empty();
+		List<VoxelShape> parts = new ArrayList<>();
 		boolean full = false;
 		for (List<BspMap.Brush> list : lists) {
 			for (BspMap.Brush brush : list) {
@@ -188,7 +189,7 @@ public final class HostCollision {
 					continue;
 				}
 				if (brush.sloped()) {
-					shape = Shapes.joinUnoptimized(shape, voxelise(brush, x, y, z, box.intersect(cell)), BooleanOp.OR);
+					columns(brush, x, y, z, parts);
 					continue;
 				}
 				AABB clip = box.intersect(cell);
@@ -196,51 +197,103 @@ public final class HostCollision {
 					full = true;
 					break;
 				}
-				shape = Shapes.joinUnoptimized(shape, local(clip, x, y, z), BooleanOp.OR);
+				parts.add(local(clip, x, y, z));
 			}
 			if (full) {
 				break;
 			}
 		}
-		if (full) {
-			shape = Shapes.block();
-		}
+		VoxelShape shape = full ? Shapes.block() : union(parts, 0, parts.size());
 		for (AABB hole : holes) {
 			if (hole.intersects(cell)) {
 				shape = Shapes.joinUnoptimized(shape, local(hole.intersect(cell), x, y, z), BooleanOp.ONLY_FIRST);
 			}
 		}
-		shape = shape.optimize();
+		shape = optimize(shape);
 		return shape.isEmpty() ? EMPTY : shape;
 	}
 
-	/** A sloped brush, sampled on an 8x8x8 grid inside the cell and merged into runs along X. */
-	private static VoxelShape voxelise(BspMap.Brush brush, int x, int y, int z, AABB clip) {
-		VoxelShape shape = Shapes.empty();
-		double step = 1.0 / SUBCELLS;
-		for (int j = 0; j < SUBCELLS; j++) {
-			for (int k = 0; k < SUBCELLS; k++) {
-				int runStart = -1;
-				for (int i = 0; i <= SUBCELLS; i++) {
-					boolean inside = false;
-					if (i < SUBCELLS) {
-						double cx = x + (i + 0.5) * step, cy = y + (j + 0.5) * step, cz = z + (k + 0.5) * step;
-						if (clip.contains(cx, cy, cz)) {
-							Vec3 src = Units.toSrc(new Vec3(cx, cy, cz));
-							inside = brush.containsSrc(src.x, src.y, src.z);
-						}
-					}
-					if (inside && runStart < 0) {
-						runStart = i;
-					} else if (!inside && runStart >= 0) {
-						shape = Shapes.joinUnoptimized(shape,
-							Shapes.box(runStart * step, j * step, k * step, i * step, (j + 1) * step, (k + 1) * step), BooleanOp.OR);
-						runStart = -1;
-					}
+	/** VoxelShape.optimize() re-joins its boxes one at a time; a slope's hundreds of columns made that the slow part. */
+	private static VoxelShape optimize(VoxelShape shape) {
+		List<VoxelShape> boxes = new ArrayList<>();
+		shape.forAllBoxes((x1, y1, z1, x2, y2, z2) -> boxes.add(Shapes.box(x1, y1, z1, x2, y2, z2)));
+		return union(boxes, 0, boxes.size());
+	}
+
+	/** Balanced OR of many boxes: joining them one at a time costs the square of their count. */
+	private static VoxelShape union(List<VoxelShape> parts, int from, int to) {
+		if (to - from <= 0) {
+			return Shapes.empty();
+		}
+		if (to - from == 1) {
+			return parts.get(from);
+		}
+		int mid = (from + to) >>> 1;
+		return Shapes.joinUnoptimized(union(parts, from, mid), union(parts, mid, to), BooleanOp.OR);
+	}
+
+	/**
+	 * A sloped brush inside the cell as COLUMNS x COLUMNS vertical prisms. Each prism spans exactly
+	 * what the brush covers on the vertical line through its centre, from the brush's own planes, so
+	 * flat tops and bottoms land where they really are (a voxel grid rounds them to its step, which
+	 * put chamfered floor panels 2 units above their axial neighbours and missed hulls thinner than
+	 * a voxel). Only the horizontal extent is sampled: walls are right to within half a column, and
+	 * a slope becomes a staircase of column-wide steps whose treads touch the plane at their centre.
+	 * Columns with the same span are merged into runs along X.
+	 */
+	private static void columns(BspMap.Brush brush, int x, int y, int z, List<VoxelShape> out) {
+		double step = 1.0 / COLUMNS;
+		double[] span = new double[2];
+		for (int k = 0; k < COLUMNS; k++) {
+			double runLo = 0, runHi = 0;
+			int runStart = -1;
+			for (int i = 0; i <= COLUMNS; i++) {
+				boolean inside = false;
+				double lo = 0, hi = 0;
+				if (i < COLUMNS && span(brush, (x + (i + 0.5) * step) * Units.PER_BLOCK, -(z + (k + 0.5) * step) * Units.PER_BLOCK, span)) {
+					lo = Math.max(span[0] / Units.PER_BLOCK - y, 0.0);
+					hi = Math.min(span[1] / Units.PER_BLOCK - y, 1.0);
+					inside = hi - lo >= 1.0E-7;
+				}
+				if (runStart >= 0 && (!inside || lo != runLo || hi != runHi)) {
+					out.add(Shapes.box(runStart * step, runLo, k * step, i * step, runHi, (k + 1) * step));
+					runStart = -1;
+				}
+				if (inside && runStart < 0) {
+					runStart = i;
+					runLo = lo;
+					runHi = hi;
 				}
 			}
 		}
-		return shape;
+	}
+
+	/**
+	 * The brush along the vertical line (sx, sy), in Source units, into span as {bottom, top}; false
+	 * if the line misses it. Heights snap to 1/256 unit so a flat face gives every column the same
+	 * height and the columns merge, and an integer height matches the axial brushes' exactly.
+	 */
+	private static boolean span(BspMap.Brush brush, double sx, double sy, double[] span) {
+		float[] p = brush.planes();
+		double lo = -1e9, hi = 1e9;
+		for (int i = 0; i < p.length; i += 4) {
+			double a = p[i] * sx + p[i + 1] * sy, d = p[i + 3], nz = p[i + 2];
+			if (Math.abs(nz) < 1e-6) {
+				if (a > d + 0.01) { // the same slack as Brush.containsSrc
+					return false;
+				}
+			} else if (nz > 0) {
+				hi = Math.min(hi, (d - a) / nz);
+			} else {
+				lo = Math.max(lo, (d - a) / nz);
+			}
+		}
+		if (!(lo < hi)) {
+			return false;
+		}
+		span[0] = Math.rint(lo * 256.0) / 256.0;
+		span[1] = Math.rint(hi * 256.0) / 256.0;
+		return span[0] < span[1];
 	}
 
 	private static VoxelShape local(AABB box, int x, int y, int z) {
