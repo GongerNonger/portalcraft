@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Minecraft owns the player's health (as in SkyCraft). The host refunds whatever hurts its own
- * player (turrets, energy balls, goo, crushers) and sends it here ("PCU1"), where Steve takes it,
+ * player (turrets, energy balls, toxic water, crushers) and sends it here ("PCU1"), where Steve takes it,
  * armor and all. When Steve dies, of that or of anything Minecraft's own (a fall, lava, TNT), the
  * host is told ("PCZ1") and kills its player, so Portal's own death and checkpoint reload follow.
  */

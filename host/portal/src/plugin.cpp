@@ -317,9 +317,9 @@ bool serverToolsReady() {
 }
 
 // ---- Minecraft owns the player's health (as SkyCraft does) ----------------------------------
-// Whatever hurts Portal's player (turrets, energy balls, goo, crushers) is refunded every server
+// Whatever hurts Portal's player (turrets, energy balls, toxic water, crushers) is refunded every server
 // frame and sent to Minecraft ("PCU1"), where Steve takes it, armor and all. A hit that kills
-// Portal's player outright (goo, an energy ball) kills Steve too (flag 1). When Steve dies
+// Portal's player outright (toxic water, an energy ball) kills Steve too (flag 1). When Steve dies
 // ("PCZ1": a fall, lava, TNT, or the turret damage above), Portal's player is killed here, so
 // Portal's own death and checkpoint reload follow. Health is kept at Portal's own maximum, never
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
