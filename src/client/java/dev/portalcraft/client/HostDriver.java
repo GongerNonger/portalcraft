@@ -84,6 +84,8 @@ public final class HostDriver {
 	 * without him.
 	 */
 	private static long holdWithHostUntil;
+	/** Where the level start put him (a fixed place: following the host's live position fed back on itself). */
+	private static Vec3 holdAt = Vec3.ZERO;
 
 	private HostDriver() {
 	}
@@ -182,8 +184,9 @@ public final class HostDriver {
 		look(player, s);
 
 		followHostMoves(minecraft, player, s);
-		if (System.currentTimeMillis() < holdWithHostUntil && teleportAck == s.teleportSeq()) {
-			player.setPos(Units.toMc(s.origin()));
+		if (System.currentTimeMillis() < holdWithHostUntil && teleportAck == s.teleportSeq() && !s.riding()
+			&& player.position().distanceToSqr(holdAt) < 30.0 * 30.0) {
+			player.setPos(holdAt);
 			player.setDeltaMovement(Vec3.ZERO);
 			player.resetFallDistance();
 		}
@@ -728,6 +731,7 @@ public final class HostDriver {
 				PlayerCrossings.forgetPending(); // the host placed him: nothing of ours left to unfold
 				if (System.currentTimeMillis() - mapLoadedAt < 20000) {
 					holdWithHostUntil = System.currentTimeMillis() + 2500;
+					holdAt = to;
 				}
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);
