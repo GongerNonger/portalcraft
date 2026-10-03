@@ -163,10 +163,7 @@ public final class HostDriver {
 			teleport(minecraft, player, Units.toMc(devGoto), Vec3.ZERO);
 		}
 
-		float yaw = Units.yawToMc(s.yaw());
-		player.setYRot(yaw);
-		player.setXRot(s.pitch());
-		player.setYHeadRot(yaw);
+		look(player, s);
 
 		followHostMoves(minecraft, player, s);
 		PortalAir.tick(player);
@@ -226,6 +223,9 @@ public final class HostDriver {
 		// would land Steve in the last map's stretch of the world (and the void).
 		if (hs != null && minecraft.player != null && hs.inGame() && Units.offsetX() == dev.portalcraft.host.MapRegions.offsetX(hs.map())) {
 			followHostMoves(minecraft, minecraft.player, hs);
+		}
+		if (hs != null && minecraft.player != null && hs.inGame()) {
+			look(minecraft.player, hs); // every frame, as the mouse turns a player
 		}
 		boolean ready = sendState(minecraft);
 		moveCursor(minecraft);
@@ -513,6 +513,25 @@ public final class HostDriver {
 				}
 			}
 		});
+	}
+
+	/**
+	 * Portal's view angles, applied the way Minecraft's own mouse turns the player: every frame, by
+	 * a step that also moves the previous-tick angles (yRotO, xRotO), with the yaw kept continuous
+	 * rather than wrapped to -180..180. Set once a tick as absolute angles (as this used to be),
+	 * the rendered view stepped 20 times a second while the hand's sway (which eases after the view)
+	 * moved smoothly, so the gap between them jumped and the hand skipped while turning; crossing
+	 * 180 degrees swung the interpolation the long way round.
+	 */
+	private static void look(LocalPlayer player, Proto.HostState s) {
+		float dy = net.minecraft.util.Mth.wrapDegrees(Units.yawToMc(s.yaw()) - player.getYRot());
+		float dx = s.pitch() - player.getXRot();
+		player.setYRot(player.getYRot() + dy);
+		player.setXRot(s.pitch());
+		player.yRotO += dy;
+		player.xRotO += dx;
+		player.setYHeadRot(player.getYRot());
+		player.yHeadRotO += dy;
 	}
 
 	private static void followHostMoves(Minecraft minecraft, LocalPlayer player, Proto.HostState s) {
