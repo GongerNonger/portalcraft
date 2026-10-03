@@ -86,4 +86,26 @@ class PlayerCrossingsTest {
 	void missingTheOvalIsNoCrossing() {
 		assertNull(PlayerCrossings.step(LOOP, new Vec3(0, 60, 10), new Vec3(0, 60, -50), new Vec3(0, 0, -1200), HALF));
 	}
+
+	@Test
+	void comesOutFittedInsideAWallPortal() {
+		// In at the end of the floor portal's long axis, 30 out: carried as is, that is feet 12 units
+		// under the wall portal's bottom edge, inside the floor it stands on. He comes out just over it.
+		Proto.HostPortal wall = new Proto.HostPortal(Proto.PORTAL_EXISTS | Proto.PORTAL_ACTIVE | Proto.PORTAL_LINKED, new Vec3(500, 0, 54), new Vec3(0, 0, 0));
+		Proto.HostPortal[] pair = {LOOP[0], wall};
+		Vec3 up = Units.angleVectors(LOOP[0].angles())[2]; // the floor portal's long axis
+		Vec3 in = up.scale(-30.0);
+		Vec3 before = in.add(0, 0, 10 - HALF), after = in.add(0, 0, -10 - HALF);
+		PlayerCrossings.Carried c = PlayerCrossings.step(pair, before, after, new Vec3(0, 0, -400), HALF, 16.6);
+		assertNotNull(c);
+		assertEquals(1.5, c.feet().z, 1e-6); // the floor (and the wall portal's bottom edge) is at z 0
+		assertEquals(13.5, c.fit().z, 1e-6);
+		assertEquals(510.0, c.feet().x, 1e-6); // 10 out of the wall, as far as he was under the floor
+		assertEquals(400, c.velocity().x, 1e-6);
+		// ... and Portal, playing the unfolded steps, sees him the same 13.5 units nearer the floor
+		// portal's middle: carried through plainly, that is where Steve now is.
+		Vec3 back = PlayerCrossings.unfold(c.feet());
+		assertEquals(13.5, Math.abs(back.subtract(after).dot(up)), 1e-6);
+		assertEquals(13.5, back.subtract(after).length(), 1e-6);
+	}
 }

@@ -183,48 +183,32 @@ public final class HostCollision {
 		}
 	}
 
-	/** Slices the oval is cut in, along its long axis (6 units each). */
-	private static final int HOLE_SLICES = 18;
-
 	/**
-	 * A linked portal's hole: the oval, as a stack of boxes along its long axis, each as wide as
-	 * the oval at the slice's narrower end. A single box (as this used to be) opened the oval's
-	 * corners too, where Portal still has wall: standing against a wall portal let Steve's feet
-	 * into the wall below its rounded bottom, Portal stepped the player up into the oval, Minecraft
-	 * dropped it back, over and over (Steve bobbing at the portal). With the oval's own shape,
-	 * Minecraft's step-up lifts Steve into it the way Portal does.
+	 * A linked portal's hole: the whole 64 x 108 rectangle around the oval, which is what Portal
+	 * opens for its own player (measured: its player stands in the rectangle's bottom corner
+	 * untouched, and is pushed back in only past the 64 width). This was the oval's own shape for a
+	 * while, which stopped Steve at the rim whenever he walked in more than 10 units off the middle.
 	 */
 	private static List<AABB> hole(Proto.HostPortal p) {
 		Vec3[] axes = Units.angleVectors(p.angles());
 		Vec3 forward = axes[0], right = axes[1], up = axes[2];
 		Vec3 o = p.origin();
 		double holeDepth = holeDepth(p);
-		List<AABB> slices = new ArrayList<>(HOLE_SLICES);
-		double step = 2.0 * PORTAL_HALF_HEIGHT / HOLE_SLICES;
-		for (int i = 0; i < HOLE_SLICES; i++) {
-			double u0 = -PORTAL_HALF_HEIGHT + i * step, u1 = u0 + step;
-			double edge = Math.max(Math.abs(u0), Math.abs(u1)) / PORTAL_HALF_HEIGHT;
-			double halfWidth = PORTAL_HALF_WIDTH * Math.sqrt(Math.max(0.0, 1.0 - edge * edge));
-			if (halfWidth < 2.0) {
-				continue; // the oval's tip: nothing fits through
-			}
-			double minX = 1e9, minY = 1e9, minZ = 1e9, maxX = -1e9, maxY = -1e9, maxZ = -1e9;
-			for (int sr = -1; sr <= 1; sr += 2) {
-				for (double u : new double[] {u0, u1}) {
-					for (double depth : new double[] {2.0, -holeDepth}) {
-						Vec3 m = Units.toMc(o.add(right.scale(sr * halfWidth)).add(up.scale(u)).add(forward.scale(depth)));
-						minX = Math.min(minX, m.x);
-						minY = Math.min(minY, m.y);
-						minZ = Math.min(minZ, m.z);
-						maxX = Math.max(maxX, m.x);
-						maxY = Math.max(maxY, m.y);
-						maxZ = Math.max(maxZ, m.z);
-					}
+		double minX = 1e9, minY = 1e9, minZ = 1e9, maxX = -1e9, maxY = -1e9, maxZ = -1e9;
+		for (int sr = -1; sr <= 1; sr += 2) {
+			for (int su = -1; su <= 1; su += 2) {
+				for (double depth : new double[] {2.0, -holeDepth}) {
+					Vec3 m = Units.toMc(o.add(right.scale(sr * PORTAL_HALF_WIDTH)).add(up.scale(su * PORTAL_HALF_HEIGHT)).add(forward.scale(depth)));
+					minX = Math.min(minX, m.x);
+					minY = Math.min(minY, m.y);
+					minZ = Math.min(minZ, m.z);
+					maxX = Math.max(maxX, m.x);
+					maxY = Math.max(maxY, m.y);
+					maxZ = Math.max(maxZ, m.z);
 				}
 			}
-			slices.add(new AABB(minX, minY, minZ, maxX, maxY, maxZ));
 		}
-		return slices;
+		return List.of(new AABB(minX, minY, minZ, maxX, maxY, maxZ));
 	}
 
 	/** Host geometry inside this block cell, in cell-local coordinates, or null for none. */

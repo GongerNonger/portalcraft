@@ -1516,6 +1516,16 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		dist(origin, g_lastSet) > 24.0f) {
 		Xf x;
 		if (portalCrossing(g_lastSet, origin, &x)) {
+			// The crossing as Minecraft made it: the plain carry. (Portal's own result has its fix-up
+			// in it: its player pushed 16 units out of and up a wall portal when it came out with its
+			// head over the opening. Minecraft fits Steve its own way, and what it sends from here on,
+			// carried plainly, is where he is; with Portal's fix-up in the carry the player jumped by
+			// the difference a few ticks after every such crossing, when Minecraft heard of the match.)
+			uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
+			Xf plain;
+			if (in < 2 && geometricCrossing(in, 36.0f, &plain)) {
+				x = plain;
+			}
 			g_matched++;
 			g_crossings[g_crossingCount++] = {0, g_matched, x};
 			matchedNow = true;
@@ -2314,6 +2324,12 @@ void sendState() {
 	}
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
+	}
+	if (std::memcmp(g_portalsNow, s.portals, sizeof g_portalsNow) != 0) {
+		for (int i = 0; i < 2; i++) { // dev: where the portals are, for scripted tests
+			logf("portals: %s flags %#x at (%.1f %.1f %.1f) angles (%.0f %.0f %.0f)", i ? "orange" : "blue", s.portals[i].flags, s.portals[i].origin.x,
+				s.portals[i].origin.y, s.portals[i].origin.z, s.portals[i].angles.x, s.portals[i].angles.y, s.portals[i].angles.z);
+		}
 	}
 	std::memcpy(g_portalsNow, s.portals, sizeof g_portalsNow);
 	s.crossBase = g_mc.teleportAck; // what the shove offset and the crossing below build on

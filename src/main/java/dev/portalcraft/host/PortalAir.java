@@ -67,15 +67,22 @@ public final class PortalAir {
 	/** Funneling reaches for floor portals this far off to the side (blocks), and this far below. */
 	private static final double FUNNEL_RADIUS = 60.0 / Units.PER_BLOCK, FUNNEL_DEPTH = 400.0 / Units.PER_BLOCK;
 
+	/** Funneling closes the gap to the portal's middle no faster than in this many ticks. */
+	private static final double FUNNEL_TICKS = 4.0;
+
 	/**
 	 * Portal's funneling (sv_player_funnel_into_portals): falling onto a floor portal, the player
 	 * is steered into it, so a fall aimed roughly right goes through instead of clipping the rim.
 	 * Once per client tick, before the move: blends Steve's horizontal velocity toward the one
-	 * that lands him on the nearest linked floor portal below.
+	 * that lands him on the nearest linked floor portal below. Only while he isn't steering (as in
+	 * Portal), and never faster than closing the gap in FUNNEL_TICKS: a jump across a floor portal,
+	 * a moment from landing and 60 units off its middle, was thrown at it at 500 units/s and sailed
+	 * over.
 	 */
 	public static void funnel(Player player, Proto.HostPortal[] portals) {
 		Vec3 v = player.getDeltaMovement();
-		if (!HostCollision.active() || portals == null || player.onGround() || v.y > -0.3 || player.isInWater() || player.getAbilities().flying) {
+		if (!HostCollision.active() || portals == null || player.onGround() || v.y > -0.3 || player.isInWater() || player.getAbilities().flying
+			|| player.xxa != 0.0F || player.zza != 0.0F) {
 			return;
 		}
 		Vec3 at = player.position();
@@ -96,7 +103,7 @@ public final class PortalAir {
 		if (best == null) {
 			return;
 		}
-		double ticks = Math.max(1.0, (at.y - best.y) / -v.y);
+		double ticks = Math.max(FUNNEL_TICKS, (at.y - best.y) / -v.y);
 		double wantX = (best.x - at.x) / ticks, wantZ = (best.z - at.z) / ticks;
 		player.setDeltaMovement(v.x + (wantX - v.x) * 0.5, v.y, v.z + (wantZ - v.z) * 0.5);
 	}

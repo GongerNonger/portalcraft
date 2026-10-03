@@ -275,33 +275,6 @@ public final class HostDriver {
 	private static int crossingsLogged;
 
 	/**
-	 * Where Steve stands coming out of `exit` at `feetSrc` (host units): there, if his hull is clear;
-	 * otherwise slid toward the portal's middle, in its plane, until it is. Portal does this for its
-	 * own player (a hull through a portal off-centre comes out with a shoulder in the wall around
-	 * it). Returns Minecraft coordinates.
-	 */
-	private static Vec3 fitAtExit(LocalPlayer player, Proto.HostPortal exit, Vec3 feetSrc, double halfHeight) {
-		Vec3 feet = Units.toMc(feetSrc);
-		if (clearAt(player, feet)) {
-			return feet;
-		}
-		Vec3 normal = Units.angleVectors(exit.angles())[0];
-		Vec3 off = feetSrc.add(0.0, 0.0, halfHeight).subtract(exit.origin());
-		Vec3 inPlane = off.subtract(normal.scale(off.dot(normal)));
-		for (double f = 0.25; f <= 1.0001; f += 0.25) {
-			Vec3 slid = Units.toMc(feetSrc.subtract(inPlane.scale(f)));
-			if (clearAt(player, slid)) {
-				return slid;
-			}
-		}
-		return feet; // nowhere clear even at the middle: leave him where the portal put him
-	}
-
-	private static boolean clearAt(LocalPlayer player, Vec3 feet) {
-		return player.level().noCollision(player, player.getBoundingBox().move(feet.subtract(player.position())).deflate(0.02));
-	}
-
-	/**
 	 * The step that just ended took Steve's centre in through a linked host portal: out of the
 	 * other one, now (PlayerCrossings). Not while the host has a move of its own on the way to us,
 	 * on a lift, or in a scripted scene: then the host has the player.
@@ -313,11 +286,11 @@ public final class HostDriver {
 		}
 		double halfHeight = player.getBbHeight() * 0.5 * Units.PER_BLOCK;
 		PlayerCrossings.Carried c = PlayerCrossings.step(s.portals(), Units.toSrc(new Vec3(player.xo, player.yo, player.zo)),
-			Units.toSrc(player.position()), Units.velocityToSrc(player.getDeltaMovement()), halfHeight);
+			Units.toSrc(player.position()), Units.velocityToSrc(player.getDeltaMovement()), halfHeight, player.getBbWidth() * 0.5 * Units.PER_BLOCK);
 		if (c == null) {
 			return;
 		}
-		Vec3 feet = fitAtExit(player, s.portals()[c.exit()], c.feet(), halfHeight), before = Units.toMc(c.previousFeet());
+		Vec3 feet = Units.toMc(c.feet()), before = Units.toMc(c.previousFeet());
 		Vec3 velocity = Units.velocityToMc(c.velocity());
 		player.setPos(feet);
 		// Last tick's place carried through as well, so this step reads as the same smooth move.
@@ -343,8 +316,8 @@ public final class HostDriver {
 			});
 		}
 		if (crossingsLogged++ < 40) {
-			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} with velocity {}", c.crossings(), PlayerCrossings.count(), feet,
-				velocity);
+			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} (host {}, moved {} to fit) with velocity {}", c.crossings(),
+				PlayerCrossings.count(), feet, c.feet(), c.fit(), velocity);
 		}
 	}
 

@@ -97,7 +97,7 @@ public final class PlayerCrossings {
 	}
 
 	/** Result of a step that went through portals: where Steve is now, how he's moving, and the portal he came out of. */
-	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings, int exit) {
+	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings, int exit, Vec3 fit) {
 	}
 
 	/**
@@ -107,6 +107,11 @@ public final class PlayerCrossings {
 	 * no portal was crossed.
 	 */
 	public static @Nullable Carried step(Proto.HostPortal[] portals, Vec3 previousFeet, Vec3 feet, Vec3 velocity, double halfHeight) {
+		return step(portals, previousFeet, feet, velocity, halfHeight, 0.0);
+	}
+
+	/** As above, with the hull's half width: Steve comes out fitted inside the exit portal's opening (fit). */
+	public static @Nullable Carried step(Proto.HostPortal[] portals, Vec3 previousFeet, Vec3 feet, Vec3 velocity, double halfHeight, double halfWidth) {
 		if (portals.length < 2 || portals[0] == null || portals[1] == null || !portals[0].linked() || !portals[1].linked()) {
 			return null;
 		}
@@ -115,6 +120,7 @@ public final class PlayerCrossings {
 		Vec3 from = previousFeet.add(up), to = feet.add(up), prev = previousFeet.add(up);
 		Vec3 v = velocity;
 		int made = 0;
+		Vec3 fitted = Vec3.ZERO;
 		int skip = -1; // the portal we just came out of: we're on its front, leaving it
 		while (made < MAX_PER_STEP) {
 			int hit = -1;
@@ -139,8 +145,11 @@ public final class PlayerCrossings {
 			HostPortalTransit.Frame in = frames[hit], out = frames[1 - hit];
 			Vec3 crossing = from.add(to.subtract(from).scale(best));
 			from = carryCentre(in, out, crossing);
-			to = carryCentre(in, out, to);
-			prev = carryCentre(in, out, prev);
+			Vec3 fit = halfWidth > 0.0 ? fit(out, carryCentre(in, out, to), halfWidth, halfHeight) : Vec3.ZERO; // where the step ends
+			fitted = fitted.add(fit);
+			from = from.add(fit);
+			to = carryCentre(in, out, to).add(fit);
+			prev = carryCentre(in, out, prev).add(fit);
 			v = exitVelocity(out, out.carry(in, v));
 			skip = 1 - hit;
 			made++;
@@ -153,7 +162,35 @@ public final class PlayerCrossings {
 		if (made == 0) {
 			return null;
 		}
-		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip);
+		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip, fitted);
+	}
+
+	/** The hull is kept this far inside the opening's sides, and its long ends (units). */
+	private static final double FIT_SIDE = 1.0, FIT_END = 1.5;
+
+	/**
+	 * How far to move a hull whose centre comes out of `out` at `centre` so that it is inside the
+	 * portal's 64 x 108 opening. The carry keeps where the centre went in, and a hull fits a floor
+	 * portal in places it doesn't fit a wall one: dropping in near the end of a floor portal's long
+	 * axis came out of a wall portal with Steve's feet in the floor under it, or his head in the
+	 * wall over it. Portal's own player comes out the same way and is then pushed clear
+	 * (FindClosestPassableSpace, some 16 units out and up); left to that, Portal shoved Steve a
+	 * tick after every such crossing, and stuck in the floor he lost his fling.
+	 *
+	 * The fit isn't taken out again when unfolding: Portal, playing the unfolded steps, sees Steve
+	 * shift by it behind the portal he went into (for a tick or two, out of sight), and the plain
+	 * carry of those steps is then exactly where Steve is. Nothing jumps once he is out.
+	 */
+	static Vec3 fit(HostPortalTransit.Frame out, Vec3 centre, double halfWidth, double halfHeight) {
+		Vec3 rel = centre.subtract(out.origin);
+		return out.right.scale(fitAlong(rel.dot(out.right), out.right, HostCollision.PORTAL_HALF_WIDTH - FIT_SIDE, halfWidth, halfHeight))
+			.add(out.up.scale(fitAlong(rel.dot(out.up), out.up, HostCollision.PORTAL_HALF_HEIGHT - FIT_END, halfWidth, halfHeight)));
+	}
+
+	private static double fitAlong(double at, Vec3 axis, double opening, double halfWidth, double halfHeight) {
+		double hull = halfWidth * (Math.abs(axis.x) + Math.abs(axis.y)) + halfHeight * Math.abs(axis.z); // the upright box's reach along the axis
+		double room = Math.max(0.0, opening - hull);
+		return Math.max(-room, Math.min(room, at)) - at;
 	}
 
 	/** Portal's own numbers (prop_portal.cpp), units/s. */
