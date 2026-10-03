@@ -74,9 +74,9 @@ model = {
         # (pitch 12, yaw 14: found by projecting the barrel's centreline, see the commit)
         "firstperson_righthand": {"rotation": [12, 14, 0], "translation": [1, 2, -3], "scale": [0.8, 0.8, 0.8]},
         "firstperson_lefthand": {"rotation": [12, -14, 0], "translation": [1, 2, -3], "scale": [0.8, 0.8, 0.8]},
-        # third person: in the hand, muzzle forward
-        "thirdperson_righthand": {"rotation": [0, 0, 0], "translation": [0, 1.5, -1], "scale": [0.6, 0.6, 0.6]},
-        "thirdperson_lefthand": {"rotation": [0, 0, 0], "translation": [0, 1.5, -1], "scale": [0.6, 0.6, 0.6]},
+        # third person: at the hip, muzzle forward (with no rotation it hung straight down the arm)
+        "thirdperson_righthand": {"rotation": [90, 0, 0], "translation": [0, 3, 0], "scale": [0.6, 0.6, 0.6]},
+        "thirdperson_lefthand": {"rotation": [90, 0, 0], "translation": [0, 3, 0], "scale": [0.6, 0.6, 0.6]},
         "head": {"rotation": [0, 180, 0], "translation": [0, 13, 7], "scale": [0.8, 0.8, 0.8]},
     },
 }

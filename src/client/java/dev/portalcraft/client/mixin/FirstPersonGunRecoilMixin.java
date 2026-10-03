@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * The portal gun's kick when it fires, on the first-person item's pose just before it's drawn; and,
+ * The portal gun's kick when it fires and its float in a long fall, on the first-person item's pose just before it's drawn; and,
  * inside a host game, the hand and what it holds lit by the host's light instead of Minecraft's.
  */
 @Mixin(FirstPersonHandsAndItemsRenderer.class)
@@ -38,6 +38,7 @@ public abstract class FirstPersonGunRecoilMixin {
 		InteractionHand hand, float attack, ItemStack itemStack, float inverseArmHeight, PoseStack poseStack, SubmitNodeCollector collector, int lightCoords,
 		CallbackInfo ci) {
 		if (hand == InteractionHand.MAIN_HAND && itemStack.is(PortalCraft.PORTAL_GUN)) {
+			GunAnimation.applyFall(poseStack);
 			GunAnimation.applyRecoil(poseStack);
 		}
 	}

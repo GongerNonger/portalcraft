@@ -147,6 +147,43 @@ public final class GunAnimation {
 		pose.mulPose(new org.joml.Matrix4f().rotationXYZ(rad * lerp(a.rx, b.rx, t), rad * lerp(a.ry, b.ry, t), rad * lerp(a.rz, b.rz, t)));
 	}
 
+	/** Falling this fast (blocks a tick) the gun starts to lift, and this fast it is fully up. */
+	private static final float FALL_FROM = 0.55F, FALL_FULL = 1.4F;
+	private static float fall, landing;
+	private static long fallClock;
+
+	/**
+	 * A long fall, on the same pose: the gun floats up and back toward the chest, nose up, and
+	 * shivers in the wind, more the faster Steve falls; landing, it dips and settles. Portal's
+	 * viewmodel has no sequence for this (its gun only lags behind the view), so this one is ours.
+	 * Eased on the frame clock, like the rest.
+	 */
+	public static void applyFall(PoseStack pose) {
+		var player = Minecraft.getInstance().player;
+		if (player == null) {
+			return;
+		}
+		long now = System.nanoTime();
+		float dt = fallClock == 0L ? 0.0F : Math.min(0.1F, (now - fallClock) / 1.0e9F);
+		fallClock = now;
+		float down = player.onGround() ? 0.0F : (float) -player.getDeltaMovement().y;
+		float want = Math.max(0.0F, Math.min(1.0F, (down - FALL_FROM) / (FALL_FULL - FALL_FROM)));
+		if (player.onGround() && fall > 0.25F && landing < fall) {
+			landing = fall; // just landed: the dip is as deep as the fall was fast
+		}
+		fall += (want - fall) * Math.min(1.0F, dt * (want > fall ? 3.0F : 9.0F)); // up slowly, down at once
+		landing -= landing * Math.min(1.0F, dt * 7.0F);
+		if (fall < 0.002F && landing < 0.002F) {
+			return;
+		}
+		float e = fall * fall * (3.0F - 2.0F * fall); // eased
+		double t = now / 1.0e9;
+		float shiver = e * (float) (Math.sin(t * 57.0) * 0.6 + Math.sin(t * 91.0) * 0.4);
+		pose.translate(0.012F * e + 0.003F * shiver, 0.085F * e - 0.07F * landing + 0.004F * shiver, 0.05F * e);
+		float rad = (float) (Math.PI / 180.0);
+		pose.mulPose(new org.joml.Matrix4f().rotationXYZ(rad * (13.0F * e - 9.0F * landing + 0.9F * shiver), rad * 2.0F * e, rad * (-6.0F * e + 1.2F * shiver)));
+	}
+
 	private static float lerp(float a, float b, float t) {
 		return a + (b - a) * t;
 	}
