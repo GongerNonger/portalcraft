@@ -79,7 +79,7 @@ public final class WorldFormat {
 	public static final int[] QUAD_TRIANGLES = {0, 1, 2, 0, 2, 3};
 
 	/** Source units per block, as in {@code dev.portalcraft.host.Units}. */
-	private static final double PER_BLOCK = 40.0;
+	private static final double PER_BLOCK = dev.portalcraft.host.Units.PER_BLOCK;
 
 	private WorldFormat() {
 	}

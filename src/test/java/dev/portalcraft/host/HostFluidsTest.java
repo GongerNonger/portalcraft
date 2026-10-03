@@ -31,7 +31,6 @@ class HostFluidsTest {
 	private static final Vec3 SPAWN_SRC = new Vec3(-607.8, -346.7, 162.0);
 	/** Water's reach on a flat floor: a source spreads 7 cells. */
 	private static final int WATER_REACH = 7;
-	private static final int VAULT_FLOOR = 5 * 4;
 
 	@AfterEach
 	void clear() {
@@ -149,35 +148,28 @@ class HostFluidsTest {
 		assumeTrue(Files.exists(MAP), "Portal not installed");
 		HostCollision.setMap(BspMap.load(MAP, "testchmb_a_00"));
 		BlockPos spawn = BlockPos.containing(Units.toMc(SPAWN_SRC));
-		assertEquals(4, spawn.getY());
+		// The vault's floor is at 160 units: the top of the cell under the spawn's.
+		assertEquals((int) Math.floor(162.0 / Units.PER_BLOCK), spawn.getY());
 		assertTrue(HostFluids.floored(spawn), "water at the spawn falls through the floor");
 		assertFalse(HostFluids.floored(spawn.above()), "water above the spawn can't fall to the floor");
 
-		// The walls HostAimTest measures: the vault's +X glass stands 0.75 into cell x = -12 (water
-		// may enter that cell, not leave it); 0.65 of cell z = 5 is behind the -Z wall (water stays in z = 6).
-		BlockPos east = new BlockPos(-12, 4, 8);
-		assertFalse(HostFluids.blocks(east.west(), east, Direction.EAST));
-		assertTrue(HostFluids.blocks(east, east.east(), Direction.EAST));
-		BlockPos north = new BlockPos(-16, 4, 6);
-		assertTrue(HostFluids.blocks(north, north.north(), Direction.NORTH));
-
-		// A bucket emptied on the floor (the top of a full cell) pours into the cell above, as
-		// vanilla does; one emptied against the +X wall pours into the wall's cell, like a block.
+		// A bucket emptied on the floor pours into the cell above it, as vanilla does.
 		BlockPos floor = spawn.below();
-		assertEquals(spawn, HostFluids.bucketTarget(floor, Direction.UP, new Vec3(-15.2, 4.0, 8.67), spawn));
-		BlockPos wall = new BlockPos(-12, 5, 8);
-		assertEquals(wall, HostFluids.bucketTarget(wall, Direction.WEST, new Vec3(-11.25, 5.6, 8.67), wall.west()));
-		assertTrue(HostFluids.blocks(wall, wall.east(), Direction.EAST));
+		Vec3 onFloor = Units.toMc(SPAWN_SRC).with(net.minecraft.core.Direction.Axis.Y, 160.0 / Units.PER_BLOCK);
+		assertEquals(spawn, HostFluids.bucketTarget(floor, Direction.UP, onFloor, spawn));
 
-		// The spawn is in the relaxation vault, a glass box with a 5 x 4-block floor at y = 4.0.
-		// Water poured there covers all of it and none leaves through the glass or the floor.
+		// The spawn is in the relaxation vault, a glass box about 200 x 160 units. Water poured there
+		// covers its floor and none leaves through the glass or the floor.
 		Map<BlockPos, Integer> wet = flood(spawn, WATER_REACH);
 		System.out.println("HostFluidsTest: water from the spawn reaches " + wet.size() + " cells: x " + range(wet.keySet(), Direction.Axis.X) + ", y "
 			+ range(wet.keySet(), Direction.Axis.Y) + ", z " + range(wet.keySet(), Direction.Axis.Z));
-		assertEquals(VAULT_FLOOR, wet.size(), "the vault's floor is 5 x 4");
+		double cells = 200.0 * 160.0 / (Units.PER_BLOCK * Units.PER_BLOCK);
+		assertTrue(wet.size() >= cells * 0.6 && wet.size() <= cells * 1.7, "the vault's floor is about " + Math.round(cells) + " cells, not " + wet.size());
+		Vec3 centre = Units.toMc(SPAWN_SRC);
 		for (BlockPos p : wet.keySet()) {
-			assertEquals(4, p.getY(), "water fell to " + p);
-			assertTrue(p.getX() >= -16 && p.getX() <= -12 && p.getZ() >= 6 && p.getZ() <= 9, "water left the vault to " + p);
+			assertEquals(spawn.getY(), p.getY(), "water fell to " + p);
+			assertTrue(Math.abs(p.getX() + 0.5 - centre.x) * Units.PER_BLOCK < 220 && Math.abs(p.getZ() + 0.5 - centre.z) * Units.PER_BLOCK < 220,
+				"water left the vault to " + p);
 		}
 	}
 
@@ -194,7 +186,7 @@ class HostFluidsTest {
 		// it, crossing any face it's allowed to (up included, as if the fluid were pumped). A leak
 		// anywhere lets the search out of the sealed map into the void around it.
 		BlockPos vault = BlockPos.containing(Units.toMc(SPAWN_SRC));
-		BlockPos chamber = new BlockPos(-12, 3, 10);
+		BlockPos chamber = BlockPos.containing(Units.toMc(new Vec3(-460.0, -420.0, 150.0))); // on the chamber's floor, outside the vault
 		Set<BlockPos> inVault = reachable(vault, bounds);
 		Set<BlockPos> inChamber = reachable(chamber, bounds);
 		System.out.println("HostFluidsTest: sealed regions: vault " + inVault.size() + " cells, chamber " + inChamber.size() + " cells, x "

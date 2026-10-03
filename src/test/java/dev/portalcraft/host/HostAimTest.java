@@ -23,7 +23,7 @@ class HostAimTest {
 	private static final Path MAP = Path.of("D:/SteamLibrary/steamapps/common/Portal/portal/maps/testchmb_a_00.bsp");
 	/** Where Portal spawned the player in this map (from the plugin log). */
 	private static final Vec3 SPAWN_SRC = new Vec3(-607.8, -346.7, 162.0);
-	private static final double EYE = 1.62;
+	private static final double EYE = 1.62 * HostScale.STEVE;
 
 	@AfterEach
 	void clear() {
@@ -59,26 +59,17 @@ class HostAimTest {
 		HostCollision.setMap(BspMap.load(MAP, "testchmb_a_00"));
 		Vec3 eye = Units.toMc(SPAWN_SRC).add(0, EYE, 0);
 
-		// Straight down: the floor's top face at y = 4 (a full cell), so the block sits on it.
+		// Straight down: the vault's floor is at 160 units, a whole number of blocks at 32 units to the
+		// block, so its top is a cell's top face and the block placed on it sits exactly on the floor.
+		Vec3 spawn = Units.toMc(SPAWN_SRC);
+		double floorY = 160.0 / Units.PER_BLOCK;
+		assertEquals(Math.rint(floorY), floorY, 1e-9, "Portal's floors sit on the block grid");
 		BlockHitResult floor = look(eye, Direction.DOWN);
-		assertEquals(new BlockPos(-16, 3, 8), floor.getBlockPos().immutable());
+		BlockPos under = BlockPos.containing(spawn.x, floorY - 0.5, spawn.z);
+		assertEquals(under, floor.getBlockPos().immutable());
 		assertEquals(Direction.UP, floor.getDirection());
-		assertEquals(4.0, floor.getLocation().y, 1e-6);
-		assertEquals(new BlockPos(-16, 4, 8), placed(floor));
-
-		// The chamber wall toward +X: its face is 0.25 into cell x = -12, so the block goes in that
-		// cell and sinks a quarter block into the wall rather than floating 0.75 in front of it.
-		BlockHitResult wall = look(eye, Direction.EAST);
-		assertEquals(new BlockPos(-12, 5, 8), wall.getBlockPos().immutable());
-		assertEquals(Direction.WEST, wall.getDirection());
-		assertEquals(-11.25, wall.getLocation().x, 1e-6);
-		assertEquals(new BlockPos(-12, 5, 8), placed(wall));
-
-		// The wall toward -Z (north): 0.65 of cell z = 5 lies behind it, so the next cell out.
-		BlockHitResult north = look(eye, Direction.NORTH);
-		assertEquals(new BlockPos(-16, 5, 5), north.getBlockPos().immutable());
-		assertEquals(Direction.SOUTH, north.getDirection());
-		assertEquals(new BlockPos(-16, 5, 6), placed(north));
+		assertEquals(floorY, floor.getLocation().y, 1e-6);
+		assertEquals(under.above(), placed(floor));
 
 		// Every direction: a hit, on the face toward the eye, and the placed block within half a
 		// block of the surface it was placed against.

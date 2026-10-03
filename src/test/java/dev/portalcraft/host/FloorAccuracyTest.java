@@ -37,9 +37,10 @@ import org.junit.jupiter.api.Test;
 class FloorAccuracyTest {
 	private static final Path MAPS = Path.of("D:/SteamLibrary/steamapps/common/Portal/portal/maps");
 	private static final double PLAYER_HEIGHT = 72.0;
-	/** Minecraft's player is 0.6 blocks wide: 12 units each side of its centre. */
+	/** The walking box: 12 units each side of its centre. */
 	private static final double HALF_WIDTH = 12.0;
-	private static final double STEP = 0.6;
+	/** Steve's step, 24 units, in blocks. */
+	private static final double STEP = 24.0 / Units.PER_BLOCK;
 	private static final double CELL = 32.0;
 	/** Errors at or under this count as a match: well below anything visible. */
 	private static final double MATCH = 0.1;
@@ -401,7 +402,8 @@ class FloorAccuracyTest {
 	 */
 	private static Walk walk(Ctx c, Vec3 startSrc, double dx, double dy, int steps, double blocksPerTick) {
 		Vec3 feet = Units.toMc(startSrc);
-		AABB box = new AABB(feet.x - 0.3, feet.y + 0.5, feet.z - 0.3, feet.x + 0.3, feet.y + 2.3, feet.z + 0.3);
+		double half = HALF_WIDTH / Units.PER_BLOCK;
+		AABB box = new AABB(feet.x - half, feet.y + 20.0 / Units.PER_BLOCK, feet.z - half, feet.x + half, feet.y + 92.0 / Units.PER_BLOCK, feet.z + half);
 		AABB inner = box.inflate(-1e-4);
 		if (!colliders(inner).stream().allMatch(s -> s.toAabbs().stream().noneMatch(inner::intersects))) {
 			return null; // starts inside something

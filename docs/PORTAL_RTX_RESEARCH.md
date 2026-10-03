@@ -109,7 +109,7 @@ Repo: https://github.com/itsloopyo/portal-with-rtx-headtracking
 
 ## 4. Getting what we need from Portal
 
-Units and axes: Source is Z-up, in inches. **Use 1 block = 40 units.** The HL2/Portal hull is 72 units tall = 1.8 blocks, and its eye is at 64 units vs MC's 1.62 × 40 = 64.8, so height and eye line up almost exactly. Hull width is 32 units (0.8 blocks) vs MC's 0.6 blocks, which is harmless. Step height is 18 units vs MC's 0.6 × 40 = 24. Mapping: `mc.x = src.x/40`, `mc.y = src.z/40`, `mc.z = -src.y/40`, with yaw sign/offset to pin down in Phase 0 (same method as SkyCraft). Velocity: MC blocks/tick × 40 × 20 = units/s. Portal ticks at 66.67 Hz vs MC's 20 TPS, so reuse SkyCraft's `prevX/curX/tickQpc` interpolation.
+Units and axes: Source is Z-up, in inches. (Since superseded: PortalCraft now uses **1 block = 32 units** so Portal's 64-unit grid lands on blocks, with Steve scaled 1.25 to stay 72 units tall; see `HostScale`. The original reasoning follows.) **Use 1 block = 40 units.** The HL2/Portal hull is 72 units tall = 1.8 blocks, and its eye is at 64 units vs MC's 1.62 × 40 = 64.8, so height and eye line up almost exactly. Hull width is 32 units (0.8 blocks) vs MC's 0.6 blocks, which is harmless. Step height is 18 units vs MC's 0.6 × 40 = 24. Mapping: `mc.x = src.x/40`, `mc.y = src.z/40`, `mc.z = -src.y/40`, with yaw sign/offset to pin down in Phase 0 (same method as SkyCraft). Velocity: MC blocks/tick × 40 × 20 = units/s. Portal ticks at 66.67 Hz vs MC's 20 TPS, so reuse SkyCraft's `prevX/curX/tickQpc` interpolation.
 
 | Need | Recommended way | Confidence |
 |---|---|---|

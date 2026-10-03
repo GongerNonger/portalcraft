@@ -148,7 +148,7 @@ state-block captures, and the two UP draws (P6). Nothing else is per frame.
 | Window `-w 1600 -h 900` windowed | `play-portal.cmd:11` | 1366x768 laptop screen; 4K monitors (overlay cap 2560x1440 silently disables the HUD, `FrameExporter.java:69`) | Pick from the desktop size; log loudly when the overlay is skipped |
 | Portal hull 32 units -> Steve 0.8 blocks wide | `AvatarDimensionsMixin.java:19` | Portal with RTX (same engine, same hull: fine), other hosts | Send hull size in `HostState` |
 | Portal oval 64x108 units, hole depth 72 | `HostCollision.java:25-29` | nothing in Portal 1 | Fine |
-| 1 block = 40 units, yaw = -src - 90 | `Units.java:10, 34-36` | nothing | Fine (verified live) |
+| 1 block = 32 units (Steve scaled 1.25, `HostScale`), yaw = -src - 90 | `Units.java:10, 34-36` | nothing | Fine (verified live) |
 | Interface names `VEngineServer021`, `VEngineClient013`, `VEngineRenderView014`, `VModelInfoServer004/003`, `PlayerInfoManager002`, `GameMovement001` | `plugin.cpp:728-734`, `worldrender.cpp:254-255` | a Portal update that bumps versions (Valve has been updating Portal in 2024-25) | Fingerprint gate (P3); log every requested interface that comes back null |
 | vtable slots listed in section 1 and `sdk.h:48-104`, `plugin.cpp:494`, `overlay.cpp:258`, `worldrender.cpp:260` | | Portal update, Portal RTX (older engine fork: `VEngineClient014` exists in both, slot order may differ) | Same |
 | `CMoveData` offsets 36/44/48/52/64/152, `edict_t` size 20, SendProp size 80 | `sdk.h:37-39, 70-73, 77-82` | Portal RTX (M), Portal update (L) | The existing runtime check covers origin; add velocity (compare with `IPlayerInfo` velocity) |

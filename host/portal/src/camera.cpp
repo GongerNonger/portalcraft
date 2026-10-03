@@ -180,7 +180,7 @@ using OverrideViewFn = void(__thiscall*)(void* self, void* setup);
 using BoolFn = bool(__thiscall*)(void* self);
 
 // Minecraft's third-person distance is 4 blocks.
-constexpr float kDistance = 4.0f * 40.0f;
+constexpr float kDistance = 160.0f; // Minecraft's third-person distance for a player Steve's size, in units
 constexpr float kHull = 6.0f;
 
 float g_wantEye = 0.0f; // the eye's height over the feet to show (0: Portal's own)

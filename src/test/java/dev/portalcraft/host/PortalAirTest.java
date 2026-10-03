@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class PortalAirTest {
 	@Test
 	void constantsArePortals() {
-		// sv_gravity 600 units/s^2 at 40 units a block and 20 ticks a second.
+		// sv_gravity 600 units/s^2, in blocks and 20 ticks a second.
 		assertEquals(600.0, PortalAir.GRAVITY * Units.PER_BLOCK * 400.0, 1e-9);
 		// sv_maxvelocity 3500 units/s.
 		assertEquals(3500.0, PortalAir.MAX_SPEED * Units.PER_BLOCK * 20.0, 1e-9);
@@ -45,10 +45,12 @@ class PortalAirTest {
 
 	@Test
 	void aLittleControlFromAStandstill() {
-		Vec3 v = PortalAir.limit(new Vec3(0.2, -1.0, 0.0), 0.0);
-		assertEquals(0.2, v.x, 1e-9); // under the 0.3 floor: kept
-		Vec3 capped = PortalAir.limit(new Vec3(0.5, -1.0, 0.0), 0.0);
-		assertEquals(0.3, capped.x, 1e-9);
+		double floor = PortalAir.STANDSTILL_CONTROL; // 240 units/s
+		assertEquals(240.0, floor * Units.VELOCITY, 1e-9);
+		Vec3 v = PortalAir.limit(new Vec3(floor * 0.6, -1.0, 0.0), 0.0);
+		assertEquals(floor * 0.6, v.x, 1e-9); // under the floor: kept
+		Vec3 capped = PortalAir.limit(new Vec3(floor * 2.0, -1.0, 0.0), 0.0);
+		assertEquals(floor, capped.x, 1e-9);
 	}
 
 	@Test

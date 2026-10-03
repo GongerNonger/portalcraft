@@ -3,11 +3,12 @@ package dev.portalcraft.host;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Source <-> Minecraft. Source is Z-up in units (inches); 1 block = 40 units, which makes the
- * 72-unit Portal player exactly 1.8 blocks tall.
+ * Source <-> Minecraft. Source is Z-up in units (inches); 1 block = 32 units, so Portal's 64-unit
+ * building grid is two blocks and its floors and walls sit on block faces. The 72-unit Portal player
+ * is then 2.25 blocks tall: Steve is scaled up to match inside a host map (HostScale).
  */
 public final class Units {
-	public static final double PER_BLOCK = 40.0;
+	public static final double PER_BLOCK = 32.0;
 	/** units/s per block/tick */
 	public static final double VELOCITY = PER_BLOCK * 20.0;
 

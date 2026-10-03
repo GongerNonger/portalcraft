@@ -150,7 +150,7 @@ class WorldFormatTest {
 		assertEquals(3, v.count());
 		v.add(9, 0, 0, -1, 0, 0);
 		assertEquals(4, v.count());
-		assertEquals(9.0F * 40.0F, Float.intBitsToFloat(v.data()[3 * WorldFormat.VERTEX_INTS]));
+		assertEquals(9.0F * (float) dev.portalcraft.host.Units.PER_BLOCK, Float.intBitsToFloat(v.data()[3 * WorldFormat.VERTEX_INTS]));
 	}
 
 	@Test

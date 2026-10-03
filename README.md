@@ -116,6 +116,10 @@ defaults (20 updates/s, 100 ms delay) that beats against Minecraft's 20 Hz ticks
 bobs. `play-portal.cmd` launches Portal with `+cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0
 +cl_interp_ratio 1` (one update per server tick, ~15 ms delay), which removes the bob.
 
+Scale: one block is 32 of Portal's units, so its 64-unit building grid is two blocks and a block
+placed on a chamber floor sits flush on it. Steve is scaled up by 1.25 inside Portal (2.25 blocks,
+Portal's 72 units), with his speed, jump, step and reach scaled to match.
+
 Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
 - Portals can't be placed on Minecraft's blocks (a shot at your wall fizzles on it, as on Portal's
   black walls).

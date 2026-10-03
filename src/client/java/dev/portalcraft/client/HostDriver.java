@@ -455,8 +455,9 @@ public final class HostDriver {
 		}
 		float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(true);
 		Vec3 eye = player.getEyePosition(partial);
-		Vec3 dir = player.getViewVector(partial).scale(type.isMirrored() ? CAMERA_DISTANCE : -CAMERA_DISTANCE);
-		double best = CAMERA_DISTANCE;
+		double reach = CAMERA_DISTANCE * dev.portalcraft.host.HostScale.STEVE; // Minecraft's own grows with his scale
+		Vec3 dir = player.getViewVector(partial).scale(type.isMirrored() ? reach : -reach);
+		double best = reach;
 		for (int i = 0; i < 8; i++) {
 			Vec3 from = eye.add(((i & 1) * 2 - 1) * 0.1, ((i >> 1 & 1) * 2 - 1) * 0.1, ((i >> 2 & 1) * 2 - 1) * 0.1);
 			HitResult hit = minecraft.level.clip(new ClipContext(from, from.add(dir), ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, player));

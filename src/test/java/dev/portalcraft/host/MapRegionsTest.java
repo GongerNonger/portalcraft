@@ -29,11 +29,11 @@ class MapRegionsTest {
 		Units.setOffsetX(MapRegions.offsetX("testchmb_a_02"));
 		Vec3 src = new Vec3(-1234.5, 678.0, 64.0);
 		Vec3 mc = Units.toMc(src);
-		assertEquals(-1234.5 / 40.0 + 2 * MapRegions.SPACING, mc.x, 1e-9);
+		assertEquals(-1234.5 / Units.PER_BLOCK + 2 * MapRegions.SPACING, mc.x, 1e-9);
 		Vec3 back = Units.toSrc(mc);
 		assertEquals(src.x, back.x, 1e-9);
 		assertEquals(src.y, back.y, 1e-9);
 		assertEquals(src.z, back.z, 1e-9);
-		assertEquals(1.0, Units.velocityToMc(new Vec3(800, 0, 0)).x, 1e-9); // no offset in a velocity
+		assertEquals(1.0, Units.velocityToMc(new Vec3(Units.VELOCITY, 0, 0)).x, 1e-9); // no offset in a velocity
 	}
 }

@@ -83,5 +83,7 @@ public class PortalCraft implements ModInitializer {
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostArrows::tick);
 		// Minecraft's things (items, TNT, mobs, arrows) go through Portal's portals.
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostPortalTransit::tick);
+		// Inside a host map Steve is the host player's size (HostScale).
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostScale::tick);
 	}
 }

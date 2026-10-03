@@ -24,6 +24,9 @@ public final class PortalAir {
 	/** Portal's sv_maxvelocity, 3500 units/s, in blocks/tick. */
 	public static final double MAX_SPEED = 3500.0 / Units.PER_BLOCK / 20.0;
 
+	/** Air control may bring Steve up to this from a near standstill: 240 units/s, in blocks/tick. */
+	static final double STANDSTILL_CONTROL = 240.0 / Units.VELOCITY;
+
 	private static volatile boolean flung;
 	private static int flungTicks, flingLogs;
 
@@ -62,7 +65,7 @@ public final class PortalAir {
 	}
 
 	/** Funneling reaches for floor portals this far off to the side (blocks), and this far below. */
-	private static final double FUNNEL_RADIUS = 1.5, FUNNEL_DEPTH = 10.0;
+	private static final double FUNNEL_RADIUS = 60.0 / Units.PER_BLOCK, FUNNEL_DEPTH = 400.0 / Units.PER_BLOCK;
 
 	/**
 	 * Portal's funneling (sv_player_funnel_into_portals): falling onto a floor portal, the player
@@ -104,7 +107,7 @@ public final class PortalAir {
 	 */
 	public static Vec3 limit(Vec3 velocity, double horizontalBefore) {
 		double h = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-		double hMax = Math.max(horizontalBefore, 0.3); // a little air control from a near standstill
+		double hMax = Math.max(horizontalBefore, STANDSTILL_CONTROL); // a little air control from a near standstill
 		if (h > hMax && h > 1e-9) {
 			velocity = new Vec3(velocity.x * hMax / h, velocity.y, velocity.z * hMax / h);
 		}
