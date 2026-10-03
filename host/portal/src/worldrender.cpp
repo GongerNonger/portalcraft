@@ -47,6 +47,7 @@
 #include "overlay.h"
 #include "sdk.h"
 #include "worldrender.h"
+#include "hooks.h"
 
 namespace worldrender {
 namespace {
@@ -824,11 +825,7 @@ void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
 }
 
 void hook(void** vt, int slot, void* replacement, void** original) {
-	DWORD old;
-	VirtualProtect(&vt[slot], sizeof(void*), PAGE_READWRITE, &old);
-	*original = vt[slot];
-	vt[slot] = replacement;
-	VirtualProtect(&vt[slot], sizeof(void*), old, &old);
+	hooks::patch(vt, slot, replacement, original);
 }
 
 } // namespace

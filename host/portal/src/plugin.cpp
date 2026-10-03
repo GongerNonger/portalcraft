@@ -22,6 +22,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
+#include "hooks.h"
 #include "launcher.h"
 #include "raybox.h"
 #include "overlay.h"
@@ -1181,18 +1182,7 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 }
 
 bool hookSlot(void* object, int slot, void* replacement, void** original) {
-	void** vtable = *static_cast<void***>(object);
-	if (vtable[slot] == replacement) {
-		return true;
-	}
-	DWORD old;
-	if (!VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &old)) {
-		return false;
-	}
-	*original = vtable[slot];
-	vtable[slot] = replacement;
-	VirtualProtect(&vtable[slot], sizeof(void*), old, &old);
-	return true;
+	return hooks::patch(*static_cast<void***>(object), slot, replacement, original);
 }
 
 // Ray_t (SP2013): start, delta, startOffset, extents (VectorAligned each), isRay, isSwept.
@@ -1927,6 +1917,7 @@ public:
 		logf("Unload");
 		camera::shutdown();
 		unwatchWheel();
+		hooks::unpatchAll(); // every other slot we patched, back to Portal's own (see hooks.h)
 		if (g_mouseFreed && g_clientDll) {
 			sdk::vcall<void>(g_clientDll, 14); // give Portal its mouse back
 		}

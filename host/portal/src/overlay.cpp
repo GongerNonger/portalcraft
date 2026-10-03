@@ -15,6 +15,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "overlay.h"
+#include "hooks.h"
 #include "worldrender.h"
 
 namespace overlay {
@@ -279,17 +280,7 @@ HRESULT WINAPI hkResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3D
 constexpr int kReset = 16, kPresent = 17, kPresentEx = 121, kResetEx = 132;
 
 bool patch(void** vt, int slot, void* fn, void** original) {
-	if (vt[slot] == fn) {
-		return true;
-	}
-	DWORD old;
-	if (!VirtualProtect(&vt[slot], sizeof(void*), PAGE_READWRITE, &old)) {
-		return false;
-	}
-	*original = vt[slot];
-	vt[slot] = fn;
-	VirtualProtect(&vt[slot], sizeof(void*), old, &old);
-	return true;
+	return hooks::patch(vt, slot, fn, original);
 }
 
 void hookVtable(void** vt, bool ex) {
