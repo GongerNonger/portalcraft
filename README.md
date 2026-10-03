@@ -95,9 +95,8 @@ bobs. `play-portal.cmd` launches Portal with `+cl_updaterate 66 +cl_cmdrate 66 +
 +cl_interp_ratio 1` (one update per server tick, ~15 ms delay), which removes the bob.
 
 Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
-- Portal's traces don't see Minecraft's blocks: a portal shot at a wall you built lands on the
-  chamber wall behind it, and turrets see and shoot through your blocks. (Cubes, turrets and energy
-  balls do collide with them.)
+- Portals can't be placed on Minecraft's blocks (a shot at your wall fizzles on it, as on Portal's
+  black walls).
 - Co-op isn't built yet.
 - After a Portal update, the features that call engine slots checked on today's build (blasts,
   block physics, the health kill, corner messages) turn themselves off until they're re-checked

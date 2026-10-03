@@ -23,6 +23,7 @@
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
 #include "launcher.h"
+#include "raybox.h"
 #include "overlay.h"
 #include "worldrender.h"
 #include "sdk.h"
@@ -549,6 +550,8 @@ std::vector<BlockBox> g_blockBoxes;
 std::vector<float> g_blockIncoming;
 bool g_blockDirty = false;
 
+void updateBlockBounds();
+
 void receiveSolids(const char* buf, int n) {
 	uint32_t count;
 	std::memcpy(&count, buf + 4, 4);
@@ -560,6 +563,7 @@ void receiveSolids(const char* buf, int n) {
 	if (boxes != g_blockIncoming) {
 		g_blockIncoming.swap(boxes);
 		g_blockDirty = true;
+		updateBlockBounds();
 	}
 }
 
@@ -1191,6 +1195,112 @@ bool hookSlot(void* object, int slot, void* replacement, void** original) {
 	return true;
 }
 
+// Ray_t (SP2013): start, delta, startOffset, extents (VectorAligned each), isRay, isSwept.
+struct alignas(16) TraceRayArgs {
+	float start[4], delta[4], startOffset[4], extents[4];
+	bool isRay, isSwept;
+};
+
+// ---- Portal's traces see Steve's blocks ------------------------------------------------------
+// Portal's gun, its turrets' line of sight and its bullets all trace through the engine
+// (IEngineTrace::TraceRay, slot 4 of EngineTraceServer003), which knows nothing of Minecraft's
+// blocks: a portal shot at a wall Steve built landed on the chamber wall behind it, and turrets saw
+// and shot him through it. After Portal's own trace, a line trace (never a hull: Portal's player
+// movement stays as it was) is clipped against Steve's block boxes (PCS1, the same ones Portal's
+// physics gets); a nearer block is reported as world geometry where no portal can go
+// (SURF_NOPORTAL), so a portal shot fizzles on it, turrets lose sight and bullets stop.
+//
+// trace_t (CGameTrace, SP2013): startpos 0, endpos 12, plane 24 (normal, dist 36, type 40, signbits
+// 41), fraction 44, contents 48, dispFlags 52, allsolid 54, startsolid 55, fractionleftsolid 56,
+// surface 60 (name, surfaceProps 64, flags 66), hitgroup 68, physicsbone 72, m_pEnt 76, hitbox 80.
+constexpr unsigned kContentsSolid = 0x1;
+constexpr unsigned short kSurfNoPortal = 0x0020;
+using TraceRayFn = void(__thiscall*)(void* self, const TraceRayArgs* ray, unsigned mask, void* filter, uint8_t* trace);
+TraceRayFn g_traceRayOriginal = nullptr;
+float g_blockBounds[6] = {}; // all of Steve's boxes together, for a quick miss
+bool g_haveBlockBounds = false;
+
+void updateBlockBounds() {
+	size_t n = g_blockIncoming.size() / 6;
+	g_haveBlockBounds = n > 0;
+	for (size_t i = 0; i < n; i++) {
+		const float* b = &g_blockIncoming[i * 6];
+		for (int k = 0; k < 3; k++) {
+			g_blockBounds[k] = i == 0 || b[k] < g_blockBounds[k] ? b[k] : g_blockBounds[k];
+			g_blockBounds[k + 3] = i == 0 || b[k + 3] > g_blockBounds[k + 3] ? b[k + 3] : g_blockBounds[k + 3];
+		}
+	}
+}
+
+void __fastcall hkTraceRay(void* self, void* /*edx*/, const TraceRayArgs* ray, unsigned mask, void* filter, uint8_t* trace) {
+	g_traceRayOriginal(self, ray, mask, filter, trace);
+	if (!ray->isRay || !(mask & kContentsSolid) || !g_haveBlockBounds || !g_inLevel) {
+		return;
+	}
+	float& fraction = *reinterpret_cast<float*>(trace + 44);
+	if (!(fraction > 0.0f) || *reinterpret_cast<bool*>(trace + 55)) {
+		return; // it started in something solid already
+	}
+	const float* start = ray->start;
+	const float* delta = ray->delta;
+	float t, sign;
+	int axis;
+	if (!rayEnters(start, delta, g_blockBounds, fraction, &t, &axis, &sign) && !(start[0] > g_blockBounds[0] && start[0] < g_blockBounds[3] &&
+			start[1] > g_blockBounds[1] && start[1] < g_blockBounds[4] && start[2] > g_blockBounds[2] && start[2] < g_blockBounds[5])) {
+		return; // nowhere near any of Steve's blocks
+	}
+	float best = fraction;
+	int bestAxis = -1;
+	float bestSign = 0.0f;
+	size_t n = g_blockIncoming.size() / 6;
+	for (size_t i = 0; i < n; i++) {
+		if (rayEnters(start, delta, &g_blockIncoming[i * 6], best, &t, &axis, &sign)) {
+			best = t;
+			bestAxis = axis;
+			bestSign = sign;
+		}
+	}
+	if (bestAxis < 0) {
+		return;
+	}
+	void* worldEdict = edictAt(0);
+	void* world = edictInUse(worldEdict) ? sdk::networkableBaseEntity(sdk::edictNetworkable(worldEdict)) : nullptr;
+	if (!world) {
+		return;
+	}
+	auto* end = reinterpret_cast<float*>(trace + 12);
+	for (int k = 0; k < 3; k++) {
+		end[k] = start[k] + delta[k] * best;
+	}
+	auto* normal = reinterpret_cast<float*>(trace + 24);
+	normal[0] = normal[1] = normal[2] = 0.0f;
+	normal[bestAxis] = bestSign;
+	*reinterpret_cast<float*>(trace + 36) = bestSign * end[bestAxis]; // plane dist: normal . point
+	trace[40] = uint8_t(bestAxis); // PLANE_X/Y/Z
+	trace[41] = uint8_t(bestSign < 0.0f ? 1 << bestAxis : 0);
+	fraction = best;
+	*reinterpret_cast<int*>(trace + 48) = int(kContentsSolid);
+	*reinterpret_cast<unsigned short*>(trace + 52) = 0;
+	trace[54] = 0; // allsolid
+	*reinterpret_cast<const char**>(trace + 60) = "PORTALCRAFT/BLOCK";
+	*reinterpret_cast<short*>(trace + 64) = 0; // surfaceProps: default
+	*reinterpret_cast<unsigned short*>(trace + 66) = kSurfNoPortal;
+	*reinterpret_cast<int*>(trace + 68) = 0; // hitgroup
+	*reinterpret_cast<short*>(trace + 72) = 0;
+	*reinterpret_cast<void**>(trace + 76) = world;
+	*reinterpret_cast<int*>(trace + 80) = 0; // hitbox (for the world: no static prop)
+}
+
+void hookServerTraces() {
+	if (g_traceRayOriginal || !g_engineFactory || !checkedBuild("engine.dll")) {
+		return;
+	}
+	void* trace = g_engineFactory("EngineTraceServer003", nullptr);
+	if (trace && hookSlot(trace, 4, reinterpret_cast<void*>(&hkTraceRay), reinterpret_cast<void**>(&g_traceRayOriginal))) {
+		logf("hooked EngineTraceServer003::TraceRay: Portal's traces see Steve's blocks");
+	}
+}
+
 void hookClientMovement() {
 	if (g_clientOriginal) {
 		return;
@@ -1413,10 +1523,6 @@ void sendEntities() {
 // Dev: what Portal itself finds solid at a spot. A player-hull trace (IEngineTrace::TraceRay, slot 4
 // of EngineTraceServer003) from `top` down to `at`: where it stops, and the surface and contents.
 void* g_serverTrace = nullptr;
-struct alignas(16) TraceRayArgs {
-	float start[4], delta[4], startOffset[4], extents[4];
-	bool isRay, isSwept;
-};
 class TraceAll {
 public:
 	virtual bool ShouldHitEntity(void* entity, int) { return entity != skip; }
@@ -1849,6 +1955,7 @@ public:
 		logf("ServerActivate: %d edicts, %d clients, edict0 = %s", edictCount, clientMax,
 			world ? sdk::networkableClassName(world) : "(null)");
 		hookClientMovement();
+		hookServerTraces();
 	}
 	virtual void GameFrame(bool /*simulating*/) {
 		PerfFrame perf;
