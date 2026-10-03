@@ -31,14 +31,22 @@ public final class GunAnimation {
 
 	/** A sequence: its frame count, where its poses start in FireFrame's values, its name in gun_recoil.json. */
 	public enum Sequence {
-		FIRE(16, 0, "frames"), PICKUP(12, 100, "pickup"), RELEASE(21, 200, "release");
+		FIRE(16, 0, 0, "frames"), PICKUP(12, 0, 100, "pickup"),
+		/**
+		 * Portal's release opens on the claws snapped shut and blends that away from the held pose;
+		 * poses can't blend, so it starts at the frame whose claws are as they are held (wide open)
+		 * and closes from there.
+		 */
+		RELEASE(21, 11, 200, "release");
 
 		public final int frames;
+		final int first;
 		final int base;
 		final String key;
 
-		Sequence(int frames, int base, String key) {
+		Sequence(int frames, int first, int base, String key) {
 			this.frames = frames;
+			this.first = first;
 			this.base = base;
 			this.key = key;
 		}
@@ -92,8 +100,8 @@ public final class GunAnimation {
 			return -1.0;
 		}
 		Sequence s = playing;
-		double f = (System.nanoTime() - at) / 1.0e9 * FPS;
-		if (f < 0.0) {
+		double f = s.first + (System.nanoTime() - at) / 1.0e9 * FPS;
+		if (f < s.first) {
 			return -1.0;
 		}
 		if (f < s.frames) {
