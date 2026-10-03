@@ -13,7 +13,10 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-/** Adds the host game's walls to every block-collision query (pattern from SkyCraft, MIT). */
+/**
+ * Adds the host game's walls to every block-collision query (pattern from SkyCraft, MIT), and cuts
+ * the holes behind the portal gun's own portals out of the blocks (PortalHoles).
+ */
 @Mixin(BlockCollisions.class)
 public abstract class BlockCollisionsMixin {
 	@WrapOperation(
@@ -25,6 +28,9 @@ public abstract class BlockCollisionsMixin {
 	)
 	private VoxelShape portalcraft$addHostShape(CollisionContext context, BlockState state, CollisionGetter level, BlockPos pos, Operation<VoxelShape> original) {
 		VoxelShape shape = original.call(context, state, level, pos);
+		if (level instanceof net.minecraft.world.level.Level world) {
+			shape = dev.portalcraft.PortalHoles.cut(world, pos, shape); // the holes behind our own portals
+		}
 		VoxelShape host = HostCollision.shapeAt(pos);
 		if (host == null) {
 			return shape;

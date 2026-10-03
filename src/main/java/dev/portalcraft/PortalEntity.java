@@ -110,6 +110,44 @@ public class PortalEntity extends Entity {
 		return box.expandTowards(n.scale(depth)).expandTowards(n.scale(-0.05));
 	}
 
+	/** How far the hole behind a wall portal goes into the wall, and behind a floor or ceiling one. */
+	public static final double HOLE_DEPTH_WALL = 1.0, HOLE_DEPTH_FLOOR = 2.0;
+
+	/** The hole cut behind the oval (PortalHoles): its 1x2 outline, from the surface into the blocks. */
+	public AABB hole() {
+		Vec3 c = this.position().subtract(this.normal().scale(SURFACE_OFFSET));
+		Vec3 half = abs(this.upVec().scale(HALF_HEIGHT)).add(abs(this.rightVec().scale(HALF_WIDTH)));
+		double depth = this.face().getAxis().isHorizontal() ? HOLE_DEPTH_WALL : HOLE_DEPTH_FLOOR;
+		return new AABB(c.subtract(half), c.add(half)).expandTowards(this.normal().scale(-depth));
+	}
+
+	/**
+	 * Whether a box fits through the hole (across and along the oval), so it can walk into the
+	 * portal and go through when its centre crosses the surface. One that doesn't fit (too far off
+	 * to the side, feet below the oval) goes through on touching it instead, as before.
+	 */
+	public boolean fitsThrough(AABB box) {
+		Vec3 d = box.getCenter().subtract(this.position());
+		Vec3 r = this.rightVec(), u = this.upVec();
+		double halfAcross = Math.abs(r.x) * box.getXsize() / 2 + Math.abs(r.y) * box.getYsize() / 2 + Math.abs(r.z) * box.getZsize() / 2;
+		double halfAlong = Math.abs(u.x) * box.getXsize() / 2 + Math.abs(u.y) * box.getYsize() / 2 + Math.abs(u.z) * box.getZsize() / 2;
+		return Math.abs(d.dot(r)) + halfAcross <= HALF_WIDTH + 1.0E-3 && Math.abs(d.dot(u)) + halfAlong <= HALF_HEIGHT + 1.0E-3;
+	}
+
+	/**
+	 * Whether a box's centre, moving by `velocity` this tick, crosses the oval's surface inside it,
+	 * or is behind it in the hole already (it went in while the portals were cooling down).
+	 */
+	public boolean centreCrosses(AABB box, Vec3 velocity) {
+		Vec3 n = this.normal();
+		Vec3 now = box.getCenter().subtract(this.position()), next = now.add(velocity);
+		double depth = this.face().getAxis().isHorizontal() ? HOLE_DEPTH_WALL : HOLE_DEPTH_FLOOR;
+		if (next.dot(n) >= 0.0 || now.dot(n) < -depth) {
+			return false; // still in front of it, or nowhere near its hole
+		}
+		return Math.abs(next.dot(this.rightVec())) <= HALF_WIDTH && Math.abs(next.dot(this.upVec())) <= HALF_HEIGHT;
+	}
+
 	/** True if this box is inside the oval's outline, judged by its centre. */
 	public boolean isInFront(AABB box) {
 		Vec3 d = box.getCenter().subtract(this.position());
@@ -142,6 +180,7 @@ public class PortalEntity extends Entity {
 	@Override
 	public void tick() {
 		super.tick();
+		PortalHoles.update(this); // both sides: the client moves its player against the hole too
 		if (!(this.level() instanceof ServerLevel level)) {
 			return;
 		}
@@ -240,7 +279,19 @@ public class PortalEntity extends Entity {
 		return true;
 	}
 
-	public void fizzle() {
+	@Override
+	public void onRemoval(Entity.RemovalReason reason) {
+		super.onRemoval(reason);
+		PortalHoles.remove(this);
+	}
+
+	@Override
+	public void onClientRemoval() {
+		super.onClientRemoval();
+		PortalHoles.remove(this);
+	}
+
+		public void fizzle() {
 		this.level().playSound(null, this.getX(), this.getY(), this.getZ(), SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.5F, 1.8F);
 		this.discard();
 	}

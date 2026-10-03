@@ -11,6 +11,9 @@ or fling through them, with momentum carried through.
 - Portals are 1×2 blocks and need two solid faces in a row with open space in front.
 - Each player has their own pair. Firing a colour again moves that portal.
 - Breaking a block behind a portal fizzles it.
+- As in Portal, a linked portal opens a hole in the blocks behind it: you walk (or fall) into it
+  and come out of the other one the moment your centre crosses its surface. Coming at it too far
+  off to the side to fit, you go through on touching it.
 - Items, mobs and arrows go through too.
 - Get it from the Tools & Utilities creative tab, or craft it:
 

@@ -72,7 +72,10 @@ public class PortalCraftClient implements ClientModInitializer {
 		Vec3 velocity = player.getDeltaMovement();
 		AABB box = player.getBoundingBox();
 		for (PortalEntity portal : client.level.getEntitiesOfClass(PortalEntity.class, box.inflate(3.0), PortalEntity::isLinked)) {
-			if (portal.isEntering(box, velocity)) {
+			// As in Portal: one that fits through the hole walks in and goes through as its centre
+			// crosses the surface; one that doesn't (off to the side) goes through on touching it.
+			boolean through = portal.fitsThrough(box) ? portal.centreCrosses(box, velocity) : portal.isEntering(box, velocity);
+			if (through) {
 				enterCooldown = 10;
 				ClientPlayNetworking.send(new EnterPortalPayload(portal.getId(), velocity));
 				return;
