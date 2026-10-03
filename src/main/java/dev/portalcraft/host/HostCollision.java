@@ -301,7 +301,7 @@ public final class HostCollision {
 			for (int i = 0; i <= COLUMNS; i++) {
 				boolean inside = false;
 				double lo = 0, hi = 0;
-				if (i < COLUMNS && span(brush, (x + (i + 0.5) * step) * Units.PER_BLOCK, -(z + (k + 0.5) * step) * Units.PER_BLOCK, span)) {
+				if (i < COLUMNS && span(brush, (x - Units.offsetX() + (i + 0.5) * step) * Units.PER_BLOCK, -(z + (k + 0.5) * step) * Units.PER_BLOCK, span)) {
 					lo = Math.max(span[0] / Units.PER_BLOCK - y, 0.0);
 					hi = Math.min(span[1] / Units.PER_BLOCK - y, 1.0);
 					inside = hi - lo >= 1.0E-7;

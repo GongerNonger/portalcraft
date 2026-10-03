@@ -222,7 +222,9 @@ public final class HostDriver {
 		// The host's moves as soon as they arrive, not at the next tick: while it waits for our
 		// answer it can't drive the player (a real teleport) or has to carry a shove itself.
 		Proto.HostState hs = HostLink.current();
-		if (hs != null && minecraft.player != null && hs.inGame()) {
+		// Only once the tick has moved to the host's map's region: a level start applied before that
+		// would land Steve in the last map's stretch of the world (and the void).
+		if (hs != null && minecraft.player != null && hs.inGame() && Units.offsetX() == dev.portalcraft.host.MapRegions.offsetX(hs.map())) {
 			followHostMoves(minecraft, minecraft.player, hs);
 		}
 		boolean ready = sendState(minecraft);
@@ -463,6 +465,12 @@ public final class HostDriver {
 	private static void loadMap(String name) {
 		if (name.equals(HostCollision.mapName())) {
 			return;
+		}
+		// Its own stretch of the Minecraft world (MapRegions), before anything converts a position.
+		double offset = dev.portalcraft.host.MapRegions.offsetX(name);
+		if (Units.offsetX() != offset) {
+			Units.setOffsetX(offset);
+			LOG.info("PortalCraft: {} is at x {} in the Minecraft world", name, (long) offset);
 		}
 		Path file = maps().resolve(name + ".bsp");
 		if (file.equals(failedMap)) {

@@ -193,7 +193,7 @@ public final class WorldFormat {
 			if (o + VERTEX_INTS > this.data.length) {
 				this.data = Arrays.copyOf(this.data, Math.max(this.data.length * 2, o + VERTEX_INTS));
 			}
-			this.data[o] = Float.floatToRawIntBits((float) (mcX * PER_BLOCK));
+			this.data[o] = Float.floatToRawIntBits((float) ((mcX - dev.portalcraft.host.Units.offsetX()) * PER_BLOCK)); // the map's region (MapRegions)
 			this.data[o + 1] = Float.floatToRawIntBits((float) (-mcZ * PER_BLOCK));
 			this.data[o + 2] = Float.floatToRawIntBits((float) (mcY * PER_BLOCK));
 			this.data[o + 3] = color;

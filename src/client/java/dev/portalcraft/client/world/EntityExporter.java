@@ -614,7 +614,8 @@ public final class EntityExporter {
 		private @Nullable Model<?> avatarModel;
 
 		void beginAvatar(Model<?> model) {
-			this.begin(Vec3.ZERO); // relative to the feet
+			// Relative to the feet: at the map region's offset, which the vertices lose again on the way out.
+			this.begin(new Vec3(dev.portalcraft.host.Units.offsetX(), 0.0, 0.0));
 			this.avatarModel = model;
 		}
 
