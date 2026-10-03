@@ -15,4 +15,7 @@ void init(LogFn log, HMODULE self);
 // ini says to); later calls only update the on-screen status. engineClient is VEngineClient013.
 void frame(bool mcLinked, bool inLevel, void* engineClient);
 
+// Portal's maps folder (<Portal>/portal/maps), which Minecraft reads the maps' collision from.
+const char* mapsDir();
+
 } // namespace launcher

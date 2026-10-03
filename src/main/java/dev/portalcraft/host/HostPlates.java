@@ -28,7 +28,7 @@ public final class HostPlates {
 
 	/** END_LEVEL_TICK, server thread. */
 	public static void tick(ServerLevel level) {
-		if (!HostCollision.active()) {
+		if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD || !HostCollision.active()) {
 			return;
 		}
 		List<LiveEntities.Prop> props = LiveEntities.props();

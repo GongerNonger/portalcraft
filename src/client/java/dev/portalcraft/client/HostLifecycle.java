@@ -25,7 +25,9 @@ final class HostLifecycle {
 	private static final long STARTED_AT = System.currentTimeMillis();
 
 	private static boolean hidden, everLinked, quitting;
-	private static long hostPid, hostGoneSince, nextCheck;
+	private static long hostPid, hostGoneSince, nextCheck, lastLinkedAt;
+	/** Portal's plugin speaks ~66 times a second in a level (its menu is one too); this long quiet, it's gone. */
+	private static final long PORTAL_QUIET_MS = 15000;
 
 	private HostLifecycle() {
 	}
@@ -51,6 +53,7 @@ final class HostLifecycle {
 		long now = System.currentTimeMillis();
 		if (linked) {
 			everLinked = true;
+			lastLinkedAt = now;
 		}
 		if (now < nextCheck) {
 			return;
@@ -59,7 +62,10 @@ final class HostLifecycle {
 		if (hostPid == 0 || !ProcessHandle.of(hostPid).map(ProcessHandle::isAlive).orElse(false)) {
 			hostPid = findPortal().orElse(0L);
 		}
-		if (hostPid != 0) {
+		// Portal is there if its hl2.exe is, or if it spoke lately: an hl2.exe run as administrator
+		// (Minecraft not) doesn't show its path to us, so the process alone can't be trusted to see it.
+		boolean portalThere = hostPid != 0 || now - lastLinkedAt < PORTAL_QUIET_MS;
+		if (portalThere) {
 			hostGoneSince = 0;
 		} else if (!everLinked) {
 			// Portal isn't even running (it crashed, or was closed before a level loaded).

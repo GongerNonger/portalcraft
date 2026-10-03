@@ -295,10 +295,12 @@ void* playerBase() {
 	return edictInUse(e) ? sdk::networkableBaseEntity(sdk::edictNetworkable(e)) : nullptr;
 }
 
-DamageInfo damageInfo(float damage, int type) {
+// Steve's doing (the player as attacker), or the world's (`fromWorld`: nobody to blame or react to).
+DamageInfo damageInfo(float damage, int type, bool fromWorld = false) {
 	DamageInfo info{};
 	info.inflictor = info.attacker = info.weapon = 0xFFFFFFFFu; // INVALID_EHANDLE_INDEX
-	if (void* unknown = edictInUse(edictAt(1)) ? sdk::edictUnknown(edictAt(1)) : nullptr) {
+	int by = fromWorld ? 0 : 1;
+	if (void* unknown = edictInUse(edictAt(by)) ? sdk::edictUnknown(edictAt(by)) : nullptr) {
 		// IHandleEntity slot 2, GetRefEHandle: the player's own handle.
 		info.inflictor = info.attacker = *sdk::vcall<const uint32_t*>(unknown, 2);
 	}
@@ -372,7 +374,7 @@ void updateScripted() {
 		if (void* unknown = sdk::edictUnknown(edictAt(1))) {
 			self = *sdk::vcall<const uint32_t*>(unknown, 2); // IHandleEntity::GetRefEHandle
 		}
-		scripted = view != 0xFFFFFFFFu && view != self;
+		scripted = view != 0xFFFFFFFFu && view != 0 && view != self; // 0 would be the world: never a camera
 	}
 	if (scripted != g_scripted) {
 		logf("scripted scene %s", scripted ? "started: Portal has the player" : "over: Minecraft drives again");
@@ -544,14 +546,20 @@ void destroyBlockBox(void* env, void* object) {
 	}
 }
 
+extern Vector g_origin; // the player's feet (below, with the movement hook)
+
 void wakeAround(const float* b) {
 	if (!serverToolsReady()) {
 		return;
 	}
 	float hx = (b[3] - b[0]) * 0.5f, hy = (b[4] - b[1]) * 0.5f, hz = (b[5] - b[2]) * 0.5f;
 	Vector at{b[0] + hx, b[1] + hy, b[2] + hz};
+	// Only near Steve: a block he broke. Far ones only left Minecraft's scan around him as he walked.
+	if (dist(at, g_origin) > 30.0f * 40.0f) {
+		return;
+	}
 	float radius = std::sqrt(hx * hx + hy * hy + hz * hz) + 32.0f;
-	DamageInfo info = damageInfo(0.5f, 0 /* DMG_GENERIC */);
+	DamageInfo info = damageInfo(0.5f, 0 /* DMG_GENERIC */, true);
 	info.position = info.reported = at;
 	__try {
 		sdk::vcall<void>(g_serverTools, 31, static_cast<const void*>(&info), static_cast<const void*>(&at), radius, 0, playerBase());
@@ -1656,6 +1664,22 @@ void sendState() {
 
 // ---- the plugin ----------------------------------------------------------------------
 
+// Every 2 s, "PCP1" + Portal's maps folder: Minecraft reads the maps' collision from there, however it
+// was started (by this plugin, or by hand, or by a Prism Launcher that was already open).
+void sendMapsDir() {
+	static DWORD last = 0;
+	if (GetTickCount() - last < 2000) {
+		return;
+	}
+	last = GetTickCount();
+	char packet[4 + MAX_PATH + 1];
+	std::memcpy(packet, "PCP1", 4);
+	size_t n = strnlen(launcher::mapsDir(), MAX_PATH);
+	std::memcpy(packet + 4, launcher::mapsDir(), n);
+	packet[4 + n] = 0;
+	sendto(g_sock, packet, int(4 + n + 1), 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
+}
+
 // ---- perf: a line a minute in portalcraft.log (as SkyCraft's) ---------------------------
 // Portal's frame rate and its worst frame, and what PortalCraft costs per frame: the plugin's own
 // per-frame work and drawing Minecraft's world. For "it lags" reports.
@@ -1679,7 +1703,9 @@ struct PerfFrame {
 		QueryPerformanceCounter(&start);
 		if (g_perf.last.QuadPart) {
 			double frame = perfSeconds(g_perf.last, start);
-			g_perf.worstFrame = frame > g_perf.worstFrame ? frame : g_perf.worstFrame;
+			if (frame < 2.0) { // longer is a level loading (no GameFrame meanwhile), not a slow frame
+				g_perf.worstFrame = frame > g_perf.worstFrame ? frame : g_perf.worstFrame;
+			}
 		} else {
 			g_perf.windowStart = start;
 		}
@@ -1802,6 +1828,7 @@ public:
 		updateScripted();
 		updateBlockPhysics();
 		sendState();
+		sendMapsDir();
 		camera::init(&logf);
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)

@@ -88,6 +88,17 @@ public final class HostLink {
 					devGoto = new net.minecraft.world.phys.Vec3(buf.getFloat(4), buf.getFloat(8), buf.getFloat(12));
 					continue;
 				}
+				if (buf.remaining() > 4 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'P' && buf.get(3) == '1') {
+					byte[] raw = new byte[buf.remaining() - 4];
+					buf.position(4);
+					buf.get(raw);
+					int len = 0;
+					while (len < raw.length && raw[len] != 0) {
+						len++;
+					}
+					hostMapsDir = new String(raw, 0, len, java.nio.charset.StandardCharsets.UTF_8);
+					continue;
+				}
 				if (buf.remaining() == 12 && buf.get(0) == 'P' && buf.get(1) == 'C' && buf.get(2) == 'U' && buf.get(3) == '1') {
 					buf.order(java.nio.ByteOrder.LITTLE_ENDIAN);
 					if (HURTS.size() < 64) {
@@ -132,6 +143,13 @@ public final class HostLink {
 
 	public static @Nullable Hurt takeHurt() {
 		return HURTS.poll();
+	}
+
+	/** "PCP1" path: the host's maps folder, sent every few seconds (null before the first). */
+	private static volatile @Nullable String hostMapsDir;
+
+	public static @Nullable String hostMapsDir() {
+		return hostMapsDir;
 	}
 
 	/** "PCY1": characters the player typed into the host while a Minecraft screen was open. */

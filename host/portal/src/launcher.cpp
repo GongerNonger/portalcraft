@@ -45,15 +45,53 @@ bool minecraftRunning() {
 	if (s == INVALID_SOCKET) {
 		return false;
 	}
-	BOOL exclusive = TRUE;
-	setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive), sizeof exclusive);
 	sockaddr_in addr{};
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(pcproto::kMcPort);
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	bool taken = bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0 && WSAGetLastError() == WSAEADDRINUSE;
+	// In use: WSAEADDRINUSE, or WSAEACCES when the holder asked for exclusive use.
+	bool taken = false;
+	if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {
+		int error = WSAGetLastError();
+		taken = error == WSAEADDRINUSE || error == WSAEACCES;
+	}
 	closesocket(s);
 	return taken;
+}
+
+// When this PC last started Minecraft for a Portal (a file in %TEMP%, removed once it links): a
+// Portal restarted while that Minecraft is still loading (before it holds its port) waits for it
+// instead of starting another one.
+constexpr ULONGLONG kStartingSeconds = 180;
+
+std::string launchStampPath() {
+	char dir[MAX_PATH];
+	DWORD n = GetTempPathA(MAX_PATH, dir);
+	return std::string(dir, n) + "portalcraft-launch.txt";
+}
+
+ULONGLONG nowSeconds() {
+	FILETIME ft;
+	GetSystemTimeAsFileTime(&ft);
+	return ((ULONGLONG(ft.dwHighDateTime) << 32) | ft.dwLowDateTime) / 10000000ULL;
+}
+
+bool startedRecently() {
+	FILE* f = std::fopen(launchStampPath().c_str(), "r");
+	if (!f) {
+		return false;
+	}
+	unsigned long long then = 0;
+	bool read = std::fscanf(f, "%llu", &then) == 1;
+	std::fclose(f);
+	return read && nowSeconds() >= then && nowSeconds() - then < kStartingSeconds;
+}
+
+void stampLaunch() {
+	if (FILE* f = std::fopen(launchStampPath().c_str(), "w")) {
+		std::fprintf(f, "%llu", static_cast<unsigned long long>(nowSeconds()));
+		std::fclose(f);
+	}
 }
 
 bool endsWith(const std::string& s, const char* suffix) {
@@ -91,6 +129,7 @@ bool start() {
 	}
 	CloseHandle(pi.hThread);
 	CloseHandle(pi.hProcess);
+	stampLaunch();
 	g_log("launcher: started Minecraft: %s", command.c_str());
 	return true;
 }
@@ -133,10 +172,16 @@ void init(LogFn log, HMODULE self) {
 	g_log("launcher: %s: start_with_portal %d, launcher \"%s\"", path, g_startWithPortal ? 1 : 0, g_launcher.c_str());
 }
 
+const char* mapsDir() {
+	return g_mapsDir.c_str();
+}
+
 void frame(bool mcLinked, bool inLevel, void* engineClient) {
 	if (g_state == State::Unchecked) {
 		if (minecraftRunning()) {
 			setState(State::AlreadyRunning, "Minecraft is already running");
+		} else if (g_startWithPortal && !g_launcher.empty() && startedRecently()) {
+			setState(State::Started, "Minecraft was started moments ago (still loading): waiting for it");
 		} else if (!g_startWithPortal || g_launcher.empty()) {
 			setState(State::Off, "Minecraft isn't running, and portalcraft.ini doesn't start it");
 		} else {
@@ -144,6 +189,7 @@ void frame(bool mcLinked, bool inLevel, void* engineClient) {
 		}
 	}
 	if (mcLinked && g_state != State::Linked) {
+		DeleteFileA(launchStampPath().c_str()); // it's up: the next Portal may start one again
 		setState(State::Linked, "Minecraft linked");
 	} else if (!mcLinked && g_state == State::Linked && inLevel) {
 		setState(State::Lost, "Minecraft stopped answering");
@@ -177,8 +223,8 @@ void frame(bool mcLinked, bool inLevel, void* engineClient) {
 		std::snprintf(text, sizeof text, "PortalCraft: Minecraft linked. You're Steve now.");
 		break;
 	case State::Lost:
-		if (seconds < 3) {
-			return; // a hitch, most likely
+		if (seconds < 10) {
+			return; // a level change or a hitch, most likely
 		}
 		std::snprintf(text, sizeof text, "PortalCraft: Minecraft stopped answering (%lus). Its log: %s", seconds, g_logPath.c_str());
 		break;

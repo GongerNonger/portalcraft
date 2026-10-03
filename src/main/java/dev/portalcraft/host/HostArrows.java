@@ -20,7 +20,7 @@ public final class HostArrows {
 
 	/** END_LEVEL_TICK, server thread. */
 	public static void tick(ServerLevel level) {
-		if (!HostCollision.active() || ++ticks % EVERY_TICKS != 0) {
+		if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD || !HostCollision.active() || ++ticks % EVERY_TICKS != 0) {
 			return;
 		}
 		for (AbstractArrow arrow : level.getEntities(EntityTypeTest.forClass(AbstractArrow.class), a -> ((ArrowInvoker) a).portalcraft$isInGround())) {

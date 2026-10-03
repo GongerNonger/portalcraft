@@ -44,8 +44,18 @@ import org.slf4j.LoggerFactory;
  */
 public final class HostDriver {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
-	private static final Path MAPS = Path.of(System.getProperty("portalcraft.mapsDir",
-		System.getenv().getOrDefault("PORTALCRAFT_MAPS", "D:/SteamLibrary/steamapps/common/Portal/portal/maps")));
+	/**
+	 * Where the host's maps are: -Dportalcraft.mapsDir, else PORTALCRAFT_MAPS (set by the plugin
+	 * when it starts Minecraft), else what the plugin says over the link ("PCP1", however Minecraft
+	 * was started), else Steam's default library on this PC.
+	 */
+	private static Path maps() {
+		String dir = System.getProperty("portalcraft.mapsDir", System.getenv("PORTALCRAFT_MAPS"));
+		if (dir == null || dir.isEmpty()) {
+			dir = HostLink.hostMapsDir();
+		}
+		return Path.of(dir != null ? dir : "D:/SteamLibrary/steamapps/common/Portal/portal/maps");
+	}
 
 	private static final boolean[] KEYS = new boolean[256];
 	/** HostState.mouse bit i is Minecraft mouse button MOUSE_BUTTONS[i]. */
@@ -62,7 +72,8 @@ public final class HostDriver {
 	private static boolean resync;
 	private static int teleportAck;
 	private static int seq;
-	private static String failedMap = "";
+	/** The map file that last failed to load: not tried again, unless the maps folder changes. */
+	private static Path failedMap;
 
 	private HostDriver() {
 	}
@@ -450,10 +461,13 @@ public final class HostDriver {
 	}
 
 	private static void loadMap(String name) {
-		if (name.equals(HostCollision.mapName()) || name.equals(failedMap)) {
+		if (name.equals(HostCollision.mapName())) {
 			return;
 		}
-		Path file = MAPS.resolve(name + ".bsp");
+		Path file = maps().resolve(name + ".bsp");
+		if (file.equals(failedMap)) {
+			return;
+		}
 		try {
 			long t0 = System.nanoTime();
 			BspMap map = BspMap.load(file, name);
@@ -464,7 +478,7 @@ public final class HostDriver {
 			LOG.info("PortalCraft: loaded {} ({} solid brushes) in {} ms", file, map.brushes.size(), (System.nanoTime() - t0) / 1_000_000);
 			chamberKit(name);
 		} catch (Exception e) {
-			failedMap = name;
+			failedMap = file;
 			HostCollision.clear();
 			LOG.warn("PortalCraft: can't read {} ({}). Set -Dportalcraft.mapsDir to the game's maps folder.", file, e.toString());
 		}
