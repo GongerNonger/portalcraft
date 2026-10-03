@@ -459,6 +459,8 @@ public final class EntityExporter {
 	 * his feet. Sent in first person too: the host draws him in its views through portals always,
 	 * and in its main view only in third person.
 	 */
+	private static boolean heldDroppedLogged;
+
 	private static void addAvatar(Minecraft minecraft, float partial) {
 		LocalPlayer player = minecraft.player;
 		if (player == null) {
@@ -482,6 +484,18 @@ public final class EntityExporter {
 			CAPTURE.beginAvatar(avatarRenderer.getModel());
 			raw.submit(state, pose, CAPTURE, AVATAR_CAMERA);
 			CAPTURE.endAvatar();
+			if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
+				// What he holds is too much for the mesh (a resource pack's gun of thousands of small
+				// boxes): Steve without it, rather than no Steve at all.
+				for (int i = 5; i <= 8; i++) {
+					CAPTURE.ranges[i].clear();
+				}
+				if (!heldDroppedLogged) {
+					heldDroppedLogged = true;
+					LOG.warn("PortalCraft: the held item's model is over the {}-vertex entity budget: the avatar is sent without it (logged once)",
+						WorldFormat.ENTITY_MAX_VERTICES);
+				}
+			}
 			if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
 				CAPTURE.truncate(before);
 			}
