@@ -13,7 +13,9 @@
 		"SpriteContentsAccessor",
 		"RenderSetupAccessor",
 		"RenderTypeAccessor",
-		"TextureAtlasAccessor"
+		"TextureAtlasAccessor",
+		"SkinTextureDownloaderInvoker",
+		"AbstractClientPlayerSkinMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
