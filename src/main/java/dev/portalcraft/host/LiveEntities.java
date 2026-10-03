@@ -84,6 +84,7 @@ public final class LiveEntities {
 	private static int lastSeq = -1;
 	private static boolean loggedFirst;
 	private static int movedLogs;
+	private static int seenLogs;
 
 	private LiveEntities() {
 	}
@@ -134,6 +135,11 @@ public final class LiveEntities {
 			}
 			if (old != null && old.bounds() != null) {
 				dirty.add(old.bounds());
+			}
+			if (old == null && seenLogs < 200) {
+				seenLogs++;
+				LOG.info("PortalCraft: entity #{} {} at {} ({} brushes, bounds {})", e.index(), e.model(), e.origin(), brushes.size(),
+					bounds == null ? "none" : Units.toSrc(new Vec3(bounds.minX, bounds.minY, bounds.minZ)) + " to " + Units.toSrc(new Vec3(bounds.maxX, bounds.maxY, bounds.maxZ)));
 			}
 			if (old != null && movedLogs < 40) {
 				movedLogs++;
