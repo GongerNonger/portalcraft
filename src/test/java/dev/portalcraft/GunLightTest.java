@@ -10,7 +10,7 @@ class GunLightTest {
 	void flashStartsNearWhiteAndSettlesOnThePortalColour() {
 		for (int rgb : new int[] {GunLight.BLUE, GunLight.ORANGE}) {
 			int start = GunLight.flash(rgb, 0);
-			assertTrue(brightness(start) > brightness(rgb) + 200, "flares");
+			assertTrue(brightness(start) > brightness(rgb) + 50, "flares");
 			int previous = start;
 			for (int t = 1; t <= 8; t++) {
 				int now = GunLight.flash(rgb, t);

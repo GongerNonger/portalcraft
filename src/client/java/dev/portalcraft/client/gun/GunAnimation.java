@@ -53,6 +53,16 @@ public final class GunAnimation {
 		return f >= 0.0 && f < FRAMES ? f : -1.0;
 	}
 
+	/** How strongly the shot's flash still lights the gun: 1 as it fires, easing to 0 over about a quarter second. */
+	public static float flash() {
+		long at = shotAt;
+		if (at == Long.MIN_VALUE) {
+			return 0.0F;
+		}
+		double left = 1.0 - (System.nanoTime() - at) / 0.27e9;
+		return left <= 0.0 || left > 1.0 ? 0.0F : (float) (left * left);
+	}
+
 	/** FireFrame's value: 0 at rest, else the current frame + 1 (1 to FRAMES). */
 	public static float frameValue() {
 		double f = frames();

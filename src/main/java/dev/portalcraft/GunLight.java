@@ -60,10 +60,10 @@ public final class GunLight {
 		return out;
 	}
 
-	/** The light `ticks` into a flash that settles to `rgb`: three quarters white at first, easing out. */
+	/** The light `ticks` into a flash that settles to `rgb`: a quarter white at first (still clearly its own colour), easing out. */
 	public static int flash(int rgb, long ticks) {
 		double left = 1.0 - Math.min(1.0, ticks / (double) FLASH_TICKS);
-		double white = 0.75 * left * left;
+		double white = 0.25 * left * left;
 		int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
 		r += (int) Math.round((255 - r) * white);
 		g += (int) Math.round((255 - g) * white);

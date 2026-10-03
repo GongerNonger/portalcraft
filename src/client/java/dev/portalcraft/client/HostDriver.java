@@ -94,6 +94,24 @@ public final class HostDriver {
 		return linked;
 	}
 
+	/**
+	 * Minecraft's light level (0 to 15) for Steve's hand and what he holds, from the host's light
+	 * where its player stands, or -1 to leave Minecraft's own (not linked, or the host can't tell).
+	 * The void world is at permanent noon, so without this the hand is as bright in a dark test
+	 * chamber as in a lit one, and the gun's lights have nothing to glow against.
+	 */
+	public static int handLightLevel() {
+		Proto.HostState s = linked ? HostLink.current() : null;
+		if (s == null || s.handLight().x < 0.0) {
+			return -1;
+		}
+		Vec3 l = s.handLight();
+		// Linear light to how bright it looks, then onto Minecraft's levels, generously (Portal's rooms
+		// read brighter than their light samples say): never below 5, so the hand stays readable.
+		double seen = Math.pow(Math.min(1.0, Math.max(l.x, Math.max(l.y, l.z))), 1.0 / 2.2);
+		return (int) Math.round(5.0 + 10.0 * Math.sqrt(seen));
+	}
+
 	public static boolean isKeyDown(int scancode) {
 		return scancode >= 0 && scancode < KEYS.length && KEYS[scancode];
 	}

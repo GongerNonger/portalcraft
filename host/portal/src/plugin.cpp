@@ -2195,7 +2195,7 @@ void fillCursor(pcproto::HostState& s) {
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH4", 4);
+	std::memcpy(s.magic, "PCH5", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
@@ -2243,6 +2243,22 @@ void sendState() {
 	s.teleportVelocity = {g_teleportVelocity.x, g_teleportVelocity.y, g_teleportVelocity.z};
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
+	// Portal's light at the player's chest, for Minecraft to light Steve's hand by (eased, so walking
+	// past a lamp doesn't flicker). An engine slot, so only on a build it was checked on.
+	s.handLight = {-1.0f, 0.0f, 0.0f};
+	if (g_engineClient && g_inLevel && g_haveOrigin && checkedBuild("engine.dll")) {
+		static Vector eased{};
+		static bool have = false;
+		Vector at{g_origin.x, g_origin.y, g_origin.z + 48.0f};
+		Vector now = sdk::clientLightForPoint(g_engineClient, at, true);
+		if (!have) {
+			eased = now;
+			have = true;
+			logf("hand light: Portal's light at the player is (%.2f %.2f %.2f)", now.x, now.y, now.z);
+		}
+		eased = {eased.x + (now.x - eased.x) * 0.12f, eased.y + (now.y - eased.y) * 0.12f, eased.z + (now.z - eased.z) * 0.12f};
+		s.handLight = {eased.x, eased.y, eased.z};
+	}
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
 	}

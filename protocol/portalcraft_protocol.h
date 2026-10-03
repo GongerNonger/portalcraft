@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH4"
+	char magic[4]; // "PCH5"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -90,6 +90,10 @@ struct HostState {
 	// PCH4: how many of Minecraft's own portal crossings (McState.crossCount) Portal has made too.
 	// Minecraft sends its positions as if it hadn't yet made the ones after this (see PlayerCrossings).
 	uint32_t crossMatched;
+	// PCH5: the host's light where its player stands (linear red, green, blue, about 0 to 1), or x < 0
+	// when it can't tell. Minecraft lights Steve's hand and what he holds by it instead of by its own
+	// permanent noon, so in a dim room the gun dims and its lights stand out.
+	Vec3 handLight;
 };
 
 enum McFlags : uint32_t {
@@ -390,7 +394,7 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 296, "HostState layout");
+static_assert(sizeof(HostState) == 308, "HostState layout");
 static_assert(sizeof(McState) == 88, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");

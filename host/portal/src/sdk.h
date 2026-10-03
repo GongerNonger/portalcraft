@@ -102,5 +102,12 @@ inline bool clientConsoleVisible(void* ec) { return vcall<bool>(ec, 11); }
 inline void clientGetViewAngles(void* ec, QAngle* out) { vcall<void>(ec, 19, out); }
 inline void clientSetViewAngles(void* ec, QAngle* in) { vcall<void>(ec, 20, in); }
 inline bool clientIsPaused(void* ec) { return vcall<bool>(ec, 84); }
+// 1 GetLightForPoint(const Vector&, bool clamp): the world's light at a point, linear rgb, by value.
+inline Vector clientLightForPoint(void* ec, const Vector& pos, bool clamp) {
+	Vector out{};
+	using Fn = Vector*(__thiscall*)(void*, Vector*, const Vector*, bool);
+	(*reinterpret_cast<Fn**>(ec))[1](ec, &out, &pos, clamp);
+	return out;
+}
 
 } // namespace sdk
