@@ -938,7 +938,10 @@ public final class EntityExporter {
 			}
 			if (this.avatarModel != null && model == this.avatarModel) {
 				model.setupAnim(state);
-				this.skinQuads.start(this.avatarSkin, 0, 0, 0, null);
+				// Feet-relative, at the origin beginAvatar set (the map region's offset, which the vertices
+				// lose on the way out): with 0 here the body was drawn a whole map region away from Steve
+				// in every map but the first, and third person showed only what he held.
+				this.skinQuads.start(this.avatarSkin, this.ox, this.oy, this.oz, null);
 				model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
 				return;
 			}
@@ -950,7 +953,7 @@ public final class EntityExporter {
 			model.setupAnim(state);
 			boolean blend = renderType.hasBlending();
 			if (this.avatarModel != null) { // the avatar's armour, cape, elytra: feet-relative like its body
-				this.skinQuads.start(blend ? this.avatarMobTranslucent : this.avatarMobSolid, 0, 0, 0, rect);
+				this.skinQuads.start(blend ? this.avatarMobTranslucent : this.avatarMobSolid, this.ox, this.oy, this.oz, rect);
 			} else {
 				this.skinQuads.start(blend ? this.mobTranslucent : this.mobSolid, this.ox, this.oy, this.oz, rect);
 			}
