@@ -126,7 +126,9 @@ public final class HostDriver {
 			return;
 		}
 		if (player.isDeadOrDying()) {
-			HostHealth.died();
+			if (!resync) {
+				HostHealth.died(); // not a death from before this link (it would kill the host's player for nothing)
+			}
 			if (minecraft.gui.screen() != null) {
 				minecraft.gui.setScreen(null);
 			}
