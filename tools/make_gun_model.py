@@ -9,13 +9,17 @@ import json
 SHELL, SHELL_MID, SHELL_SHADE = (0, 0), (4, 0), (8, 0)
 BLACK_LIT, BLACK = (0, 4), (4, 4)
 GLOW_CORE, GLOW, GLOW_EDGE = (0, 8), (4, 8), (8, 8)
+LIGHT = (12, 8)  # white; tinted the colour the gun last fired (items/portal_gun.json)
 PRONG = (0, 12)
 
 
-def box(fr, to, swatch, emit=0, faces=("north", "east", "south", "west", "up", "down"), turn=None):
+def box(fr, to, swatch, emit=0, faces=("north", "east", "south", "west", "up", "down"), turn=None, tint=False):
     """turn: (axis, angle, origin) rotates the box about origin (vanilla allows -45..45 degrees)."""
     u, v = swatch
     e = {"from": fr, "to": to, "faces": {d: {"uv": [u, v, u + 3, v + 3], "texture": "#gun"} for d in faces}}
+    if tint:
+        for f in e["faces"].values():
+            f["tintindex"] = 0
     if turn:
         axis, angle, origin = turn
         e["rotation"] = {"origin": origin, "axis": axis, "angle": angle}
@@ -31,15 +35,15 @@ elements = [
     box([4, 0, 9.5], [12, 1, 15.5], SHELL_SHADE),
     box([2, 2, 10], [3, 7, 15], SHELL_MID),
     box([13, 2, 10], [14, 7, 15], SHELL_SHADE),
-    box([7, 9, 11], [9, 9.5, 13], GLOW, 15),              # the light on top
+    box([7, 9, 11], [9, 9.5, 13], LIGHT, 15, tint=True),  # the light on top
     # black barrel and its ribbed collar, reaching well ahead of the casing as Portal's does
     box([5, 3, -3], [11, 8, 9], BLACK),
     box([4.5, 2.5, 5], [11.5, 8.5, 6], BLACK_LIT),
     box([4.5, 2.5, 2], [11.5, 8.5, 3], BLACK_LIT),
     box([4.5, 2.5, -1], [11.5, 8.5, 0], BLACK_LIT),
     # the muzzle glow, set back between the claws
-    box([6, 4, -4.5], [10, 7, -3], GLOW, 15),
-    box([7, 4.75, -4.8], [9, 6.25, -4.5], GLOW_CORE, 15),
+    box([6, 4, -4.5], [10, 7, -3], LIGHT, 15, tint=True),
+    box([7, 4.75, -4.8], [9, 6.25, -4.5], LIGHT, 15, tint=True),
     # Portal's three metal claws round the muzzle (top, lower left, lower right): each a finger with
     # a black knuckle on the collar, reaching forward and bending in toward the barrel's axis
     # (x 8, y 5.5) at the tip.

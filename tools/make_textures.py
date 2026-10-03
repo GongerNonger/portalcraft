@@ -98,6 +98,7 @@ def gun_model(path):
         (0, 2): ((226, 250, 255), (180, 236, 255)),  # glow core
         (1, 2): ((96, 200, 255), (70, 170, 240)),    # glow
         (2, 2): ((36, 128, 214), (28, 104, 186)),    # glow, edge
+        (3, 2): ((255, 255, 255), (236, 236, 236)),  # the light: white, tinted by the model (blue or orange)
         (0, 3): ((250, 250, 248), (220, 222, 224)),  # prong
     }
     img = Image.new("RGBA", (16, 16))

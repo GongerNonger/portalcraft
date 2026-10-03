@@ -108,6 +108,7 @@ public final class HostDriver {
 		}
 		loadMap(s.map());
 		HostCollision.setPortals(s.portals());
+		lightFollowsHostPortals(minecraft, s.portals());
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);
 
@@ -513,6 +514,33 @@ public final class HostDriver {
 				}
 			}
 		});
+	}
+
+	/** Where each host portal last was ([0] blue, [1] orange), to see which one was just placed. */
+	private static final Vec3[] lastPortalAt = new Vec3[2];
+
+	/**
+	 * Portal's gun lights up in the colour of the portal it last fired. The host places its own
+	 * portals, so whichever of them just appeared or moved sets the Minecraft gun's light.
+	 */
+	private static void lightFollowsHostPortals(Minecraft minecraft, Proto.HostPortal[] portals) {
+		for (int i = 0; i < Math.min(2, portals.length); i++) {
+			Proto.HostPortal p = portals[i];
+			Vec3 at = p != null && (p.flags() & Proto.PORTAL_ACTIVE) != 0 ? p.origin() : null;
+			boolean placed = at != null && (lastPortalAt[i] == null || lastPortalAt[i].distanceToSqr(at) > 1.0);
+			lastPortalAt[i] = at;
+			var server = minecraft.getSingleplayerServer();
+			if (placed && server != null && minecraft.player != null) {
+				var uuid = minecraft.player.getUUID();
+				dev.portalcraft.PortalColor color = i == 0 ? dev.portalcraft.PortalColor.PRIMARY : dev.portalcraft.PortalColor.SECONDARY;
+				server.execute(() -> {
+					ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+					if (sp != null && sp.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+						dev.portalcraft.PortalGunItem.setLastFired(sp.getMainHandItem(), color);
+					}
+				});
+			}
+		}
 	}
 
 	/**

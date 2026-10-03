@@ -26,7 +26,10 @@ public final class PortalPlacement {
 
 	public static void fire(ServerPlayer player, PortalColor color) {
 		if (PortalGunEvents.FIRE.invoker().onFire(player, color)) {
-			return;
+			return; // a host game fires its own portal (and the light follows what it places)
+		}
+		if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+			PortalGunItem.setLastFired(player.getMainHandItem(), color);
 		}
 		ServerLevel level = player.level();
 		Vec3 eye = player.getEyePosition();
