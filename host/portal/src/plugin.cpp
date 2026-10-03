@@ -268,6 +268,52 @@ bool devMode() {
 	return dev == 1;
 }
 
+// ---- builds whose interface slots were checked --------------------------------------------
+// The calls below go through vtable slots checked by disassembling these exact builds of Portal's
+// DLLs (IServerTools 28-31 in server.dll, VPhysics in vphysics.dll, Con_NPrintf in engine.dll). A
+// Steam update can move them, and a call through a moved slot crashes Portal. So each feature
+// only runs on the build it was checked against (the DLL's link time stamp), unless
+// portalcraft.ini says trust_unknown_build=1; on another build it stays off and says so.
+struct CheckedBuild {
+	const char* module;
+	uint32_t stamp;
+};
+constexpr CheckedBuild kCheckedBuilds[] = {
+	{"server.dll", 0x67578384u},
+	{"vphysics.dll", 0x674532f1u},
+	{"engine.dll", 0x675781e6u},
+};
+
+uint32_t moduleStamp(const char* name) {
+	auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleA(name));
+	if (!base) {
+		return 0;
+	}
+	auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+	auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+	return nt->FileHeader.TimeDateStamp;
+}
+
+// True if `module` is the build its slots were checked on (or the ini trusts any build).
+bool checkedBuild(const char* module) {
+	for (const CheckedBuild& b : kCheckedBuilds) {
+		if (std::strcmp(b.module, module) != 0) {
+			continue;
+		}
+		static bool logged[sizeof kCheckedBuilds / sizeof kCheckedBuilds[0]] = {};
+		size_t i = size_t(&b - kCheckedBuilds);
+		uint32_t stamp = moduleStamp(module);
+		bool ok = stamp == b.stamp || launcher::trustUnknownBuild();
+		if (!ok && !logged[i]) {
+			logged[i] = true;
+			logf("unknown %s build (stamp %08x, checked on %08x): the features using its slots stay off", module, stamp, b.stamp);
+			launcher::notice("PortalCraft: Portal was updated since PortalCraft was checked against it; some features are off (see portalcraft.log)");
+		}
+		return ok;
+	}
+	return true;
+}
+
 // ---- Minecraft's blasts and hits on Portal's props ----------------------------------------
 // Through IServerTools (VSERVERTOOLS002 in server.dll; slots checked in its vtable: 28
 // ClearMultiDamage, 29 ApplyMultiDamage, 30 AddMultiDamage(info, entity), 31 RadiusDamage(info, src,
@@ -311,6 +357,9 @@ DamageInfo damageInfo(float damage, int type, bool fromWorld = false) {
 }
 
 bool serverToolsReady() {
+	if (!checkedBuild("server.dll")) {
+		return false;
+	}
 	if (!g_serverTools) {
 		g_serverTools = engineInterface("server.dll", "VSERVERTOOLS002");
 		logf("server tools %p", g_serverTools);
@@ -576,7 +625,7 @@ void* activeEnvironment() {
 }
 
 void updateBlockPhysics() {
-	if (!g_inLevel || !g_blockDirty) {
+	if (!g_inLevel || !g_blockDirty || !checkedBuild("vphysics.dll")) {
 		return;
 	}
 	if (!g_physics) {
@@ -1823,7 +1872,7 @@ public:
 			worldrender::init(&logf, g_engineFactory);
 		}
 		linkPoll();
-		launcher::frame(mcReady(), g_inLevel, g_engineClient);
+		launcher::frame(mcReady(), g_inLevel, checkedBuild("engine.dll") ? g_engineClient : nullptr);
 		bridgeHealth();
 		updateScripted();
 		updateBlockPhysics();

@@ -86,3 +86,20 @@ Minecraft collision; B is the quick fallback.
 Steve's horizontal speed after a portal until he lands** (no air drag in that flight, Minecraft's
 gravity kept): 90% / 88% / 84% of Portal's distance for 256 / 512 / 1024-unit drops, a small
 mixin, jumps and falls otherwise untouched.
+
+## After a Portal update
+
+The blasts and hits, the health kill, block physics and the corner messages call Portal's engine
+through interface slots checked on one build of each DLL (`kCheckedBuilds` in `plugin.cpp`: the
+link time stamps of `server.dll`, `vphysics.dll`, `engine.dll`). On any other build those features
+stay off and `portalcraft.log` says which DLL changed. To try them anyway, add to
+`Portal/portal/addons/portalcraft.ini`:
+
+```ini
+[PortalCraft]
+trust_unknown_build=1
+```
+
+To support a new build properly: re-check the slots (the RTTI / interface-registration
+disassembly scripts used for these), then update the stamps.
+

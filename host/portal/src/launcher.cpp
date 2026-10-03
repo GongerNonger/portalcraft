@@ -32,6 +32,9 @@ std::string g_launcher, g_arguments, g_directory, g_iniPath, g_mapsDir, g_logPat
 
 enum class State { Unchecked, AlreadyRunning, Started, StartFailed, Off, Linked, Lost };
 State g_state = State::Unchecked;
+bool g_trustUnknownBuild = false;
+std::string g_notice;
+DWORD g_noticeUntil = 0;
 DWORD g_since = 0;
 
 std::string iniString(const char* key, const char* fallback) {
@@ -165,11 +168,22 @@ void init(LogFn log, HMODULE self) {
 	g_mapsDir = g_iniPath.substr(0, g_iniPath.find_last_of('\\'));
 	g_mapsDir = g_mapsDir.substr(0, g_mapsDir.find_last_of('\\')) + "\\maps";
 	g_startWithPortal = GetPrivateProfileIntA("Minecraft", "start_with_portal", 0, path) != 0;
+	g_trustUnknownBuild = GetPrivateProfileIntA("PortalCraft", "trust_unknown_build", 0, path) != 0;
 	g_launcher = iniString("launcher", "");
 	g_arguments = iniString("arguments", "");
 	g_directory = iniString("directory", "");
 	g_logPath = iniString("log", (g_directory + "\\run\\logs\\latest.log").c_str());
 	g_log("launcher: %s: start_with_portal %d, launcher \"%s\"", path, g_startWithPortal ? 1 : 0, g_launcher.c_str());
+}
+
+bool trustUnknownBuild() {
+	return g_trustUnknownBuild;
+}
+
+void notice(const char* text) {
+	if (g_notice.empty()) { // once: the first one says it
+		g_notice = text; // its 10 s start when it's first on screen
+	}
 }
 
 const char* mapsDir() {
@@ -196,6 +210,12 @@ void frame(bool mcLinked, bool inLevel, void* engineClient) {
 	}
 	if (!inLevel) {
 		return;
+	}
+	if (!g_notice.empty() && g_noticeUntil == 0) {
+		g_noticeUntil = GetTickCount() + 10000;
+	}
+	if (!g_notice.empty() && GetTickCount() < g_noticeUntil) {
+		show(engineClient, 2, g_notice.c_str());
 	}
 	DWORD seconds = (GetTickCount() - g_since) / 1000;
 	char text[512];
