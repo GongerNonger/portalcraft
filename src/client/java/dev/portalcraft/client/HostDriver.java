@@ -630,6 +630,7 @@ public final class HostDriver {
 		}
 		lastShots = shots;
 		lastShotAt = System.currentTimeMillis();
+		dev.portalcraft.client.gun.GunAnimation.shot();
 		showShot(minecraft, (shots & 0x80) != 0 ? dev.portalcraft.PortalColor.SECONDARY : dev.portalcraft.PortalColor.PRIMARY);
 	}
 

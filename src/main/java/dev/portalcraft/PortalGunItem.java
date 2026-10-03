@@ -57,7 +57,8 @@ public class PortalGunItem extends Item {
 	 * or keyframes just ignore them.
 	 */
 	private static void light(ItemStack stack, int rgb, long ticks) {
-		List<Integer> colours = List.of(GunLight.flash(rgb, ticks), GunLight.spill(rgb, ticks, true), GunLight.spill(rgb, ticks, false));
+		List<Integer> colours = List.of(GunLight.flash(rgb, ticks), GunLight.spill(rgb, ticks, true), GunLight.spill(rgb, ticks, false),
+			GunLight.shell(rgb, ticks));
 		List<Float> frame = List.of((float) GunLight.keyframe(ticks));
 		var now = stack.get(DataComponents.CUSTOM_MODEL_DATA);
 		if (now == null || !now.colors().equals(colours) || !now.floats().equals(frame)) {

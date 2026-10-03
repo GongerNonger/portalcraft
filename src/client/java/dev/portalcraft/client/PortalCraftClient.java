@@ -24,6 +24,17 @@ public class PortalCraftClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		EntityRendererRegistry.register(PortalCraft.PORTAL, PortalRenderer::new);
+		// The gun's firing animation frame, for item models that have the poses (FireFrame).
+		net.minecraft.client.renderer.item.properties.numeric.RangeSelectItemModelProperties.ID_MAPPER.put(PortalCraft.id("fire_frame"),
+			dev.portalcraft.client.gun.FireFrame.MAP_CODEC);
+		// Right click with the gun (the secondary portal): the animation starts with the click.
+		net.fabricmc.fabric.api.event.player.UseItemCallback.EVENT.register((player, level, hand) -> {
+			if (level.isClientSide() && HostLink.current() == null && player.getItemInHand(hand).is(PortalCraft.PORTAL_GUN)
+				&& !player.getCooldowns().isOnCooldown(player.getItemInHand(hand))) {
+				dev.portalcraft.client.gun.GunAnimation.shot();
+			}
+			return net.minecraft.world.InteractionResult.PASS;
+		});
 
 		// Left click with the gun fires the primary portal instead of attacking or mining.
 		ClientPreAttackCallback.EVENT.register((client, player, clickCount) -> {
@@ -37,6 +48,9 @@ public class PortalCraftClient implements ClientModInitializer {
 			}
 			if (clickCount > 0 && fireCooldown == 0) {
 				fireCooldown = 4;
+				if (HostLink.current() == null) {
+					dev.portalcraft.client.gun.GunAnimation.shot(); // inside a host game its own shots drive it
+				}
 				ClientPlayNetworking.send(new FirePayload((byte) PortalColor.PRIMARY.ordinal()));
 			}
 			return true;

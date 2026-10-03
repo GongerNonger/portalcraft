@@ -41,6 +41,15 @@ public final class GunLight {
 		return mix(rest, lit, fade);
 	}
 
+	/**
+	 * The glow on the gun's white shell (the model's tint 3; those faces keep their own colour, so
+	 * white leaves them alone): a breath of the portal's colour at rest, a pastel wash with the shot.
+	 */
+	public static int shell(int rgb, long ticks) {
+		double left = 1.0 - Math.min(1.0, Math.max(0, ticks) / (double) FLASH_TICKS);
+		return mix(mix(0xFFFFFF, rgb, 0.06), mix(0xFFFFFF, rgb, 0.45), left * left);
+	}
+
 	/** `a` blended `t` of the way to `b`, per channel. */
 	static int mix(int a, int b, double t) {
 		int out = 0;
