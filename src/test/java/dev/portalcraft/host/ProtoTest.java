@@ -9,11 +9,11 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
-/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH2, 236 bytes). */
+/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH3, 292 bytes). */
 class ProtoTest {
 	private static ByteBuffer hostState() {
 		ByteBuffer b = ByteBuffer.allocate(Proto.HOST_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '2');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '3');
 		b.putInt(7).putInt(1); // seq, flags (in game)
 		b.put(new byte[64]); // map
 		b.putFloat(90.0F).putFloat(-10.0F); // yaw, pitch
@@ -33,6 +33,11 @@ class ProtoTest {
 			b.putInt(i + 1).putFloat(i).putFloat(i).putFloat(i).putFloat(0).putFloat(90).putFloat(0);
 		}
 		b.putFloat(0.25F).putFloat(0.75F); // cursor
+		b.putInt(41).putInt(1); // crossBase, crossValid
+		for (float r : new float[] {-1, 0, 0, 0, -1, 0, 0, 0, 1}) {
+			b.putFloat(r); // a half turn about z
+		}
+		b.putFloat(100).putFloat(0).putFloat(0); // crossMove
 		return b.flip();
 	}
 
@@ -51,12 +56,16 @@ class ProtoTest {
 		assertEquals(0.75F, s.cursorY(), 1e-6);
 		assertEquals(true, s.keyDown(26));
 		assertEquals(false, s.keyDown(4));
+		assertNotNull(s.crossing());
+		assertEquals(41, s.crossing().base());
+		assertEquals(90.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).x, 1e-6);
+		assertEquals(5.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).z, 1e-6);
 	}
 
 	@Test
 	void rejectsOtherLayouts() {
 		ByteBuffer b = hostState();
-		b.put(3, (byte) '1'); // PCH1
+		b.put(3, (byte) '2'); // PCH2
 		assertNull(Proto.readHostState(b));
 		assertNull(Proto.readHostState(ByteBuffer.allocate(228).order(ByteOrder.LITTLE_ENDIAN)));
 	}

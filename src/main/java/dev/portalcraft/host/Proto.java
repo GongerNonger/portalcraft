@@ -10,7 +10,7 @@ import net.minecraft.world.phys.Vec3;
 public final class Proto {
 	public static final int HOST_PORT = 27515;
 	public static final int MC_PORT = 27516;
-	public static final int HOST_STATE_SIZE = 236;
+	public static final int HOST_STATE_SIZE = 292;
 	public static final int MC_STATE_SIZE = 76;
 
 	public static final int HOST_IN_GAME = 1;
@@ -40,10 +40,25 @@ public final class Proto {
 		}
 	}
 
+	/**
+	 * HostState's cross fields: the portal crossings Minecraft hasn't applied yet, as one rigid move
+	 * from where Minecraft is once it has applied up to `base` (host units, row-major rotation).
+	 */
+	public record Crossing(int base, double[] rot, Vec3 move) {
+		public Vec3 point(Vec3 p) {
+			return dir(p).add(move);
+		}
+
+		public Vec3 dir(Vec3 v) {
+			return new Vec3(rot[0] * v.x + rot[1] * v.y + rot[2] * v.z, rot[3] * v.x + rot[4] * v.y + rot[5] * v.z,
+				rot[6] * v.x + rot[7] * v.y + rot[8] * v.z);
+		}
+	}
+
 	public record HostState(
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
 		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, int teleportKind, HostPortal[] portals,
-		float cursorX, float cursorY
+		float cursorX, float cursorY, @org.jspecify.annotations.Nullable Crossing crossing
 	) {
 		public boolean inGame() {
 			return (flags & HOST_IN_GAME) != 0;
@@ -68,7 +83,7 @@ public final class Proto {
 
 	public static HostState readHostState(ByteBuffer b) {
 		b.order(ByteOrder.LITTLE_ENDIAN);
-		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '2') {
+		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '3') {
 			return null;
 		}
 		b.position(4);
@@ -99,8 +114,15 @@ public final class Proto {
 			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
 		}
 		float cursorX = b.getFloat(), cursorY = b.getFloat();
+		int crossBase = b.getInt();
+		boolean crossValid = b.getInt() != 0;
+		double[] rot = new double[9];
+		for (int i = 0; i < 9; i++) {
+			rot[i] = b.getFloat();
+		}
+		Vec3 move = vec(b);
 		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, teleportKind, portals, cursorX,
-			cursorY);
+			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null);
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */

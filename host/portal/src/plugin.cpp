@@ -88,6 +88,141 @@ float dist(const Vector& a, const Vector& b) {
 	return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+Vector toVecP(const pcproto::Vec3& v) {
+	return {v.x, v.y, v.z};
+}
+
+// ---- portal crossings, carried through --------------------------------------------------
+// Portal teleports its player through a portal between two server ticks. Minecraft hears of it a
+// tick or two later (teleportAck) and meanwhile sends steps from the old side. We used to stop
+// driving until it answered: Portal's own movement took over, then Minecraft's first steps after
+// the answer were stale, and an infinite fall stalled and jumped at every portal, losing its speed.
+// Now each crossing is kept as the rigid move it is, p' = r p + t, and every Minecraft step from
+// before it is carried through it. Minecraft gets the same move (HostState cross fields) and
+// carries its own current position and velocity through, so both sides agree with no gap.
+struct Xf {
+	float r[9]; // row-major
+	Vector t;
+};
+
+Xf xfIdentity() {
+	return {{1, 0, 0, 0, 1, 0, 0, 0, 1}, {0, 0, 0}};
+}
+
+Vector xfDir(const Xf& x, const Vector& v) {
+	return {x.r[0] * v.x + x.r[1] * v.y + x.r[2] * v.z, x.r[3] * v.x + x.r[4] * v.y + x.r[5] * v.z,
+		x.r[6] * v.x + x.r[7] * v.y + x.r[8] * v.z};
+}
+
+Vector xfPoint(const Xf& x, const Vector& p) {
+	Vector d = xfDir(x, p);
+	return {d.x + x.t.x, d.y + x.t.y, d.z + x.t.z};
+}
+
+// `first`, then `second`.
+Xf xfThen(const Xf& first, const Xf& second) {
+	Xf out{};
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			out.r[i * 3 + j] = second.r[i * 3] * first.r[j] + second.r[i * 3 + 1] * first.r[3 + j] + second.r[i * 3 + 2] * first.r[6 + j];
+		}
+	}
+	out.t = xfPoint(second, first.t);
+	return out;
+}
+
+// Source's AngleVectors (degrees): forward, right, up.
+void angleBasis(const pcproto::Vec3& a, Vector* f, Vector* r, Vector* u) {
+	const float k = 3.14159265f / 180.0f;
+	float sp = std::sin(a.x * k), cp = std::cos(a.x * k), sy = std::sin(a.y * k), cy = std::cos(a.y * k);
+	float sr = std::sin(a.z * k), cr = std::cos(a.z * k);
+	*f = {cp * cy, cp * sy, -sp};
+	*r = {-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp};
+	*u = {cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp};
+}
+
+struct Crossing {
+	uint32_t seq; // the host move (teleportSeq) it is
+	Xf xf;
+};
+constexpr int kCrossings = 8;
+Crossing g_crossings[kCrossings];
+int g_crossingCount = 0;
+uint32_t g_opaqueSeq = 0;                 // the newest host move that isn't a crossing (a level start, a trigger_teleport)
+pcproto::HostPortal g_portalsNow[2] = {}; // as last sent
+
+// The host moves after `from`, up to and including `to`, as one move; false if one of them isn't a
+// crossing (then there's nothing to carry through: Minecraft has to take it first).
+bool crossingsBetween(uint32_t from, uint32_t to, Xf* out) {
+	if (g_opaqueSeq > from && g_opaqueSeq <= to) {
+		return false;
+	}
+	Xf x = xfIdentity();
+	for (int i = 0; i < g_crossingCount; i++) {
+		if (g_crossings[i].seq > from && g_crossings[i].seq <= to) {
+			x = xfThen(x, g_crossings[i].xf);
+		}
+	}
+	*out = x;
+	return true;
+}
+
+bool anyCrossingAfter(uint32_t from) {
+	for (int i = 0; i < g_crossingCount; i++) {
+		if (g_crossings[i].seq > from) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// Portal moved the player from `before` to `after` by itself: if that's a linked portal carrying it
+// to the other one (the in-portal's frame turned half round about its long axis, onto the out's),
+// the move as a crossing. Anchored on the two points, so Portal's own fix-ups (keeping the player
+// upright out of a floor or ceiling) are in it exactly.
+bool portalCrossing(const Vector& before, const Vector& after, Xf* out) {
+	const pcproto::HostPortal* p = g_portalsNow;
+	if (!(p[0].flags & pcproto::kPortalLinked) || !(p[1].flags & pcproto::kPortalLinked)) {
+		return false;
+	}
+	float bestError = 128.0f;
+	bool found = false;
+	for (int i = 0; i < 2; i++) {
+		const pcproto::HostPortal& in = p[i];
+		const pcproto::HostPortal& to = p[1 - i];
+		if (dist(before, toVecP(in.origin)) > 192.0f) {
+			continue;
+		}
+		Vector fa, ra, ua, fb, rb, ub;
+		angleBasis(in.angles, &fa, &ra, &ua);
+		angleBasis(to.angles, &fb, &rb, &ub);
+		const Vector* a[3] = {&fa, &ra, &ua};
+		const Vector* b[3] = {&fb, &rb, &ub};
+		const float sign[3] = {-1.0f, -1.0f, 1.0f}; // forward and right turn round, up stays
+		Xf x{};
+		for (int r = 0; r < 3; r++) {
+			for (int c = 0; c < 3; c++) {
+				float v = 0.0f;
+				for (int k = 0; k < 3; k++) {
+					v += sign[k] * (&b[k]->x)[r] * (&a[k]->x)[c];
+				}
+				x.r[r * 3 + c] = v;
+			}
+		}
+		Vector d = xfDir(x, {before.x - in.origin.x, before.y - in.origin.y, before.z - in.origin.z});
+		Vector predicted{to.origin.x + d.x, to.origin.y + d.y, to.origin.z + d.z};
+		float error = dist(predicted, after);
+		if (error < bestError) {
+			bestError = error;
+			Vector turned = xfDir(x, before);
+			x.t = {after.x - turned.x, after.y - turned.y, after.z - turned.z};
+			*out = x;
+			found = true;
+		}
+	}
+	return found;
+}
+
 // ---- send-table field lookup (pattern-free, by name) ---------------------------------
 
 int findProp(sdk::SendTable* table, const char* name, int base, int depth = 0) {
@@ -142,6 +277,7 @@ void dropAppliedShoves(uint32_t ack); // the player puppet, below
 struct TickSample {
 	uint32_t seq;
 	pcproto::Vec3 pos;
+	uint32_t ack; // Minecraft's teleportAck when it sent this step: which side of later crossings it's on
 };
 constexpr int kTickHistory = 8;
 TickSample g_ticks[kTickHistory] = {};
@@ -819,20 +955,36 @@ void linkPoll() {
 				dropAppliedShoves(g_mc.teleportAck);
 				// Minecraft just applied a move: its earlier steps are from before it, and playing them
 				// back (one step behind) would put the player back where he was (outside the map after a
-				// Portal restart; a step back along a fling after a portal, the snap). Keep the timeline
-				// but move those steps to where Minecraft is now, so playback starts from the new place.
+				// Portal restart; a step back along a fling after a portal, the snap). Portal crossings
+				// carry those steps through (Minecraft carried itself the same way); any other move keeps
+				// the timeline but moves them to where Minecraft is now, so playback starts from there.
 				for (TickSample& t : g_ticks) {
-					if (t.seq != 0) {
+					if (t.seq == 0 || t.ack == g_mc.teleportAck) {
+						continue;
+					}
+					Xf x;
+					if (anyCrossingAfter(t.ack) && crossingsBetween(t.ack, g_mc.teleportAck, &x)) {
+						Vector p = xfPoint(x, toVecP(t.pos));
+						t.pos = {p.x, p.y, p.z};
+					} else {
 						t.pos = g_mc.origin;
 					}
+					t.ack = g_mc.teleportAck;
 				}
+				int kept = 0;
+				for (int i = 0; i < g_crossingCount; i++) {
+					if (g_crossings[i].seq > g_mc.teleportAck) {
+						g_crossings[kept++] = g_crossings[i];
+					}
+				}
+				g_crossingCount = kept;
 			}
 			if (g_mc.tickSeq != g_tickSeq) {
 				// A physics step just ended in Minecraft. Keep it, and fold its arrival time into a
 				// slow average of where Minecraft's 20 Hz timeline sits on our clock: arrival jitter
 				// averages out instead of jerking the camera.
 				g_tickSeq = g_mc.tickSeq;
-				g_ticks[g_tickSeq % kTickHistory] = {g_tickSeq, g_mc.tickCurrent};
+				g_ticks[g_tickSeq % kTickHistory] = {g_tickSeq, g_mc.tickCurrent, g_mc.teleportAck};
 				double sample = nowSeconds() - g_tickSeq * 0.05;
 				if (!g_haveOffset || sample - g_tickOffset > 0.2 || sample - g_tickOffset < -0.2) {
 					g_tickOffset = sample; // first step, or Minecraft stalled: start over
@@ -988,8 +1140,9 @@ void dropAppliedShoves(uint32_t ack) {
 	}
 }
 
+// Driving, unless a host move Minecraft must take first is on its way (a portal crossing isn't one).
 bool following() {
-	return mcReady() && (g_mc.teleportAck == g_teleportSeq || !g_hardPending);
+	return mcReady() && (g_mc.teleportAck == g_teleportSeq || !g_hardPending || g_mc.teleportAck >= g_opaqueSeq);
 }
 
 Vector toVec(const pcproto::Vec3& v) {
@@ -1013,10 +1166,18 @@ const TickSample* tickAt(uint32_t seq) {
 	return t.seq == seq && seq != 0 ? &t : nullptr;
 }
 
+// A step of Minecraft's, carried through the crossings Minecraft hadn't taken when it sent it.
+Vector stepNow(const TickSample& t) {
+	Xf x;
+	return anyCrossingAfter(t.ack) && crossingsBetween(t.ack, g_teleportSeq, &x) ? xfPoint(x, toVec(t.pos)) : toVec(t.pos);
+}
+
 Vector interpolatedMinecraft(Vector* velocity) {
-	*velocity = toVec(g_mc.velocity);
+	Xf now = xfIdentity();
+	bool carried = anyCrossingAfter(g_mc.teleportAck) && crossingsBetween(g_mc.teleportAck, g_teleportSeq, &now);
+	*velocity = carried ? xfDir(now, toVec(g_mc.velocity)) : toVec(g_mc.velocity);
 	if (!g_haveOffset) {
-		return toVec(g_mc.origin);
+		return carried ? xfPoint(now, toVec(g_mc.origin)) : toVec(g_mc.origin);
 	}
 	double ticks = (nowSeconds() - g_tickOffset) / 0.05 - 1.0;
 	if (ticks > double(g_tickSeq)) {
@@ -1027,13 +1188,13 @@ Vector interpolatedMinecraft(Vector* velocity) {
 	const TickSample* b = tickAt(k + 1);
 	if (!a) {
 		const TickSample* newest = tickAt(g_tickSeq);
-		return newest ? toVec(newest->pos) : toVec(g_mc.origin);
+		return newest ? stepNow(*newest) : carried ? xfPoint(now, toVec(g_mc.origin)) : toVec(g_mc.origin);
 	}
-	Vector pa = toVec(a->pos);
+	Vector pa = stepNow(*a);
 	if (!b) {
 		return pa;
 	}
-	Vector pb = toVec(b->pos);
+	Vector pb = stepNow(*b);
 	*velocity = {(pb.x - pa.x) * 20.0f, (pb.y - pa.y) * 20.0f, (pb.z - pa.z) * 20.0f};
 	if (dist(pa, pb) > 64.0f) {
 		return pb; // a teleport between the two steps: don't smear it across the map
@@ -1161,6 +1322,12 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		bool hard = g_needSync || !g_haveSet || dist(origin, g_lastSet) > 24.0f;
 		g_teleportKind = hard ? pcproto::kMoveTeleport : impulse ? pcproto::kMoveImpulse : pcproto::kMoveShove;
 		if (hard) {
+			Xf x;
+			if (!g_needSync && g_haveSet && g_crossingCount < kCrossings && portalCrossing(g_lastSet, origin, &x)) {
+				g_crossings[g_crossingCount++] = {g_teleportSeq, x};
+			} else {
+				g_opaqueSeq = g_teleportSeq;
+			}
 			g_hardPending = true;
 			g_shoveCount = 0;
 		} else {
@@ -1172,7 +1339,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 		if (hard) {
 			logf("handing teleport %u to Minecraft: (%.1f %.1f %.1f)%s", g_teleportSeq, origin.x, origin.y, origin.z,
-				g_needSync ? " [level start]" : "");
+				g_needSync ? " [level start]" : g_opaqueSeq == g_teleportSeq ? "" : " [portal crossing, carried]");
 		}
 		g_needSync = false;
 	}
@@ -1827,7 +1994,7 @@ void fillCursor(pcproto::HostState& s) {
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH2", 4);
+	std::memcpy(s.magic, "PCH3", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
@@ -1876,6 +2043,15 @@ void sendState() {
 	s.teleportKind = g_teleportKind;
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
+	}
+	std::memcpy(g_portalsNow, s.portals, sizeof g_portalsNow);
+	Xf cross;
+	if (g_teleportKind == pcproto::kMoveTeleport && g_mc.teleportAck != g_teleportSeq && anyCrossingAfter(g_mc.teleportAck) &&
+		crossingsBetween(g_mc.teleportAck, g_teleportSeq, &cross)) {
+		s.crossBase = g_mc.teleportAck;
+		s.crossValid = 1;
+		std::memcpy(s.crossRot, cross.r, sizeof s.crossRot);
+		s.crossMove = {cross.t.x, cross.t.y, cross.t.z};
 	}
 	fillCursor(s);
 	s.wheel = int8_t(g_wheelDelta / WHEEL_DELTA);
@@ -2016,6 +2192,8 @@ public:
 		g_haveOrigin = false;
 		g_shoveCount = 0;
 		g_hardPending = false;
+		g_crossingCount = 0;
+		g_opaqueSeq = 0;
 		g_checkedLayout = false;
 		g_po = PortalOffsets{};
 		g_portalCount = 0;

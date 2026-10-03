@@ -590,6 +590,20 @@ public final class HostDriver {
 			} else if (s.teleportKind() == Proto.MOVE_SHOVE && player.position().distanceToSqr(to) < 0.6 * 0.6) {
 				// A shove (a prop, a lift): just take the place, keep our own momentum.
 				player.setPos(to);
+			} else if (s.crossing() != null && s.teleportKind() == Proto.MOVE_TELEPORT) {
+				// Portal crossings: carry where Steve is now (and how fast) through them. Jumping to
+				// teleportOrigin instead set him back the tick or two the move took to arrive, and the
+				// host, playing Minecraft's steps back, saw him stall and jump at every portal.
+				Proto.Crossing c = s.crossing();
+				if (c.base() != teleportAck) {
+					return; // composed from an older answer of ours: the next state has the right one
+				}
+				Vec3 pos = Units.toMc(c.point(Units.toSrc(player.position())));
+				Vec3 velocity = Units.velocityToMc(c.dir(Units.velocityToSrc(player.getDeltaMovement())));
+				teleport(minecraft, player, pos, velocity);
+				if (velocity.lengthSqr() > 0.1 * 0.1) {
+					PortalAir.startFling();
+				}
 			} else {
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);

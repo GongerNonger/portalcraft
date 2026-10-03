@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH2"
+	char magic[4]; // "PCH3"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -75,6 +75,15 @@ struct HostState {
 	// -1 when there is none. Only meaningful while Minecraft has a screen open (McFlags kMcScreen):
 	// the host then lets go of the mouse, so the player points at Minecraft's inventory with it.
 	float cursorX, cursorY;
+	// PCH3: portal crossings Minecraft hasn't applied yet, as one rigid move from the place Minecraft
+	// is in now (it has applied teleportSeq up to crossBase): p' = crossRot * p + crossMove (host
+	// units; rows), velocities by crossRot alone. Set when every host move after crossBase is a
+	// portal crossing; then Minecraft carries its own current position and velocity through instead
+	// of jumping to teleportOrigin, which is a tick or two old by the time it arrives.
+	uint32_t crossBase;
+	uint32_t crossValid; // 1: the cross fields are meaningful
+	float crossRot[9];
+	Vec3 crossMove;
 };
 
 enum McFlags : uint32_t {
@@ -368,7 +377,7 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 236, "HostState layout");
+static_assert(sizeof(HostState) == 292, "HostState layout");
 static_assert(sizeof(McState) == 76, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
