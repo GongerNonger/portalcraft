@@ -81,6 +81,7 @@ New-Item -ItemType Directory $stage -Force | Out-Null
 Copy-Item (Join-Path $root "tools\release\*") $stage
 Copy-Item (Join-Path $root "tools\find-portal.ps1") $stage
 Copy-Item (Join-Path $root "THIRD-PARTY-NOTICES.md") $stage
+Copy-Item (Join-Path $root "LICENSE") (Join-Path $stage "LICENSE.txt")
 New-Item -ItemType Directory (Join-Path $stage "plugin") -Force | Out-Null
 Copy-Item $dll (Join-Path $stage "plugin\portalcraft.dll")
 

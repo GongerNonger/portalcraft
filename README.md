@@ -110,3 +110,11 @@ for the Portal / Portal with RTX plan.
 
 Portals here are opaque ovals. Seeing through them is left to the host game, which already renders
 real portals.
+
+## License
+
+PortalCraft is MIT-licensed (`LICENSE`): use it, change it, share it, as long as the copyright
+notice stays with it. Parts follow SkyCraft (MIT) and releases bundle Prism Launcher (GPL-3.0) and
+Fabric API (Apache-2.0); see `THIRD-PARTY-NOTICES.md`. Not affiliated with Valve, Mojang or
+Microsoft: you need to own Portal and Minecraft: Java Edition.
+
