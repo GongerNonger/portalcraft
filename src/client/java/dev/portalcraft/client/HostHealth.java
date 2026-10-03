@@ -32,6 +32,8 @@ final class HostHealth {
 	private static float pending;
 	private static boolean kill;
 	private static int sinceApplied = BATCH_TICKS;
+	/** Steve's death was reported and he hasn't been alive since. */
+	private static boolean dead;
 	/** Starts anywhere, so a restarted Minecraft's first death isn't taken for one the host already handled. */
 	private static int deathSeq = (int) System.nanoTime();
 
@@ -40,6 +42,9 @@ final class HostHealth {
 
 	/** Once a client tick while linked: takes the host's hurts and applies them in batches. */
 	static void tick(Minecraft minecraft, LocalPlayer player) {
+		if (!player.isDeadOrDying()) {
+			dead = false;
+		}
 		for (HostLink.Hurt h; (h = HostLink.takeHurt()) != null;) {
 			if (h.kill()) {
 				kill = true;
@@ -77,6 +82,10 @@ final class HostHealth {
 
 	/** Steve just died: the host's player dies too. Sent three times (UDP); the host keeps one. */
 	static void died() {
+		if (dead) {
+			return; // still the same death (dying lasts a couple of ticks before the respawn)
+		}
+		dead = true;
 		deathSeq++;
 		for (int i = 0; i < 3; i++) {
 			ByteBuffer b = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN);

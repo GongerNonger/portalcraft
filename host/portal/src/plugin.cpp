@@ -439,6 +439,8 @@ bool g_wasAlive = false;
 bool g_killedForMc = false; // Portal's player died because Steve did: don't kill Steve back
 bool g_killPending = false;
 uint32_t g_mcDeathSeq = 0;
+DWORD g_deadSince = 0;
+bool g_reloadSent = false;
 
 bool following();
 
@@ -489,6 +491,17 @@ void bridgeHealth() {
 		if (g_wasAlive && !g_killedForMc && mcReady()) {
 			logf("health: Portal's player died; so does Steve");
 			sendHurt(0.0f, 1);
+		}
+		if (g_wasAlive) {
+			g_deadSince = GetTickCount();
+			g_reloadSent = false;
+		}
+		// Single-player Portal waits for a key before it reloads; Steve is already back on his feet
+		// in Minecraft, so after a moment Portal goes back to its last checkpoint by itself.
+		if (!g_reloadSent && mcReady() && GetTickCount() - g_deadSince > 4000) {
+			g_reloadSent = true;
+			logf("health: reloading Portal's last checkpoint");
+			sdk::serverCommand(g_engineServer, "reload\n");
 		}
 		g_wasAlive = false;
 		g_hurtPending = 0.0f;
