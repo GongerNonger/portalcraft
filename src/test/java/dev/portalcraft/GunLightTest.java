@@ -21,6 +21,19 @@ class GunLightTest {
 		}
 	}
 
+	@Test
+	void spillRestsNearGreyAndFlaresWithTheShot() {
+		for (int rgb : new int[] {GunLight.BLUE, GunLight.ORANGE}) {
+			for (boolean near : new boolean[] {true, false}) {
+				int rest = GunLight.spill(rgb, GunLight.FLASH_TICKS, near);
+				assertTrue(Math.abs(brightness(rest) - brightness(GunLight.UNLIT)) < 60, "a hint, not a repaint");
+				assertTrue(brightness(GunLight.spill(rgb, 0, near)) > brightness(rest), "lit by the shot");
+				assertEquals(rest, GunLight.spill(rgb, 99, near));
+			}
+			assertTrue(brightness(GunLight.spill(rgb, 0, true)) > brightness(GunLight.spill(rgb, 0, false)), "brighter near the tube");
+		}
+	}
+
 	private static int brightness(int rgb) {
 		return ((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
 	}

@@ -47,13 +47,19 @@ public class PortalGunItem extends Item {
 	public static void setLastFired(ServerPlayer player, ItemStack stack, PortalColor color) {
 		int rgb = color == PortalColor.PRIMARY ? BLUE : ORANGE;
 		FLASHES.put(player.getUUID(), new Flash(rgb, player.level().getGameTime()));
-		tint(stack, GunLight.flash(rgb, 0));
+		light(stack, rgb, 0);
 	}
 
-	private static void tint(ItemStack stack, int rgb) {
+	/**
+	 * The gun's colours `ticks` into a shot of `rgb` (FLASH_TICKS or more: at rest), as the item's
+	 * custom model data: [0] the light itself, [1] and [2] what it throws on the gun around it
+	 * (GunLight.spill; models without those tints just ignore them).
+	 */
+	private static void light(ItemStack stack, int rgb, long ticks) {
+		List<Integer> colours = List.of(GunLight.flash(rgb, ticks), GunLight.spill(rgb, ticks, true), GunLight.spill(rgb, ticks, false));
 		var now = stack.get(DataComponents.CUSTOM_MODEL_DATA);
-		if (now == null || now.getColor(0) == null || now.getColor(0) != rgb) {
-			stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of(), List.of(), List.of(), List.of(rgb)));
+		if (now == null || !now.colors().equals(colours)) {
+			stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of(), List.of(), List.of(), colours));
 		}
 	}
 
@@ -70,9 +76,9 @@ public class PortalGunItem extends Item {
 		long ticks = level.getGameTime() - flash.start();
 		if (ticks >= FLASH_TICKS || ticks < 0) {
 			FLASHES.remove(entity.getUUID(), flash);
-			tint(stack, flash.rgb());
+			light(stack, flash.rgb(), FLASH_TICKS);
 		} else {
-			tint(stack, GunLight.flash(flash.rgb(), ticks));
+			light(stack, flash.rgb(), ticks);
 		}
 	}
 
