@@ -141,7 +141,7 @@ public final class PlayerCrossings {
 			from = carryCentre(in, out, crossing);
 			to = carryCentre(in, out, to);
 			prev = carryCentre(in, out, prev);
-			v = out.carry(in, v);
+			v = exitVelocity(out, out.carry(in, v));
 			skip = 1 - hit;
 			made++;
 			count++;
@@ -154,6 +154,27 @@ public final class PlayerCrossings {
 			return null;
 		}
 		return new Carried(to.subtract(up), prev.subtract(up), v, made);
+	}
+
+	/** Portal's own numbers (prop_portal.cpp), units/s. */
+	private static final double MIN_FLOOR_EXIT_SPEED = 300.0, MAX_EXIT_SPEED = 1000.0;
+
+	/**
+	 * Portal's rules for a player's velocity coming out of a portal: out of one in the floor, at
+	 * least 300 units/s upward (so stepping into a floor portal throws you clear of the other one
+	 * instead of dropping you back in), and never faster than 1000 units/s, which is what an
+	 * infinite fall tops out at.
+	 */
+	public static Vec3 exitVelocity(Proto.HostPortal out, Vec3 v) {
+		return exitVelocity(new HostPortalTransit.Frame(out), v);
+	}
+
+	private static Vec3 exitVelocity(HostPortalTransit.Frame out, Vec3 v) {
+		if (out.forward.z > 0.7071 && v.z < MIN_FLOOR_EXIT_SPEED) {
+			v = new Vec3(v.x, v.y, MIN_FLOOR_EXIT_SPEED);
+		}
+		double speed = v.length();
+		return speed > MAX_EXIT_SPEED ? v.scale(MAX_EXIT_SPEED / speed) : v;
 	}
 
 	/** Feet as the host should see them: back through the crossings it hasn't matched yet. */

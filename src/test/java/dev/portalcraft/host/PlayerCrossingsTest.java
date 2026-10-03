@@ -29,11 +29,11 @@ class PlayerCrossingsTest {
 	@Test
 	void fallsThroughTheFloorAndOutOfTheCeiling() {
 		// Centre from 46 to -14: 14 behind the floor portal, so 14 in front of (below) the ceiling one.
-		PlayerCrossings.Carried c = PlayerCrossings.step(LOOP, new Vec3(0, 0, 10), new Vec3(0, 0, -50), new Vec3(0, 0, -1200), HALF);
+		PlayerCrossings.Carried c = PlayerCrossings.step(LOOP, new Vec3(0, 0, 10), new Vec3(0, 0, -50), new Vec3(0, 0, -800), HALF);
 		assertNotNull(c);
 		assertEquals(1, c.crossings());
 		assertEquals(200 - 14 - HALF, c.feet().z, 1e-6);
-		assertEquals(-1200, c.velocity().z, 1e-6); // still falling, as fast
+		assertEquals(-800, c.velocity().z, 1e-6); // still falling, as fast
 		assertEquals(0.0, c.feet().x, 1e-6);
 		assertEquals(0.0, c.feet().y, 1e-6);
 	}
@@ -58,13 +58,28 @@ class PlayerCrossingsTest {
 		assertEquals(straight.x, back.x, 1e-6);
 		assertEquals(straight.y, back.y, 1e-6);
 		assertEquals(straight.z, back.z, 1e-6);
-		assertEquals(-3500, PlayerCrossings.unfoldDir(c.velocity()).z, 1e-6);
+		assertEquals(-1000, PlayerCrossings.unfoldDir(c.velocity()).z, 1e-6); // Portal's top exit speed
 
 		PlayerCrossings.matched(1); // Portal made the first one: only the second is unfolded now
 		Vec3 once = PlayerCrossings.unfold(c.feet());
 		assertEquals(200 - 264 - HALF, once.z, 1e-6);
 		PlayerCrossings.matched(2);
 		assertEquals(c.feet().z, PlayerCrossings.unfold(c.feet()).z, 1e-6);
+	}
+
+	@Test
+	void aFloorPortalThrowsYouClear() {
+		// Two floor portals: stepping slowly into one comes out of the other at Portal's 300 units/s.
+		Proto.HostPortal[] floors = {LOOP[0],
+			new Proto.HostPortal(Proto.PORTAL_EXISTS | Proto.PORTAL_ACTIVE | Proto.PORTAL_LINKED, new Vec3(400, 0, 0), new Vec3(-90, 0, 0))};
+		PlayerCrossings.Carried slow = PlayerCrossings.step(floors, new Vec3(0, 0, -30), new Vec3(0, 0, -40), new Vec3(0, 0, -100), HALF);
+		assertNotNull(slow);
+		assertEquals(300, slow.velocity().z, 1e-6);
+		assertEquals(400, slow.feet().x, 1e-6);
+		// ... and a fall into one carries its speed out of the other, upward.
+		PlayerCrossings.Carried fast = PlayerCrossings.step(floors, new Vec3(0, 0, -30), new Vec3(0, 0, -50), new Vec3(0, 0, -700), HALF);
+		assertNotNull(fast);
+		assertEquals(700, fast.velocity().z, 1e-6);
 	}
 
 	@Test

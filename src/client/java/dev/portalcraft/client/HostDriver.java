@@ -672,8 +672,17 @@ public final class HostDriver {
 					// crossing. He's already out; stop unfolding it and take the move as done.
 					PlayerCrossings.forgetPending();
 				} else {
-					Vec3 pos = Units.toMc(c.point(Units.toSrc(player.position())));
-					Vec3 velocity = Units.velocityToMc(c.dir(Units.velocityToSrc(player.getDeltaMovement())));
+					Vec3 out = c.point(Units.toSrc(player.position()));
+					Vec3 pos = Units.toMc(out);
+					Vec3 carried = c.dir(Units.velocityToSrc(player.getDeltaMovement()));
+					// Portal's exit rules (a floor portal throws you clear; nothing leaves faster than 1000),
+					// for the portal he came out of: the nearer one.
+					Proto.HostPortal[] ps = s.portals();
+					if (ps.length >= 2 && ps[0] != null && ps[1] != null) {
+						Proto.HostPortal exit = ps[0].origin().distanceToSqr(out) <= ps[1].origin().distanceToSqr(out) ? ps[0] : ps[1];
+						carried = PlayerCrossings.exitVelocity(exit, carried);
+					}
+					Vec3 velocity = Units.velocityToMc(carried);
 					teleport(minecraft, player, pos, velocity);
 					if (velocity.lengthSqr() > 0.1 * 0.1) {
 						PortalAir.startFling();
