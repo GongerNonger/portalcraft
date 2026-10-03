@@ -1,7 +1,22 @@
 # PortalCraft
 
-A portal gun for Minecraft 26.3 (Fabric). Fire two linked portals onto any solid surface and walk, fall
-or fling through them, with momentum carried through.
+Play **Portal as Steve**: Minecraft's movement, inventory, HUD, blocks, mobs and TNT inside real
+Steam Portal, with Portal's own portals, cubes, buttons and turrets. Plus a portal gun for plain
+Minecraft 26.3 (Fabric).
+
+![Steve in Portal's relaxation vault, with an orange portal behind him](docs/screenshots/steve-in-the-relaxation-vault.jpg)
+
+| | |
+|---|---|
+| ![Steve seen through a blue portal](docs/screenshots/steve-through-a-portal.jpg) | ![A stone pillar built in a test chamber](docs/screenshots/building-in-a-test-chamber.jpg) |
+| Steve, seen through one of Portal's portals | Minecraft blocks built in a test chamber |
+| ![A pig and a portal, TNT in hand](docs/screenshots/pig-tnt-and-portals.jpg) | |
+| Mobs and TNT next to Portal's portals | |
+
+## The portal gun in plain Minecraft
+
+Fire two linked portals onto any solid surface and walk, fall or fling through them, with momentum
+carried through.
 
 | Input | Does |
 |---|---|
