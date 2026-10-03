@@ -1702,6 +1702,11 @@ LRESULT CALLBACK wheelWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	if (msg == WM_MOUSEWHEEL) {
 		g_wheelDelta += GET_WHEEL_DELTA_WPARAM(wParam);
 	}
+	// F5 is Minecraft's camera (it reads keys by polling, so it still sees it); Portal would also
+	// take a screenshot with it, every press. Portal doesn't get it while Minecraft is linked.
+	if ((msg == WM_KEYDOWN || msg == WM_KEYUP) && wParam == VK_F5 && mcReady()) {
+		return 0;
+	}
 	if (g_mouseFreed) {
 		if (msg == WM_CHAR && wParam >= 32 && g_typedCount < 64) {
 			g_typed[g_typedCount++] = uint16_t(wParam);

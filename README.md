@@ -101,7 +101,6 @@ Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
 - After a Portal update, the features that call engine slots checked on today's build (blasts,
   block physics, the health kill, corner messages) turn themselves off until they're re-checked
   (`docs/PORTAL_MECHANICS.md`, "After a Portal update").
-- F5 also takes a Portal screenshot unless you unbind it in Portal (`unbind F5`).
 
 ## Host-game bridges
 
