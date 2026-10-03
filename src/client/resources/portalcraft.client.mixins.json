@@ -8,7 +8,6 @@
 		"InputConstantsMixin",
 		"LevelRendererMixin",
 		"LevelLoadTrackerMixin",
-		"HandItemMixin",
 		"WindowMixin",
 		"LevelExtractorMixin",
 		"SpriteContentsAccessor",

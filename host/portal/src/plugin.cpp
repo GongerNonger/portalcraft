@@ -1780,18 +1780,10 @@ void sendState() {
 	if (g_scripted) {
 		s.flags |= pcproto::kHostScripted;
 	}
-	// One portal gun on screen: Portal's own (it animates as it fires) while Steve holds Minecraft's
-	// and Portal's player has one; otherwise Minecraft's hand, and Portal's gun stays hidden.
-	bool portalHasGun = false;
-	if (uint8_t* base = playerFields(); base && g_pl.activeWeapon >= 0) {
-		uint32_t weapon = *reinterpret_cast<uint32_t*>(base + g_pl.activeWeapon);
-		portalHasGun = weapon != 0xFFFFFFFFu && weapon != 0;
-	}
-	bool showPortalGun = portalHasGun && (!mcReady() || g_mc.holdingPortalGun);
-	camera::setViewModel(showPortalGun);
-	if (showPortalGun && mcReady()) {
-		s.flags |= pcproto::kHostGun;
-	}
+	// Steve holds the Minecraft portal gun in his hand; Portal's own gun model (its viewmodel) isn't
+	// drawn over it while Minecraft is linked. Portal's portal-gun HUD (the crosshair halves that show
+	// which portals are placed) stays: it isn't part of the viewmodel.
+	camera::setViewModel(!mcReady());
 	if (!g_engineClient) {
 		g_engineClient = engineInterface("engine.dll", "VEngineClient013");
 	}

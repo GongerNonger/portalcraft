@@ -85,6 +85,28 @@ def gun(path):
                 img.putpixel((x, y), P[out[y][x]])
     img.save(path)
 
+def gun_model(path):
+    """16x16 palette for the 3D in-hand portal gun (models/item/portal_gun_in_hand.json): 4x4
+    swatches with a lit edge, the way vanilla's spyglass texture is laid out. Rows: white shell,
+    black core, the glow, the prongs."""
+    sw = {
+        (0, 0): ((246, 246, 242), (226, 228, 228)),  # shell, lit
+        (1, 0): ((214, 216, 218), (196, 198, 200)),  # shell
+        (2, 0): ((168, 172, 178), (150, 154, 162)),  # shell, shade
+        (0, 1): ((84, 86, 98), (64, 66, 76)),        # black, lit
+        (1, 1): ((46, 46, 54), (36, 36, 42)),        # black
+        (0, 2): ((226, 250, 255), (180, 236, 255)),  # glow core
+        (1, 2): ((96, 200, 255), (70, 170, 240)),    # glow
+        (2, 2): ((36, 128, 214), (28, 104, 186)),    # glow, edge
+        (0, 3): ((250, 250, 248), (220, 222, 224)),  # prong
+    }
+    img = Image.new("RGBA", (16, 16))
+    for (cx, cy), (main, edge) in sw.items():
+        for y in range(4):
+            for x in range(4):
+                img.putpixel((cx * 4 + x, cy * 4 + y), (*(edge if x == 3 or y == 3 else main), 255))
+    img.save(path)
+
 if __name__ == "__main__":
     import os
     os.makedirs(f"{ROOT}/entity", exist_ok=True)
@@ -92,4 +114,5 @@ if __name__ == "__main__":
     portal((42, 140, 255), f"{ROOT}/entity/portal_primary.png")
     portal((255, 138, 30), f"{ROOT}/entity/portal_secondary.png")
     gun(f"{ROOT}/item/portal_gun.png")
+    gun_model(f"{ROOT}/item/portal_gun_model.png")
     print("textures written")

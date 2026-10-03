@@ -41,6 +41,8 @@ public final class HostPortalTransit {
 	}
 
 	private static final Map<Entity, Pending> PENDING = new WeakHashMap<>();
+	private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger("portalcraft");
+	private static int logged;
 
 	private HostPortalTransit() {
 	}
@@ -139,6 +141,9 @@ public final class HostPortalTransit {
 		float yaw = (float) (Mth.atan2(-look.x, look.z) * Mth.RAD_TO_DEG);
 		float pitch = (float) (Math.asin(Mth.clamp(-look.normalize().y, -1.0, 1.0)) * Mth.RAD_TO_DEG);
 
+		if (logged++ < 10) {
+			LOG.info("PortalCraft: {} went through a host portal: out at {} with velocity {}", e.getType().getDescriptionId(), target, newVelocity);
+		}
 		e.setPortalCooldown(COOLDOWN_TICKS);
 		e.teleport(new TeleportTransition(level, target, newVelocity, yaw, pitch, TeleportTransition.DO_NOTHING));
 		e.setDeltaMovement(newVelocity);

@@ -23,6 +23,8 @@ import net.minecraft.world.phys.AABB;
  * own ticks and lets go when the prop has gone.
  */
 public final class HostPlates {
+	private static int logged;
+
 	private HostPlates() {
 	}
 
@@ -41,6 +43,9 @@ public final class HostPlates {
 				BlockState state = level.getBlockState(pos);
 				if (state.getBlock() instanceof BasePressurePlateBlock plate && signal(state) == 0) {
 					((PressurePlateInvoker) plate).portalcraft$checkPressed(null, level, pos.immutable(), state, 0);
+					if (signal(level.getBlockState(pos)) > 0 && logged++ < 10) {
+						org.slf4j.LoggerFactory.getLogger("portalcraft").info("PortalCraft: a host prop pressed the plate at {}", pos);
+					}
 				}
 			}
 		}

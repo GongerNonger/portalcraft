@@ -28,6 +28,8 @@ final class HostHealth {
 	/** Hurts are batched this long (ticks): Minecraft's invulnerability after a hit would eat most of a turret's burst. */
 	private static final int BATCH_TICKS = 10;
 	private static final ResourceKey<DamageType> TEST = ResourceKey.create(Registries.DAMAGE_TYPE, PortalCraft.id("test"));
+	/** Portal's outright kills: the same death, past armor, so the armor isn't worn to nothing on the way. */
+	private static final ResourceKey<DamageType> TEST_KILL = ResourceKey.create(Registries.DAMAGE_TYPE, PortalCraft.id("test_kill"));
 
 	private static float pending;
 	private static boolean kill;
@@ -71,7 +73,7 @@ final class HostHealth {
 			if (sp == null || !sp.isAlive()) {
 				return;
 			}
-			var type = sp.level().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(TEST);
+			var type = sp.level().registryAccess().lookupOrThrow(Registries.DAMAGE_TYPE).getOrThrow(killing ? TEST_KILL : TEST);
 			sp.setInvulnerableTime(0); // a batch is already half a second of hits
 			sp.hurtServer(sp.level(), new DamageSource(type), damage);
 			if (killing) {

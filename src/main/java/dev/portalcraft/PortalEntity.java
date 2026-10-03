@@ -43,6 +43,9 @@ public class PortalEntity extends Entity {
 	private static final EntityDataAccessor<Byte> FACE = SynchedEntityData.defineId(PortalEntity.class, EntityDataSerializers.BYTE);
 	private static final EntityDataAccessor<Byte> UP = SynchedEntityData.defineId(PortalEntity.class, EntityDataSerializers.BYTE);
 	private static final EntityDataAccessor<Boolean> LINKED = SynchedEntityData.defineId(PortalEntity.class, EntityDataSerializers.BOOLEAN);
+	/** Whose portal this is, for that player's portal-gun crosshair (PortalGunHud). */
+	private static final EntityDataAccessor<java.util.Optional<net.minecraft.world.entity.EntityReference<net.minecraft.world.entity.LivingEntity>>> OWNER =
+		SynchedEntityData.defineId(PortalEntity.class, EntityDataSerializers.OPTIONAL_LIVING_ENTITY_REFERENCE);
 
 	private @Nullable UUID owner;
 	private @Nullable UUID partner;
@@ -58,10 +61,12 @@ public class PortalEntity extends Entity {
 		builder.define(FACE, (byte) Direction.NORTH.get3DDataValue());
 		builder.define(UP, (byte) Direction.UP.get3DDataValue());
 		builder.define(LINKED, false);
+		builder.define(OWNER, java.util.Optional.empty());
 	}
 
 	public void setup(UUID owner, PortalColor color, Direction face, Direction up, Vec3 centre) {
 		this.owner = owner;
+		this.entityData.set(OWNER, java.util.Optional.of(net.minecraft.world.entity.EntityReference.of(owner)));
 		this.entityData.set(COLOR, (byte) color.ordinal());
 		this.entityData.set(FACE, (byte) face.get3DDataValue());
 		this.entityData.set(UP, (byte) up.get3DDataValue());
@@ -82,6 +87,11 @@ public class PortalEntity extends Entity {
 
 	public boolean isLinked() {
 		return this.entityData.get(LINKED);
+	}
+
+	/** Whether this is `player`'s portal (works on clients too: the owner is synced). */
+	public boolean ownedBy(UUID player) {
+		return this.entityData.get(OWNER).map(r -> r.getUUID().equals(player)).orElse(false);
 	}
 
 	public @Nullable UUID owner() {
@@ -301,6 +311,7 @@ public class PortalEntity extends Entity {
 		this.owner = input.read("owner", UUIDUtil.CODEC).orElse(null);
 		this.partner = input.read("partner", UUIDUtil.CODEC).orElse(null);
 		this.entityData.set(COLOR, input.getByteOr("color", (byte) 0));
+		this.entityData.set(OWNER, this.owner == null ? java.util.Optional.empty() : java.util.Optional.of(net.minecraft.world.entity.EntityReference.of(this.owner)));
 		this.entityData.set(FACE, input.getByteOr("face", (byte) Direction.NORTH.get3DDataValue()));
 		this.entityData.set(UP, input.getByteOr("up", (byte) Direction.UP.get3DDataValue()));
 	}

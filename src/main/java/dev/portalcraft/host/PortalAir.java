@@ -21,13 +21,16 @@ public final class PortalAir {
 	public static final double LONG_FALL = 3.0;
 
 	private static volatile boolean flung;
-	private static int flungTicks;
+	private static int flungTicks, flingLogs;
 
 	private PortalAir() {
 	}
 
 	/** Steve just came out of a portal (or was thrown): Portal air until he lands. */
 	public static void startFling() {
+		if (!flung && flingLogs++ < 10) {
+			org.slf4j.LoggerFactory.getLogger("portalcraft").info("PortalCraft: Portal air (out of a portal with speed, until landing)");
+		}
 		flung = true;
 		flungTicks = 0;
 	}

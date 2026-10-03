@@ -48,6 +48,9 @@ public class PortalCraftClient implements ClientModInitializer {
 		HostLink.start();
 		ClientTickEvents.START_CLIENT_TICK.register(HostDriver::tick);
 		ClientTickEvents.END_CLIENT_TICK.register(HostDriver::tickEnd);
+		// The portal gun's crosshair: which of your portals are out there (Portal's HUD).
+		net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry.attachElementAfter(
+			net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements.CROSSHAIR, PortalCraft.id("portal_gun_crosshair"), PortalGunHud::extract);
 		// Started by Portal: hidden, and gone again when Portal closes.
 		net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents.CLIENT_STARTED.register(HostLifecycle::started);
 		ClientTickEvents.END_CLIENT_TICK.register(client -> HostLifecycle.tick(client, HostLink.current() != null));
