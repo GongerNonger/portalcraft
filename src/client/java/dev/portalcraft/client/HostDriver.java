@@ -74,6 +74,8 @@ public final class HostDriver {
 	private static int seq;
 	/** The map file that last failed to load: not tried again, unless the maps folder changes. */
 	private static Path failedMap;
+	/** When the host's current map was loaded (level starts aren't flings). */
+	private static long mapLoadedAt;
 
 	private HostDriver() {
 	}
@@ -173,6 +175,17 @@ public final class HostDriver {
 		HostHealth.tick(minecraft, player);
 		BlockSolids.tick(minecraft);
 
+		if (s.riding()) {
+			// On a moving lift Portal owns Steve's height (it carries its player exactly; our copy of the
+			// lift lags): stand at its height, keep walking about, no sag and no fall.
+			double hostY = Units.toMc(s.origin()).y;
+			if (Math.abs(player.getY() - hostY) < 2.0) {
+				player.setPos(player.getX(), hostY, player.getZ());
+				Vec3 v = player.getDeltaMovement();
+				player.setDeltaMovement(v.x, 0.0, v.z);
+				player.resetFallDistance();
+			}
+		}
 		if (s.scripted()) {
 			// A scripted scene has Portal's player (its camera, or frozen): stand where it is, take no
 			// input, and keep Minecraft's HUD and hand out of Portal's camera (F1) until it's over.
@@ -473,6 +486,7 @@ public final class HostDriver {
 			Units.setOffsetX(offset);
 			LOG.info("PortalCraft: {} is at x {} in the Minecraft world", name, (long) offset);
 		}
+		mapLoadedAt = System.currentTimeMillis();
 		Path file = maps().resolve(name + ".bsp");
 		if (file.equals(failedMap)) {
 			return;
@@ -579,8 +593,10 @@ public final class HostDriver {
 			} else {
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);
-				if (velocity.lengthSqr() > 0.1 * 0.1) {
-					PortalAir.startFling(); // out of a portal with speed: Portal's flight until he lands
+				// Out of a portal with speed: Portal's flight until he lands. (Not a level start, even one
+				// that arrives moving, as the elevator's does.)
+				if (velocity.lengthSqr() > 0.1 * 0.1 && System.currentTimeMillis() - mapLoadedAt > 3000) {
+					PortalAir.startFling();
 				}
 			}
 			teleportAck = s.teleportSeq();

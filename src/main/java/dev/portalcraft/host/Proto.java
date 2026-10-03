@@ -18,6 +18,8 @@ public final class Proto {
 	public static final int HOST_DRIVING = 1 << 2;
 	/** A scripted scene has the host's player (its camera, or frozen): follow it, take no input. */
 	public static final int HOST_SCRIPTED = 1 << 3;
+	/** The host's player stands on a moving lift: the host owns its height, follow it. */
+	public static final int HOST_RIDING = 1 << 4;
 
 	public static final int PORTAL_EXISTS = 1;
 	public static final int PORTAL_ACTIVE = 1 << 1;
@@ -53,6 +55,10 @@ public final class Proto {
 
 		public boolean scripted() {
 			return (flags & HOST_SCRIPTED) != 0;
+		}
+
+		public boolean riding() {
+			return (flags & HOST_RIDING) != 0;
 		}
 
 		public boolean keyDown(int scancode) {

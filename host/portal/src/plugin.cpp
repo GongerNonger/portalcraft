@@ -378,7 +378,7 @@ bool serverToolsReady() {
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
 struct PlayerOffsets {
 	bool ready = false;
-	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1;
+	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1;
 } g_pl;
 
 // Portal's player entity, its send-table offsets looked up the first time. Null between levels.
@@ -398,9 +398,10 @@ uint8_t* playerFields() {
 			g_pl.flags = findProp(sc->table, "m_fFlags", 0);
 			g_pl.viewEntity = findProp(sc->table, "m_hViewEntity", 0);
 			g_pl.activeWeapon = findProp(sc->table, "m_hActiveWeapon", 0);
+			g_pl.groundEntity = findProp(sc->table, "m_hGroundEntity", 0);
 		}
-		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState,
-			g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon);
+		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d m_hGroundEntity %d", sc ? sc->name : "?",
+			g_pl.health, g_pl.lifeState, g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon, g_pl.groundEntity);
 	}
 	return base;
 }
@@ -433,6 +434,49 @@ void updateScripted() {
 		g_scripted = scripted;
 	}
 }
+// ---- riding lifts ---------------------------------------------------------------------------
+// Standing on something that moves up or down (the elevators, lifts, moving platforms), Portal owns
+// the player's height: its train pushes its player along exactly, while Minecraft's copy of the
+// lift arrives ~16 times a second and Minecraft's position plays back a tick or two late, so Steve
+// sagged, got pushed up, and bounced all the way up the elevator. While riding, the plugin keeps
+// Portal's height (Minecraft still walks him around inside the lift) and Minecraft follows it
+// (kHostRiding).
+bool g_riding = false;
+int g_rideEntity = -1;
+float g_rideLastZ = 0.0f;
+DWORD g_rideStill = 0; // when the lift last stopped moving
+
+bool collideableOrigin(int index, Vector* out);
+
+void updateRiding() {
+	uint8_t* base = playerFields();
+	bool moving = false;
+	if (base && g_pl.groundEntity >= 0) {
+		uint32_t h = *reinterpret_cast<uint32_t*>(base + g_pl.groundEntity);
+		int index = h == 0xFFFFFFFFu ? -1 : int(h & 0xFFF);
+		Vector o;
+		if (index > 1 && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
+			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
+				moving = true;
+			}
+			g_rideEntity = index;
+			g_rideLastZ = o.z;
+		} else {
+			g_rideEntity = -1;
+		}
+	}
+	DWORD now = GetTickCount();
+	if (moving) {
+		g_rideStill = now;
+	}
+	// Stays on a moment after the lift stops, so a stop-start ride doesn't flap.
+	bool riding = moving || (g_riding && g_rideEntity >= 0 && now - g_rideStill < 300);
+	if (riding != g_riding) {
+		logf("riding %s", riding ? "a moving lift: Portal keeps the player's height" : "over");
+		g_riding = riding;
+	}
+}
+
 constexpr int kFullHealth = 100;
 float g_hurtPending = 0.0f;
 DWORD g_hurtSentAt = 0;
@@ -1077,7 +1121,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
-	if (g_haveSet) {
+	if (g_haveSet && !g_riding) {
 		float dx = origin.x - g_lastSet.x, dy = origin.y - g_lastSet.y, dz = origin.z - g_lastSet.z;
 		if (dx * dx + dy * dy < 0.25f && dz > 0.1f && g_zLift + dz <= 4.0f) {
 			g_zLift += dz; // a small straight-up nudge: keep it (see applyMinecraft)
@@ -1109,7 +1153,8 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
-	if (g_needSync || impulse || (g_haveSet && dist(origin, g_lastSet) > 0.5f)) {
+	// (Riding a lift, the lift moving the player is the point: it's not handed over, see updateRiding.)
+	if (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f)) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = mvVelocity;
@@ -1143,6 +1188,10 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (g_drivingNow) {
 		Vector portalWent = origin;
 		applyMinecraft(mv);
+		if (g_riding) {
+			origin.z = zPortal; // the lift carries the player; Minecraft follows (kHostRiding)
+			g_zLift = 0.0f;
+		}
 		// Just took over again after a teleport: Portal moved the player by itself while Minecraft
 		// caught up. Hand that difference over as a shove, so we write where Portal had it, not a
 		// step back, and Minecraft is told.
@@ -1188,6 +1237,9 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 	float zPortal = reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z;
 	if (drive) {
 		applyMinecraft(mv);
+		if (g_riding) {
+			reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z = zPortal;
+		}
 	}
 	if (g_traceTicks > 0 && g_log) {
 		fprintf(g_log, "C %lu z in %.3f portal %.3f out %.3f", GetTickCount(), zIn, zPortal, reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z);
@@ -1392,6 +1444,15 @@ int g_colState = 0; // 0 unchecked, 1 verified, -1 mismatch (entity streaming of
 void* collideableOf(void* edict) {
 	void* unknown = sdk::edictUnknown(edict);
 	return unknown ? sdk::vcall<void*>(unknown, 3) : nullptr; // IServerUnknown::GetCollideable
+}
+
+bool guardedColRead(void* col, sdk::Vector* origin, int* solid);
+
+bool collideableOrigin(int index, Vector* out) {
+	void* e = edictAt(index);
+	void* col = edictInUse(e) ? collideableOf(e) : nullptr;
+	int solid;
+	return col && guardedColRead(col, out, &solid);
 }
 
 bool guardedColRead(void* col, sdk::Vector* origin, int* solid) {
@@ -1780,6 +1841,9 @@ void sendState() {
 	if (g_scripted) {
 		s.flags |= pcproto::kHostScripted;
 	}
+	if (g_riding) {
+		s.flags |= pcproto::kHostRiding;
+	}
 	// Steve holds the Minecraft portal gun in his hand; Portal's own gun model (its viewmodel) isn't
 	// drawn over it while Minecraft is linked. Portal's portal-gun HUD (the crosshair halves that show
 	// which portals are placed) stays: it isn't part of the viewmodel.
@@ -1996,6 +2060,7 @@ public:
 		launcher::frame(mcReady(), g_inLevel, checkedBuild("engine.dll") ? g_engineClient : nullptr);
 		bridgeHealth();
 		updateScripted();
+		updateRiding();
 		updateBlockPhysics();
 		sendState();
 		sendMapsDir();

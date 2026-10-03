@@ -29,6 +29,7 @@ enum HostFlags : uint32_t {
 	kHostForeground = 1u << 1, // the game window has focus and no console/menu: keys are live
 	kHostDriving = 1u << 2,    // the host is applying McState to its player this tick
 	kHostScripted = 1u << 3,   // a scripted scene has the player (a point_viewcontrol camera, frozen): Minecraft follows, no input
+	kHostRiding = 1u << 4,     // the player stands on a moving lift: the host owns its height, Minecraft follows it
 };
 
 // What the host's latest move (teleportSeq) is. A shove only places the player; an impulse
