@@ -743,9 +743,16 @@ public final class HostDriver {
 				player.setDeltaMovement(Units.velocityToMc(s.teleportVelocity()));
 				player.resetFallDistance();
 				PortalAir.startFling();
-			} else if (s.teleportKind() == Proto.MOVE_SHOVE && player.position().distanceToSqr(to) < 0.6 * 0.6) {
-				// A shove (a prop, a lift): just take the place, keep our own momentum.
-				player.setPos(to);
+			} else if (s.teleportKind() == Proto.MOVE_SHOVE) {
+				// A shove (a prop, the host's physics settling its player): an offset, on top of wherever
+				// Steve is now, with his own momentum kept. HostState.teleportVelocity carries it (units).
+				if (s.moveBase() != teleportAck) {
+					return; // summed from an older answer of ours: the next state has the right sum
+				}
+				Vec3 by = s.teleportVelocity();
+				if (by.lengthSqr() < 64.0 * 64.0) {
+					player.setPos(player.position().add(by.x / Units.PER_BLOCK, by.z / Units.PER_BLOCK, -by.y / Units.PER_BLOCK));
+				}
 			} else if (s.crossing() != null && s.teleportKind() == Proto.MOVE_TELEPORT) {
 				// Portal crossings: carry where Steve is now (and how fast) through them. Jumping to
 				// teleportOrigin instead set him back the tick or two the move took to arrive, and the

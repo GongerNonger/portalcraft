@@ -2285,6 +2285,14 @@ void sendState() {
 	s.teleportSeq = g_teleportSeq;
 	s.teleportOrigin = {g_teleportOrigin.x, g_teleportOrigin.y, g_teleportOrigin.z};
 	s.teleportVelocity = {g_teleportVelocity.x, g_teleportVelocity.y, g_teleportVelocity.z};
+	if (g_teleportKind == pcproto::kMoveShove) {
+		// A shove is an offset, not a place: all the shoves Minecraft hasn't taken yet, summed (what we
+		// add to its positions meanwhile). It adds the same to wherever its player is by then. Sent as
+		// a place, a shove that arrived a tick into a jump read as "far away" and became a teleport
+		// back to the ground.
+		Vector pending = pendingShoves();
+		s.teleportVelocity = {pending.x, pending.y, pending.z};
+	}
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
 	s.gunEffect = g_gunEffect;
@@ -2308,6 +2316,7 @@ void sendState() {
 		fillPortals(s);
 	}
 	std::memcpy(g_portalsNow, s.portals, sizeof g_portalsNow);
+	s.crossBase = g_mc.teleportAck; // what the shove offset and the crossing below build on
 	Xf cross;
 	// Host moves only: Minecraft's own crossings it has already made.
 	McAt mcAt{g_mc.teleportAck, g_mc.crossMatchedEcho}, hostAt{g_teleportSeq, g_mc.crossMatchedEcho};

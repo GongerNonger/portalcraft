@@ -64,7 +64,7 @@ struct HostState {
 	Vec3 velocity;        // units/s
 	uint32_t teleportSeq; // bumped whenever the host moves the player itself (portal, level start)
 	Vec3 teleportOrigin;  // ... to here
-	Vec3 teleportVelocity;
+	Vec3 teleportVelocity; // for a shove (teleportKind): the offset still to apply, in units, not a velocity
 	uint8_t keys[32];     // pressed SDL scancodes 0..255, bit per scancode
 	uint8_t mouse;        // bit0 left, bit1 right, bit2 middle
 	int8_t wheel;         // mouse-wheel notches so far, wrapping (up is positive): Minecraft scrolls by the change
@@ -83,7 +83,7 @@ struct HostState {
 	// units; rows), velocities by crossRot alone. Set when every host move after crossBase is a
 	// portal crossing; then Minecraft carries its own current position and velocity through instead
 	// of jumping to teleportOrigin, which is a tick or two old by the time it arrives.
-	uint32_t crossBase;
+	uint32_t crossBase;  // always set: the teleportAck of Minecraft's that a shove's offset is counted from, too
 	uint32_t crossValid; // 1: the cross fields are meaningful
 	float crossRot[9];
 	Vec3 crossMove;
