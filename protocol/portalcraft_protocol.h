@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH5"
+	char magic[4]; // "PCH6"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -94,6 +94,10 @@ struct HostState {
 	// when it can't tell. Minecraft lights Steve's hand and what he holds by it instead of by its own
 	// permanent noon, so in a dim room the gun dims and its lights stand out.
 	Vec3 handLight;
+	// PCH6: the host gun's effect state (Portal's m_EffectState: 0 none, 1 ready, 2 holding an
+	// object), or 0xFFFFFFFF when unknown. Minecraft's gun plays Portal's pickup and release
+	// animations as it starts and stops holding.
+	uint32_t gunEffect;
 };
 
 enum McFlags : uint32_t {
@@ -394,7 +398,7 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 308, "HostState layout");
+static_assert(sizeof(HostState) == 312, "HostState layout");
 static_assert(sizeof(McState) == 88, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");

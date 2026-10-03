@@ -2,7 +2,9 @@ package dev.portalcraft.client.gun;
 
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -15,42 +17,89 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The portal gun's firing animation on this client's own clock, so it runs at the frame rate
- * instead of in game ticks sent over the network: which pose the model shows (FireFrame, for item
- * models that have the frames), and the whole gun's kick, eased between the animation's frames
- * every rendered frame (applyRecoil, from the resource pack's portalcraft:gun_recoil.json).
+ * The portal gun's animations on this client's own clock, so they run at the frame rate instead of
+ * in game ticks sent over the network: which pose the model shows (FireFrame, for item models that
+ * have the frames), and the whole gun's motion, eased between the animation's frames every rendered
+ * frame (applyRecoil, from the resource pack's portalcraft:gun_recoil.json). Portal's own
+ * sequences, 30 frames a second: firing, picking an object up (and holding it), letting it go.
  */
 public final class GunAnimation {
 	private static final Logger LOG = LoggerFactory.getLogger("portalcraft");
-	/** Portal's fire1: 16 frames at 30 a second. */
-	public static final int FRAMES = 16;
 	private static final double FPS = 30.0;
-	/** How much of Portal's kick the gun takes: its viewmodel sits further from the eye than Steve's hand. */
+	/** How much of Portal's motion the gun takes: its viewmodel sits further from the eye than Steve's hand. */
 	private static final float RECOIL_STRENGTH = 0.6F;
+
+	/** A sequence: its frame count, where its poses start in FireFrame's values, its name in gun_recoil.json. */
+	public enum Sequence {
+		FIRE(16, 0, "frames"), PICKUP(12, 100, "pickup"), RELEASE(21, 200, "release");
+
+		public final int frames;
+		final int base;
+		final String key;
+
+		Sequence(int frames, int base, String key) {
+			this.frames = frames;
+			this.base = base;
+			this.key = key;
+		}
+	}
+
+	/** Firing's frame count (FireFrame stretches another player's tick keyframes over it). */
+	public static final int FRAMES = Sequence.FIRE.frames;
 
 	private record Kick(float tx, float ty, float tz, float rx, float ry, float rz) {
 	}
 
 	private static final Kick REST = new Kick(0, 0, 0, 0, 0, 0);
+	private static volatile Sequence playing = Sequence.FIRE;
+	private static volatile long startedAt = Long.MIN_VALUE;
 	private static volatile long shotAt = Long.MIN_VALUE;
-	private static List<Kick> kicks;
+	private static volatile boolean holding;
+	private static Map<Sequence, List<Kick>> kicks;
 
 	private GunAnimation() {
+	}
+
+	private static void play(Sequence sequence) {
+		playing = sequence;
+		startedAt = System.nanoTime();
 	}
 
 	/** The gun this client holds just fired. */
 	public static void shot() {
 		shotAt = System.nanoTime();
+		if (!holding) {
+			play(Sequence.FIRE);
+		}
 	}
 
-	/** Animation frames since the shot (fractional), or -1 when it's over or there was none. */
+	/** It picked an object up (true) or let it go (false). */
+	public static void holding(boolean now) {
+		if (now == holding) {
+			return;
+		}
+		holding = now;
+		play(now ? Sequence.PICKUP : Sequence.RELEASE);
+	}
+
+	/**
+	 * Frames into the sequence playing (fractional): past its end, its last frame while an object is
+	 * held (pickup's open claws are the holding pose), else -1 (at rest).
+	 */
 	private static double frames() {
-		long at = shotAt;
+		long at = startedAt;
 		if (at == Long.MIN_VALUE) {
 			return -1.0;
 		}
+		Sequence s = playing;
 		double f = (System.nanoTime() - at) / 1.0e9 * FPS;
-		return f >= 0.0 && f < FRAMES ? f : -1.0;
+		if (f < 0.0) {
+			return -1.0;
+		}
+		if (f < s.frames) {
+			return f;
+		}
+		return holding && s == Sequence.PICKUP ? s.frames - 1 : -1.0;
 	}
 
 	/** How strongly the shot's flash still lights the gun: 1 as it fires, easing to 0 over about a quarter second. */
@@ -63,27 +112,27 @@ public final class GunAnimation {
 		return left <= 0.0 || left > 1.0 ? 0.0F : (float) (left * left);
 	}
 
-	/** FireFrame's value: 0 at rest, else the current frame + 1 (1 to FRAMES). */
+	/** FireFrame's value: 0 at rest, else the sequence's base + the current frame + 1. */
 	public static float frameValue() {
 		double f = frames();
-		return f < 0.0 ? 0.0F : (float) (1 + (int) f);
+		return f < 0.0 ? 0.0F : (float) (playing.base + 1 + (int) f);
 	}
 
 	/**
-	 * The kick, on the pose the first-person item is about to be drawn with (before its own display
-	 * transform): nothing at rest, or with a pack that has no recoil data.
+	 * The whole gun's motion, on the pose the first-person item is about to be drawn with (before its
+	 * own display transform): nothing at rest, or with a pack that has no data for the sequence.
 	 */
 	public static void applyRecoil(PoseStack pose) {
 		double f = frames();
 		if (f < 0.0) {
 			return;
 		}
-		List<Kick> k = kicks();
+		List<Kick> k = kicks().getOrDefault(playing, List.of());
 		if (k.isEmpty()) {
 			return;
 		}
 		int i = Math.min((int) f, k.size() - 1);
-		Kick a = k.get(i), b = i + 1 < k.size() ? k.get(i + 1) : REST;
+		Kick a = k.get(i), b = i + 1 < k.size() ? k.get(i + 1) : holding && playing == Sequence.PICKUP ? a : REST;
 		float t = (float) (f - i), s = RECOIL_STRENGTH;
 		pose.translate(s * lerp(a.tx, b.tx, t), s * lerp(a.ty, b.ty, t), s * lerp(a.tz, b.tz, t));
 		float rad = (float) (Math.PI / 180.0) * s;
@@ -94,28 +143,38 @@ public final class GunAnimation {
 		return a + (b - a) * t;
 	}
 
-	/** {"fps": 30, "frames": [{"t": [blocks], "r": [degrees]}, ...]}: read once (packs change at a restart). */
-	private static List<Kick> kicks() {
+	/**
+	 * {"fps": 30, "frames": [{"t": [blocks], "r": [degrees]}, ...], "pickup": [...], "release": [...]}:
+	 * read once (packs change at a restart).
+	 */
+	private static Map<Sequence, List<Kick>> kicks() {
 		if (kicks != null) {
 			return kicks;
 		}
-		List<Kick> out = new ArrayList<>();
+		Map<Sequence, List<Kick>> out = new EnumMap<>(Sequence.class);
 		Resource resource = Minecraft.getInstance().getResourceManager().getResource(PortalCraft.id("gun_recoil.json")).orElse(null);
 		if (resource != null) {
 			try (Reader in = resource.openAsReader()) {
 				JsonObject root = JsonParser.parseReader(in).getAsJsonObject();
-				for (var e : root.getAsJsonArray("frames")) {
-					JsonArray t = e.getAsJsonObject().getAsJsonArray("t"), r = e.getAsJsonObject().getAsJsonArray("r");
-					out.add(new Kick(t.get(0).getAsFloat(), t.get(1).getAsFloat(), t.get(2).getAsFloat(), r.get(0).getAsFloat(), r.get(1).getAsFloat(),
-						r.get(2).getAsFloat()));
+				for (Sequence s : Sequence.values()) {
+					List<Kick> list = new ArrayList<>();
+					if (root.has(s.key)) {
+						for (var e : root.getAsJsonArray(s.key)) {
+							JsonArray t = e.getAsJsonObject().getAsJsonArray("t"), r = e.getAsJsonObject().getAsJsonArray("r");
+							list.add(new Kick(t.get(0).getAsFloat(), t.get(1).getAsFloat(), t.get(2).getAsFloat(), r.get(0).getAsFloat(),
+								r.get(1).getAsFloat(), r.get(2).getAsFloat()));
+						}
+					}
+					out.put(s, List.copyOf(list));
 				}
-				LOG.info("PortalCraft: gun recoil: {} frames", out.size());
+				LOG.info("PortalCraft: gun motion: {} fire, {} pickup, {} release frames", out.get(Sequence.FIRE).size(), out.get(Sequence.PICKUP).size(),
+					out.get(Sequence.RELEASE).size());
 			} catch (java.io.IOException | RuntimeException e) {
 				LOG.warn("PortalCraft: can't read gun_recoil.json: {}", e.toString());
 				out.clear();
 			}
 		}
-		kicks = List.copyOf(out);
+		kicks = out;
 		return kicks;
 	}
 }

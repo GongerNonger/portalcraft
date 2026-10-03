@@ -27,6 +27,8 @@ public class PortalCraftClient implements ClientModInitializer {
 		// The gun's firing animation frame, for item models that have the poses (FireFrame).
 		net.minecraft.client.renderer.item.properties.numeric.RangeSelectItemModelProperties.ID_MAPPER.put(PortalCraft.id("fire_frame"),
 			dev.portalcraft.client.gun.FireFrame.MAP_CODEC);
+		// The light the gun's glow throws on the gun itself, for item models that mark the surfaces (GunGlow).
+		net.minecraft.client.color.item.ItemTintSources.ID_MAPPER.put(PortalCraft.id("gun_glow"), dev.portalcraft.client.gun.GunGlow.MAP_CODEC);
 		// Right click with the gun (the secondary portal): the animation starts with the click.
 		net.fabricmc.fabric.api.event.player.UseItemCallback.EVENT.register((player, level, hand) -> {
 			if (level.isClientSide() && HostLink.current() == null && player.getItemInHand(hand).is(PortalCraft.PORTAL_GUN)

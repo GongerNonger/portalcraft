@@ -140,6 +140,8 @@ public final class HostDriver {
 		HostCollision.setPortals(s.portals());
 		PlayerCrossings.matched(s.crossMatched());
 		gunFollowsHostShots(minecraft, s.shots());
+		// Portal's gun holding an object (its effect state 2): Steve's opens its claws and holds, then lets go.
+		dev.portalcraft.client.gun.GunAnimation.holding(s.gunEffect() == 2);
 		lightFollowsHostPortals(minecraft, s.portals());
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);

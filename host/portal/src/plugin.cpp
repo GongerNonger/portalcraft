@@ -1348,10 +1348,11 @@ void updateGunGate() {
 // shows as the active weapon's next-attack times jumping ahead; which button was down says which
 // colour. Read through the weapon's own send table, so nothing here depends on the build.
 uint8_t g_shots = 0;
+uint32_t g_gunEffect = 0xFFFFFFFFu; // the gun's m_EffectState (2: holding an object), for Minecraft's grab animations
 
 void watchGunShots(int buttons) {
 	static void* weaponTable = nullptr;
-	static int nextPrimary = -1, nextSecondary = -1;
+	static int nextPrimary = -1, nextSecondary = -1, effectState = -1;
 	static uint32_t lastWeapon = 0xFFFFFFFFu;
 	static float lastP = 0.0f, lastS = 0.0f;
 	uint8_t* base = playerFields();
@@ -1377,7 +1378,16 @@ void watchGunShots(int buttons) {
 		weaponTable = sc->table;
 		nextPrimary = findProp(sc->table, "m_flNextPrimaryAttack", 0);
 		nextSecondary = findProp(sc->table, "m_flNextSecondaryAttack", 0);
-		logf("weapon: %s m_flNextPrimaryAttack %d m_flNextSecondaryAttack %d", sc->name, nextPrimary, nextSecondary);
+		effectState = findProp(sc->table, "m_EffectState", 0);
+		logf("weapon: %s m_flNextPrimaryAttack %d m_flNextSecondaryAttack %d m_EffectState %d", sc->name, nextPrimary, nextSecondary, effectState);
+	}
+	if (effectState >= 0) {
+		uint32_t effect = *reinterpret_cast<uint32_t*>(weapon + effectState);
+		static int effectLogs = 0;
+		if (effect != g_gunEffect && effectLogs++ < 40) {
+			logf("gun effect state %u -> %u", g_gunEffect, effect);
+		}
+		g_gunEffect = effect;
 	}
 	if (nextPrimary < 0 || nextSecondary < 0) {
 		return;
@@ -2195,7 +2205,7 @@ void fillCursor(pcproto::HostState& s) {
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH5", 4);
+	std::memcpy(s.magic, "PCH6", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
@@ -2243,6 +2253,7 @@ void sendState() {
 	s.teleportVelocity = {g_teleportVelocity.x, g_teleportVelocity.y, g_teleportVelocity.z};
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
+	s.gunEffect = g_gunEffect;
 	// Portal's light at the player's chest, for Minecraft to light Steve's hand by (eased, so walking
 	// past a lamp doesn't flicker). An engine slot, so only on a build it was checked on.
 	s.handLight = {-1.0f, 0.0f, 0.0f};
