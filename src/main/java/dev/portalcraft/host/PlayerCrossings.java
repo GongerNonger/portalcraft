@@ -96,8 +96,8 @@ public final class PlayerCrossings {
 		PENDING.removeIf(c -> c.index() <= matched);
 	}
 
-	/** Result of a step that went through portals: where Steve is now, and how he's moving. */
-	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings) {
+	/** Result of a step that went through portals: where Steve is now, how he's moving, and the portal he came out of. */
+	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings, int exit) {
 	}
 
 	/**
@@ -153,7 +153,7 @@ public final class PlayerCrossings {
 		if (made == 0) {
 			return null;
 		}
-		return new Carried(to.subtract(up), prev.subtract(up), v, made);
+		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip);
 	}
 
 	/** Portal's own numbers (prop_portal.cpp), units/s. */

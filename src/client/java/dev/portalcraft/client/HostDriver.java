@@ -275,6 +275,33 @@ public final class HostDriver {
 	private static int crossingsLogged;
 
 	/**
+	 * Where Steve stands coming out of `exit` at `feetSrc` (host units): there, if his hull is clear;
+	 * otherwise slid toward the portal's middle, in its plane, until it is. Portal does this for its
+	 * own player (a hull through a portal off-centre comes out with a shoulder in the wall around
+	 * it). Returns Minecraft coordinates.
+	 */
+	private static Vec3 fitAtExit(LocalPlayer player, Proto.HostPortal exit, Vec3 feetSrc, double halfHeight) {
+		Vec3 feet = Units.toMc(feetSrc);
+		if (clearAt(player, feet)) {
+			return feet;
+		}
+		Vec3 normal = Units.angleVectors(exit.angles())[0];
+		Vec3 off = feetSrc.add(0.0, 0.0, halfHeight).subtract(exit.origin());
+		Vec3 inPlane = off.subtract(normal.scale(off.dot(normal)));
+		for (double f = 0.25; f <= 1.0001; f += 0.25) {
+			Vec3 slid = Units.toMc(feetSrc.subtract(inPlane.scale(f)));
+			if (clearAt(player, slid)) {
+				return slid;
+			}
+		}
+		return feet; // nowhere clear even at the middle: leave him where the portal put him
+	}
+
+	private static boolean clearAt(LocalPlayer player, Vec3 feet) {
+		return player.level().noCollision(player, player.getBoundingBox().move(feet.subtract(player.position())).deflate(0.02));
+	}
+
+	/**
 	 * The step that just ended took Steve's centre in through a linked host portal: out of the
 	 * other one, now (PlayerCrossings). Not while the host has a move of its own on the way to us,
 	 * on a lift, or in a scripted scene: then the host has the player.
@@ -290,7 +317,7 @@ public final class HostDriver {
 		if (c == null) {
 			return;
 		}
-		Vec3 feet = Units.toMc(c.feet()), before = Units.toMc(c.previousFeet());
+		Vec3 feet = fitAtExit(player, s.portals()[c.exit()], c.feet(), halfHeight), before = Units.toMc(c.previousFeet());
 		Vec3 velocity = Units.velocityToMc(c.velocity());
 		player.setPos(feet);
 		// Last tick's place carried through as well, so this step reads as the same smooth move.
@@ -484,20 +511,27 @@ public final class HostDriver {
 	private static final double[][] PUSH_WAYS = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0.7071, 0, 0.7071}, {0.7071, 0, -0.7071},
 		{-0.7071, 0, 0.7071}, {-0.7071, 0, -0.7071}, {0, 1, 0}};
 
+	private static int pushLogs;
+
 	/**
-	 * Steve inside something solid (a cube Portal's physics slid into him, a door that closed on
-	 * him): out the shortest way. Minecraft never does this itself: a body already inside a shape
-	 * moves through it freely, which is how Steve could sprint into a cube he had just shoved.
+	 * Steve inside one of the host's loose props (a cube Portal's physics slid into him): out the
+	 * shortest way. Minecraft never does this itself: a body already inside a shape moves through
+	 * it freely, which is how Steve could sprint into a cube he had just shoved. Only props: used
+	 * on anything solid, it took Steve coming out of a ceiling portal a little off-centre (his
+	 * shoulder in the ceiling beside it) and pushed him up, back through the portal.
 	 */
 	private static void pushOutOfSolids(LocalPlayer player) {
 		AABB body = player.getBoundingBox().deflate(0.02);
-		if (player.level().noCollision(player, body)) {
+		if (!LiveEntities.overlapsProp(body) || player.level().noCollision(player, body)) {
 			return;
 		}
 		for (double step : PUSH_STEPS) {
 			for (double[] way : PUSH_WAYS) {
 				Vec3 by = new Vec3(way[0] * step, way[1] * step, way[2] * step);
 				if (player.level().noCollision(player, body.move(by))) {
+					if (pushLogs++ < 30) {
+						LOG.info("PortalCraft: Steve was inside a prop at {} (host {}): pushed by {}", player.position(), Units.toSrc(player.position()), by);
+					}
 					player.setPos(player.position().add(by));
 					return;
 				}

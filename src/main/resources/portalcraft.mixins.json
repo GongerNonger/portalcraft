@@ -17,7 +17,8 @@
 		"PressurePlateInvoker",
 		"ProjectileHitMixin",
 		"ProjectileTransitMixin",
-		"ServerExplosionMixin"
+		"ServerExplosionMixin",
+		"ServerMoveCheckMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

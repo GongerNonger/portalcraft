@@ -59,6 +59,21 @@ public final class LiveEntities {
 		return props;
 	}
 
+	/** True if `body` (Minecraft coordinates) overlaps a movable prop's collision: a cube, a turret, the radio. */
+	public static boolean overlapsProp(AABB body) {
+		for (Placed p : PLACED.values()) {
+			if (p.bounds() == null || !movableProp(p.pose().model()) || !p.bounds().intersects(body)) {
+				continue;
+			}
+			for (BspMap.Brush brush : p.brushes()) {
+				if (brush.mcBox().intersects(body)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	/** Portal 1's movable props by model: cubes (metal_box), turrets, the radio. Floor buttons and the rest stay put. */
 	private static boolean movableProp(String model) {
 		return model.endsWith(".mdl") && (model.contains("metal_box") || model.contains("turret") || model.contains("radio"));
