@@ -32,7 +32,7 @@ public final class PortalPlacement {
 			return; // inside Portal: Portal fires the real portal; Minecraft's own shot would only add a second trail and sound
 		}
 		if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
-			PortalGunItem.setLastFired(player.getMainHandItem(), color);
+			PortalGunItem.setLastFired(player, player.getMainHandItem(), color);
 		}
 		ServerLevel level = player.level();
 		Vec3 eye = player.getEyePosition();

@@ -550,7 +550,7 @@ public final class HostDriver {
 				server.execute(() -> {
 					ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
 					if (sp != null && sp.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
-						dev.portalcraft.PortalGunItem.setLastFired(sp.getMainHandItem(), color);
+						dev.portalcraft.PortalGunItem.setLastFired(sp, sp.getMainHandItem(), color);
 					}
 				});
 			}
