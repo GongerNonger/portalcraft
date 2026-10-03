@@ -563,7 +563,7 @@ bool serverToolsReady() {
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
 struct PlayerOffsets {
 	bool ready = false;
-	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1;
+	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1, nextAttack = -1;
 } g_pl;
 
 // Portal's player entity, its send-table offsets looked up the first time. Null between levels.
@@ -584,6 +584,7 @@ uint8_t* playerFields() {
 			g_pl.viewEntity = findProp(sc->table, "m_hViewEntity", 0);
 			g_pl.activeWeapon = findProp(sc->table, "m_hActiveWeapon", 0);
 			g_pl.groundEntity = findProp(sc->table, "m_hGroundEntity", 0);
+			g_pl.nextAttack = findProp(sc->table, "m_flNextAttack", 0);
 		}
 		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d m_hGroundEntity %d", sc ? sc->name : "?",
 			g_pl.health, g_pl.lifeState, g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon, g_pl.groundEntity);
@@ -1320,6 +1321,29 @@ void quietPortalMovement(uint8_t* mv) {
 	*reinterpret_cast<float*>(mv + sdk::kMvUpMove) = 0;
 }
 
+// Portal's gun fires only while Steve holds Minecraft's portal gun and no Minecraft screen is open:
+// otherwise the click is Minecraft's (placing a block, lighting TNT, the inventory). The player's
+// m_flNextAttack is the time before which none of its weapons may act (CBasePlayer::ItemPostFrame),
+// and it's networked, so the client's prediction holds fire as well. Clearing the attack buttons in
+// the move data (quietPortalMovement) isn't enough: the weapon reads the player's own buttons.
+bool g_heldFire = false;
+
+void updateGunGate() {
+	uint8_t* base = playerFields();
+	if (!base || g_pl.nextAttack < 0) {
+		return;
+	}
+	bool hold = mcReady() && (!g_mc.holdingPortalGun || (g_mc.flags & pcproto::kMcScreen));
+	float& nextAttack = *reinterpret_cast<float*>(base + g_pl.nextAttack);
+	if (hold) {
+		nextAttack = 1.0e9f;
+		g_heldFire = true;
+	} else if (g_heldFire) {
+		nextAttack = 0.0f; // any time now
+		g_heldFire = false;
+	}
+}
+
 void logSolidNear(const Vector& at);
 void logHostSolid(const Vector& at, void* playerEntity);
 
@@ -1331,6 +1355,7 @@ bool g_checkedLayout = false;
 void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, void* mvRaw) {
 	auto* mv = static_cast<uint8_t*>(mvRaw);
 	Vector& origin = *reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin);
+	updateGunGate();
 
 	if (!g_checkedLayout && g_playerInfoMgr) {
 		g_checkedLayout = true;

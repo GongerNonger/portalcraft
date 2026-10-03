@@ -34,6 +34,14 @@ class GunLightTest {
 		}
 	}
 
+	@Test
+	void keyframesRunOnceThenRest() {
+		assertEquals(1, GunLight.keyframe(0));
+		assertEquals(GunLight.FIRE_TICKS, GunLight.keyframe(GunLight.FIRE_TICKS - 1));
+		assertEquals(0, GunLight.keyframe(GunLight.FIRE_TICKS));
+		assertEquals(0, GunLight.keyframe(-1));
+	}
+
 	private static int brightness(int rgb) {
 		return ((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
 	}

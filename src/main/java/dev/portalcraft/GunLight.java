@@ -13,7 +13,18 @@ public final class GunLight {
 	 */
 	public static final int UNLIT = 0x808080;
 
+	/**
+	 * How long the gun's firing animation runs, in ticks: Portal's fire1 is 16 frames at 30 a
+	 * second. A model that has it (keyframes picked by custom model data float 0) shows one pose a tick.
+	 */
+	public static final int FIRE_TICKS = 9;
+
 	private GunLight() {
+	}
+
+	/** The firing animation's keyframe `ticks` after a shot: 1 to FIRE_TICKS, then 0 (at rest). */
+	public static int keyframe(long ticks) {
+		return ticks >= 0 && ticks < FIRE_TICKS ? (int) ticks + 1 : 0;
 	}
 
 	/**

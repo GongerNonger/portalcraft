@@ -31,8 +31,8 @@ public class PortalGunItem extends Item {
 		super(properties);
 	}
 
-	/** How long a shot's flash takes to settle back to the portal's colour, in ticks. */
-	private static final int FLASH_TICKS = GunLight.FLASH_TICKS;
+	/** How long a shot shows on the gun, in ticks: its flash, and the firing animation's keyframes. */
+	private static final int FLASH_TICKS = Math.max(GunLight.FLASH_TICKS, GunLight.FIRE_TICKS);
 
 	/** A flash in progress: the colour it settles to, and the game time it started. */
 	private record Flash(int rgb, long start) {
@@ -52,14 +52,16 @@ public class PortalGunItem extends Item {
 
 	/**
 	 * The gun's colours `ticks` into a shot of `rgb` (FLASH_TICKS or more: at rest), as the item's
-	 * custom model data: [0] the light itself, [1] and [2] what it throws on the gun around it
-	 * (GunLight.spill; models without those tints just ignore them).
+	 * custom model data: colours [0] the light itself, [1] and [2] what it throws on the gun around
+	 * it (GunLight.spill), and float [0] the firing animation's keyframe. Models without those tints
+	 * or keyframes just ignore them.
 	 */
 	private static void light(ItemStack stack, int rgb, long ticks) {
 		List<Integer> colours = List.of(GunLight.flash(rgb, ticks), GunLight.spill(rgb, ticks, true), GunLight.spill(rgb, ticks, false));
+		List<Float> frame = List.of((float) GunLight.keyframe(ticks));
 		var now = stack.get(DataComponents.CUSTOM_MODEL_DATA);
-		if (now == null || !now.colors().equals(colours)) {
-			stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of(), List.of(), List.of(), colours));
+		if (now == null || !now.colors().equals(colours) || !now.floats().equals(frame)) {
+			stack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(frame, List.of(), List.of(), colours));
 		}
 	}
 
