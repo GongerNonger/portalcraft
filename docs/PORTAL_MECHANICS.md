@@ -49,11 +49,15 @@ Puzzles are built for Portal's numbers, so flings fall short of their ledges.
 ## Portal air (built: option A below)
 
 From the moment Steve comes out of a portal with speed (or is thrown by an air current or a blast)
-until he lands, touches water or a ladder, and on any fall longer than 3 blocks, Steve flies by
+until he lands, touches water or a ladder, and whenever he is on the way down, Steve flies by
 Portal's rules (`PortalAir`, `LivingEntityAirMixin`): gravity 600 u/s² (Minecraft's is 1280), no
-air drag, speed capped at 3500 u/s, and air control can steer but not add speed. Jumps, sprint-jumps
-and short drops are vanilla. Fall damage is still Minecraft's, from the fall distance: long falls
-still need the water bucket.
+air drag, speed capped at 3500 u/s, and air control can steer but not add speed. So a fall from any
+height arrives at Portal's own speed (it used to start three blocks into a fall, by which time
+Steve was a third too fast, and stayed ahead: 581 u/s where Portal's player has 442). The way up is
+Minecraft's: a jump is as high and as quick off the ground as ever, and comes down a little slower.
+Out of a portal Steve leaves at 1000 u/s at most, and at 300 u/s or more upward out of one in the
+floor, as Portal's player does. Fall damage is still Minecraft's, from the fall distance: long
+falls still need the water bucket.
 
 ## Minecraft hitting Portal's props
 

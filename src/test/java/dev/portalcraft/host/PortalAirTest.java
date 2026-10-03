@@ -17,6 +17,21 @@ class PortalAirTest {
 	}
 
 	@Test
+	void everyDescentIsPortalsButNotTheWayUp() {
+		assertTrue(PortalAir.falling(false, -0.01)); // just past the top of a jump, or off a ledge
+		assertTrue(!PortalAir.falling(false, 0.42)); // jumping: Minecraft's own rise
+		assertTrue(!PortalAir.falling(true, -0.08)); // standing
+		// From rest under Portal's gravity, 163 units down is 442 units/s, as in Portal (Minecraft's
+		// own fall had Steve at 581 there).
+		double v = 0.0, fallen = 0.0;
+		while (fallen * Units.PER_BLOCK < 163.0) {
+			v += PortalAir.GRAVITY;
+			fallen += v;
+		}
+		assertEquals(442.0, v * Units.PER_BLOCK * 20.0, 30.0);
+	}
+
+	@Test
 	void airControlSteersButDoesntAddSpeed() {
 		// A fling at 1 block/tick, air control pushed it to 1.1 sideways: back to 1, same direction.
 		Vec3 v = PortalAir.limit(new Vec3(1.1, -0.5, 0.0), 1.0);

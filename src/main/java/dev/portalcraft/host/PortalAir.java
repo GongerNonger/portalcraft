@@ -5,11 +5,17 @@ import net.minecraft.world.phys.Vec3;
 
 /**
  * Portal's air physics for Steve, where Portal's puzzles need them: after he leaves a portal (until
- * he lands) and once a fall gets long. Minecraft's player falls under twice Portal's gravity and
+ * he lands), and whenever he is falling. Minecraft's player falls under twice Portal's gravity and
  * loses 9% of its horizontal speed every tick in the air, which left momentum flings some 37%
  * short of the ledges Portal's chambers are built around (docs/PORTAL_MECHANICS.md). In Portal air:
  * Portal's gravity (sv_gravity 600 units/s^2), no air drag, its 3500 units/s speed cap, and air
- * control that can steer but not speed Steve up. Jumps, sprint-jumps and short drops stay vanilla.
+ * control that can steer but not speed Steve up.
+ *
+ * Every descent is Portal's, from its highest point: a fall of any height then reaches a portal at
+ * exactly the speed Portal's chambers were built for. (It used to start only three blocks into a
+ * fall: by then Steve was a third faster than Portal's player, the acceleration halved in mid-air,
+ * and he carried the extra into every fling.) The way up stays Minecraft's, so a jump is as high
+ * and as quick off the ground as ever; it comes down a little slower.
  * Applied by LivingEntityAirMixin to the local player only (whose movement the client runs).
  */
 public final class PortalAir {
@@ -17,8 +23,6 @@ public final class PortalAir {
 	public static final double GRAVITY = 600.0 / Units.PER_BLOCK / 400.0;
 	/** Portal's sv_maxvelocity, 3500 units/s, in blocks/tick. */
 	public static final double MAX_SPEED = 3500.0 / Units.PER_BLOCK / 20.0;
-	/** A fall longer than this (blocks) is a long one: Portal's gravity from here on. */
-	public static final double LONG_FALL = 3.0;
 
 	private static volatile boolean flung;
 	private static int flungTicks, flingLogs;
@@ -49,7 +53,12 @@ public final class PortalAir {
 	/** True while `player`, the one this client moves, should fly by Portal's rules. */
 	public static boolean active(Player player) {
 		return HostCollision.active() && player.level().isClientSide() && !player.isInWater() && !player.onClimbable() && !player.isFallFlying()
-			&& !player.getAbilities().flying && (flung || player.fallDistance > LONG_FALL);
+			&& !player.getAbilities().flying && (flung || falling(player.onGround(), player.getDeltaMovement().y));
+	}
+
+	/** In the air and on the way down. */
+	static boolean falling(boolean onGround, double velocityY) {
+		return !onGround && velocityY < 0.0;
 	}
 
 	/** Funneling reaches for floor portals this far off to the side (blocks), and this far below. */
