@@ -11,3 +11,4 @@ host/portal/build/
 .claude/
 .tools/
 dist/
+__pycache__/
