@@ -28,6 +28,9 @@ public final class PortalPlacement {
 		if (PortalGunEvents.FIRE.invoker().onFire(player, color)) {
 			return; // a host game fires its own portal (and the light follows what it places)
 		}
+		if (dev.portalcraft.host.HostCollision.active()) {
+			return; // inside Portal: Portal fires the real portal; Minecraft's own shot would only add a second trail and sound
+		}
 		if (player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
 			PortalGunItem.setLastFired(player.getMainHandItem(), color);
 		}

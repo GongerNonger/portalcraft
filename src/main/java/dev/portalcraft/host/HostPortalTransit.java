@@ -64,7 +64,7 @@ public final class HostPortalTransit {
 		for (int i = 0; i < 2; i++) {
 			Frame f = new Frame(portals[i]);
 			double depth = f.forward(point);
-			if (depth <= 2.0 && depth >= -HostCollision.HOLE_DEPTH - 2.0 && f.inOval(point)) {
+			if (depth <= 2.0 && depth >= -HostCollision.holeDepth(portals[i]) - 2.0 && f.inOval(point)) {
 				synchronized (PENDING) {
 					PENDING.put(projectile, new Pending(i, point, projectile.getDeltaMovement()));
 				}

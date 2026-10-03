@@ -27,6 +27,18 @@ public final class HostCollision {
 	static final double PORTAL_HALF_HEIGHT = 54.0;
 	/** How far behind the surface the hole reaches, in units. Thicker than any Portal wall. */
 	static final double HOLE_DEPTH = 72.0;
+	/**
+	 * Floor and ceiling portals reach much further: an infinite fall arrives at up to
+	 * PortalAir.MAX_SPEED (about 4.4 blocks a tick) and Portal's teleport comes back a tick or two
+	 * after the player's centre crosses. With a wall-deep hole Steve hit its bottom first, lost his
+	 * speed, and the loop decayed into catching on the rim. 16 blocks covers that with a tick to spare.
+	 */
+	static final double VERTICAL_HOLE_DEPTH = 640.0;
+
+	/** How far behind its surface this portal's hole reaches, in units. */
+	static double holeDepth(Proto.HostPortal p) {
+		return Math.abs(Units.angleVectors(p.angles())[0].z) > 0.7 ? VERTICAL_HOLE_DEPTH : HOLE_DEPTH;
+	}
 	private static final int BUCKET = 8;
 	/** Columns per block edge for sloped brushes: 1/16 block = 2.5 units. */
 	private static final int COLUMNS = 16;
@@ -186,6 +198,7 @@ public final class HostCollision {
 		Vec3[] axes = Units.angleVectors(p.angles());
 		Vec3 forward = axes[0], right = axes[1], up = axes[2];
 		Vec3 o = p.origin();
+		double holeDepth = holeDepth(p);
 		List<AABB> slices = new ArrayList<>(HOLE_SLICES);
 		double step = 2.0 * PORTAL_HALF_HEIGHT / HOLE_SLICES;
 		for (int i = 0; i < HOLE_SLICES; i++) {
@@ -198,7 +211,7 @@ public final class HostCollision {
 			double minX = 1e9, minY = 1e9, minZ = 1e9, maxX = -1e9, maxY = -1e9, maxZ = -1e9;
 			for (int sr = -1; sr <= 1; sr += 2) {
 				for (double u : new double[] {u0, u1}) {
-					for (double depth : new double[] {2.0, -HOLE_DEPTH}) {
+					for (double depth : new double[] {2.0, -holeDepth}) {
 						Vec3 m = Units.toMc(o.add(right.scale(sr * halfWidth)).add(up.scale(u)).add(forward.scale(depth)));
 						minX = Math.min(minX, m.x);
 						minY = Math.min(minY, m.y);
