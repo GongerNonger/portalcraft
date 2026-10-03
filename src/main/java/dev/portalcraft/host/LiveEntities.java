@@ -70,6 +70,9 @@ public final class LiveEntities {
 	 * lift's platform, level with the feet, is.
 	 */
 	public static boolean besideFixture(AABB feet) {
+		// A little wider than asked: a tilted hull's collision is built of columns that reach up to a
+		// column's width past the hull itself, so the camera's can touch the slab where its box doesn't.
+		feet = feet.inflate(0.15, 0.0, 0.15);
 		for (Placed p : PLACED.values()) {
 			if (p.bounds() == null || movableProp(p.pose().model()) || !p.bounds().intersects(feet)) {
 				continue;

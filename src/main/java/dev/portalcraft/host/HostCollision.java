@@ -35,6 +35,14 @@ public final class HostCollision {
 	 */
 	static final double VERTICAL_HOLE_DEPTH = 640.0;
 
+	/**
+	 * ... and how far out in front of the surface: past the skirting along the foot of Portal's
+	 * walls. That is its own brush, 10 units high and a few proud of the wall, and with the hole
+	 * stopping 2 units out it stayed as a sill across the bottom of every wall portal at floor
+	 * level, where Portal's own player walks straight through.
+	 */
+	static final double HOLE_FRONT = 12.0;
+
 	/** How far behind its surface this portal's hole reaches, in units. */
 	static double holeDepth(Proto.HostPortal p) {
 		return Math.abs(Units.angleVectors(p.angles())[0].z) > 0.7 ? VERTICAL_HOLE_DEPTH : HOLE_DEPTH;
@@ -197,7 +205,7 @@ public final class HostCollision {
 		double minX = 1e9, minY = 1e9, minZ = 1e9, maxX = -1e9, maxY = -1e9, maxZ = -1e9;
 		for (int sr = -1; sr <= 1; sr += 2) {
 			for (int su = -1; su <= 1; su += 2) {
-				for (double depth : new double[] {2.0, -holeDepth}) {
+				for (double depth : new double[] {HOLE_FRONT, -holeDepth}) {
 					Vec3 m = Units.toMc(o.add(right.scale(sr * PORTAL_HALF_WIDTH)).add(up.scale(su * PORTAL_HALF_HEIGHT)).add(forward.scale(depth)));
 					minX = Math.min(minX, m.x);
 					minY = Math.min(minY, m.y);

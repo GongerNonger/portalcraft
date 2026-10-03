@@ -328,8 +328,14 @@ public final class HostDriver {
 		for (int i = 1; i <= 32; i++) {
 			double up = i / 64.0;
 			if (player.level().noCollision(player, new AABB(core.minX, core.minY + up + 0.005, core.minZ, core.maxX, core.maxY + up - 0.02, core.maxZ))) {
-				if (liftLogs++ < 20) {
-					LOG.info("PortalCraft: Steve's feet were in the floor at {} (host {}): lifted {} blocks", player.position(), Units.toSrc(player.position()), up);
+				if (liftLogs++ < 60) {
+					StringBuilder what = new StringBuilder();
+					for (net.minecraft.world.phys.shapes.VoxelShape shape : player.level().getBlockCollisions(player, feet)) {
+						AABB hit = shape.bounds();
+						what.append(' ').append(Units.toSrc(new Vec3(hit.minX, hit.minY, hit.minZ))).append("..").append(Units.toSrc(new Vec3(hit.maxX, hit.maxY, hit.maxZ)));
+					}
+					LOG.info("PortalCraft: Steve's feet were in the floor at {} (host {}): lifted {} blocks; the floor:{}", player.position(),
+						Units.toSrc(player.position()), up, what);
 				}
 				player.setPos(player.position().add(0.0, up, 0.0));
 				if (player.getDeltaMovement().y < 0.0) {
