@@ -61,8 +61,34 @@ public final class LiveEntities {
 
 	/** True if `body` (Minecraft coordinates) overlaps a movable prop's collision: a cube, a turret, the radio. */
 	public static boolean overlapsProp(AABB body) {
+		return overlaps(body, true);
+	}
+
+	/**
+	 * True if `feet` (the bottom slab of a hull) is in one of the host's other solid entities that
+	 * stands higher than the slab: a security camera, a door. Not a floor to be lifted onto, where a
+	 * lift's platform, level with the feet, is.
+	 */
+	public static boolean besideFixture(AABB feet) {
 		for (Placed p : PLACED.values()) {
-			if (p.bounds() == null || !movableProp(p.pose().model()) || !p.bounds().intersects(body)) {
+			if (p.bounds() == null || movableProp(p.pose().model()) || !p.bounds().intersects(feet)) {
+				continue;
+			}
+			for (BspMap.Brush brush : p.brushes()) {
+				AABB box = brush.mcBox();
+				// (All of a security camera: it is nine small pieces, and the one under Steve's feet
+				// as it turns can be a low one.)
+				if (box.intersects(feet) && (box.maxY > feet.maxY || p.pose().model().contains("security_camera"))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean overlaps(AABB body, boolean movable) {
+		for (Placed p : PLACED.values()) {
+			if (p.bounds() == null || movableProp(p.pose().model()) != movable || !p.bounds().intersects(body)) {
 				continue;
 			}
 			for (BspMap.Brush brush : p.brushes()) {

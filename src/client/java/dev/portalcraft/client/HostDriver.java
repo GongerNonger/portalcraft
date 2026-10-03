@@ -116,6 +116,9 @@ public final class HostDriver {
 		return scancode >= 0 && scancode < KEYS.length && KEYS[scancode];
 	}
 
+	/** Where Steve stood when the host went away (blocks), while it is away; else null. */
+	private static Vec3 heldWithoutHost;
+
 	/** START_CLIENT_TICK: before the player moves this tick. */
 	public static void tick(Minecraft minecraft) {
 		Proto.HostState s = HostLink.current();
@@ -128,9 +131,21 @@ public final class HostDriver {
 				OverlayLink.close();
 				WorldLink.close();
 				linked = false;
+				heldWithoutHost = minecraft.player != null && HostCollision.active() ? minecraft.player.position() : null;
+			}
+			// ... and hold Steve where he was. The walls stay but nothing takes him through the host's
+			// portals any more: quit Portal during an infinite fall and he dropped out of the bottom
+			// of the floor portal's hole, was saved far under the map, and died three times over at the
+			// next start (the void, then the fall he was still in).
+			LocalPlayer left = minecraft.player;
+			if (heldWithoutHost != null && left != null && HostCollision.active() && !left.isDeadOrDying()) {
+				left.setPos(heldWithoutHost);
+				left.setDeltaMovement(Vec3.ZERO);
+				left.resetFallDistance();
 			}
 			return;
 		}
+		heldWithoutHost = null;
 		if (!linked) {
 			LOG.info("PortalCraft: host linked ({})", s.map());
 			linked = true;
@@ -191,6 +206,9 @@ public final class HostDriver {
 
 		carry(player, moved);
 		pushOutOfSolids(player);
+		if (player.getDeltaMovement().y > -0.5) {
+			liftOutOfTheFloor(player); // not in a fast fall: see there
+		}
 		for (String command; (command = HostLink.takeDevCommand()) != null;) {
 			runCommand(minecraft, command);
 		}
@@ -276,37 +294,48 @@ public final class HostDriver {
 	private static int liftLogs;
 
 	/**
-	 * Steve with his feet in a floor after a shove from the host: up onto it. Minecraft doesn't stop a body that starts its step inside a shape,
+	 * Steve with his feet in a floor (a shove from the host put them there, or a prop did): up onto it. Minecraft doesn't stop a body that starts its step inside a shape,
 	 * so left there he sinks through the floor and out of the map. Only up, and only half a block:
-	 * a hull caught in a wall or a ceiling is left for the host to push out. Not every tick: under
-	 * the ceiling portal in testchmb_a_10 something in Minecraft's copy of the map is solid where
-	 * Portal lets its player through, and lifting Steve off it stopped his infinite fall.
+	 * a hull caught in a wall or a ceiling is left for the host to push out. Every tick except in a
+	 * fast fall: out of the ceiling portal in testchmb_a_10 it once took something for a floor,
+	 * lifted Steve and stopped his infinite fall.
 	 */
 	private static void liftOutOfTheFloor(LocalPlayer player) {
 		if (!HostCollision.active()) {
 			return;
 		}
-		// Only his feet: the bottom half block of the hull in something, the rest of it free. (Any
+		// Only his feet, and only the middle of them: the hull pulled in a tenth of a block from its
+		// sides (pressed into a wall by a shove it would never read as clear, and Steve sank through
+		// the floor all along the wall), its bottom half block in something and the rest free. (Any
 		// overlap at all took Steve coming out of a ceiling portal against its rim, lifted him back
 		// up into it and stopped his fall.)
-		AABB body = player.getBoundingBox().deflate(0.02);
-		if (body.getYsize() <= 0.6) {
+		AABB core = player.getBoundingBox().deflate(0.1, 0.0, 0.1);
+		if (core.getYsize() <= 0.6) {
 			return;
 		}
-		AABB feet = new AABB(body.minX, body.minY, body.minZ, body.maxX, body.minY + 0.5, body.maxZ);
-		AABB rest = new AABB(body.minX, body.minY + 0.5, body.minZ, body.maxX, body.maxY, body.maxZ);
+		AABB feet = new AABB(core.minX, core.minY + 0.005, core.minZ, core.maxX, core.minY + 0.5, core.maxZ);
+		AABB rest = new AABB(core.minX, core.minY + 0.5, core.minZ, core.maxX, core.maxY - 0.02, core.maxZ);
 		if (player.level().noCollision(player, feet) || !player.level().noCollision(player, rest)) {
 			return;
 		}
-		Vec3 lifted = clearOfTheFloor(player, player.position(), 32);
-		if (lifted != player.position()) {
-			if (liftLogs++ < 20) {
-				LOG.info("PortalCraft: Steve's feet were in the floor at {} (host {}): lifted {} blocks", player.position(), Units.toSrc(player.position()),
-					lifted.y - player.position().y);
-			}
-			player.setPos(lifted);
-			if (player.getDeltaMovement().y < 0.0) {
-				player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.0, 1.0));
+		// Not off one of the host's fixtures that stands beside him: a security camera turns to watch
+		// the player, its body swept under Steve as he dropped out of the ceiling portal next to it,
+		// and "up onto the floor" put him back in the portal. (A lift's platform is a floor: with every
+		// fixture left out, Steve sank through the lift at the level's start.)
+		if (LiveEntities.besideFixture(feet)) {
+			return;
+		}
+		for (int i = 1; i <= 32; i++) {
+			double up = i / 64.0;
+			if (player.level().noCollision(player, new AABB(core.minX, core.minY + up + 0.005, core.minZ, core.maxX, core.maxY + up - 0.02, core.maxZ))) {
+				if (liftLogs++ < 20) {
+					LOG.info("PortalCraft: Steve's feet were in the floor at {} (host {}): lifted {} blocks", player.position(), Units.toSrc(player.position()), up);
+				}
+				player.setPos(player.position().add(0.0, up, 0.0));
+				if (player.getDeltaMovement().y < 0.0) {
+					player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.0, 1.0));
+				}
+				return;
 			}
 		}
 	}
