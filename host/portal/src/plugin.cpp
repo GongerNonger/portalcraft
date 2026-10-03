@@ -641,7 +641,17 @@ void updateRiding() {
 		uint32_t h = *reinterpret_cast<uint32_t*>(base + g_pl.groundEntity);
 		int index = h == 0xFFFFFFFFu ? -1 : int(h & 0xFFF);
 		Vector o;
-		if (index > 1 && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
+		// Only what carries the player like a lift: not a loose prop he happens to stand on. A cube
+		// settles under his weight, a hair up and down, and each twitch handed Steve's height to
+		// Portal and back (standing on a cube flapped between the two).
+		bool loose = false;
+		if (index > 1) {
+			void* e = edictAt(index);
+			void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
+			const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
+			loose = cls && (std::strncmp(cls, "prop_physics", 12) == 0 || std::strncmp(cls, "npc_", 4) == 0);
+		}
+		if (index > 1 && !loose && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
 			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
 				moving = true;
 			}
@@ -1248,6 +1258,29 @@ Vector stepNow(const TickSample& t) {
 	return g_dbgCarried ? xfPoint(x, toVec(t.pos)) : toVec(t.pos);
 }
 
+// The clock Minecraft's steps are played back on: one even step per server tick. Portal runs its
+// ticks in bursts between rendered frames (two frames apart, then three), so reading the wall clock
+// at each tick moved the player 2.3 units, then 2.9, then 2.3: a judder at walking speed, since the
+// client spreads ticks evenly when it draws. This advances by the tick's own length and only
+// leans gently on the wall clock, to stay in step with Minecraft's.
+double g_playClock = 0.0;
+
+void advancePlayClock() {
+	static double last = 0.0, tick = 0.015;
+	double now = nowSeconds();
+	if (g_playClock == 0.0 || now - g_playClock > 0.25 || g_playClock - now > 0.25) {
+		g_playClock = now; // the first tick, or after a stall (a load, a pause)
+	} else {
+		double step = now - last;
+		if (step > 0.001 && step < 0.1) {
+			tick += (step - tick) * 0.01; // the tick's real length, averaged over about a hundred
+		}
+		g_playClock += tick;
+		g_playClock += (now - g_playClock) * 0.03;
+	}
+	last = now;
+}
+
 Vector interpolatedMinecraft(Vector* velocity) {
 	Xf now = xfIdentity();
 	McAt mcAt{g_mc.teleportAck, g_mc.crossMatchedEcho};
@@ -1256,7 +1289,7 @@ Vector interpolatedMinecraft(Vector* velocity) {
 	if (!g_haveOffset) {
 		return carried ? xfPoint(now, toVec(g_mc.origin)) : toVec(g_mc.origin);
 	}
-	double ticks = (nowSeconds() - g_tickOffset) / 0.05 - 1.0;
+	double ticks = ((g_playClock != 0.0 ? g_playClock : nowSeconds()) - g_tickOffset) / 0.05 - 1.0;
 	if (ticks > double(g_tickSeq)) {
 		ticks = double(g_tickSeq); // ahead of the newest step (it's late): hold it
 	}
@@ -1414,6 +1447,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	auto* mv = static_cast<uint8_t*>(mvRaw);
 	Vector& origin = *reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin);
 	updateGunGate();
+	advancePlayClock();
 	watchGunShots(*reinterpret_cast<int*>(mv + sdk::kMvButtons));
 
 	if (!g_checkedLayout && g_playerInfoMgr) {
@@ -2477,6 +2511,7 @@ public:
 		sendMapsDir();
 		camera::init(&logf);
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
+		camera::setEyeHeight(following() && !g_scripted ? (g_mc.sneaking ? 50.8f : 64.0f) : 0.0f);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
 		watchWheel();

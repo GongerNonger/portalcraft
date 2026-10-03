@@ -98,6 +98,14 @@ public final class WorldFormat {
 	 * Minecraft's vertex colour (ARGB) as a D3DCOLOR, which has the same 0xAARRGGBB layout. Solid
 	 * and cutout quads get alpha 255: the texture's alpha does the cutout.
 	 */
+	/** Blocks that give off at least this much light are drawn as lights themselves. */
+	public static final int GLOW_EMISSION = 12;
+	/**
+	 * A solid vertex of a glowing block: white, with alpha 254 (still opaque) as the mark that tells
+	 * the host not to put its own lighting on the triangle.
+	 */
+	public static final int GLOW_COLOR = 0xFEFFFFFF;
+
 	public static int d3dColor(int argb, boolean translucent) {
 		return translucent ? argb : argb | 0xFF000000;
 	}

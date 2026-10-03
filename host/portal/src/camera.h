@@ -14,6 +14,8 @@ void shutdown();
 // own camera gets before its blocks stop it (McState.cameraDistance, host units).
 void setMode(int mode, float minecraftDistance);
 // While true, Portal doesn't draw its own player (Chell), through portals or as a portal ghost.
+// The first-person eye's height over the player's feet, in units (0: leave Portal's).
+void setEyeHeight(float units);
 // Whether Portal may draw its viewmodel (its portal gun) at all.
 void setViewModel(bool allowed);
 

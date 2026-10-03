@@ -183,6 +183,8 @@ using BoolFn = bool(__thiscall*)(void* self);
 constexpr float kDistance = 4.0f * 40.0f;
 constexpr float kHull = 6.0f;
 
+float g_wantEye = 0.0f; // the eye's height over the feet to show (0: Portal's own)
+
 void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	reinterpret_cast<OverrideViewFn>(g_hookView.original)(self, setupRaw);
 	g_third = false;
@@ -212,6 +214,16 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	}
 	g_feet = feet;
 	g_feetValid = true;
+	// Steve's eye height, not Chell's: sneaking, Portal ducks its player and drops the eye to 28 units,
+	// most of the way to the floor, where Minecraft's sneak only dips to about 51.
+	if (g_wantEye > 0.0f) {
+		static float eye = 64.0f;
+		if (std::fabs(eye - dz) > 40.0f) {
+			eye = dz; // a fresh view: start from where Portal has it
+		}
+		eye += (g_wantEye - eye) * 0.2f;
+		origin.z = feet.z + eye;
+	}
 	if (g_mode == 0) {
 		return;
 	}
@@ -403,6 +415,10 @@ void shutdown() {
 	unpatch(&g_hookGhostDraw);
 	g_initState = 0;
 	g_bodyState = 0;
+}
+
+void setEyeHeight(float units) {
+	g_wantEye = units;
 }
 
 void setViewModel(bool allowed) {

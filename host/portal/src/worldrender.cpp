@@ -197,6 +197,11 @@ void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVerte
 	out.insert(out.end(), src, src + count);
 	for (uint32_t i = 0; i + 2 < count; i += 3) {
 		pcproto::WorldVertex* t = out.data() + base + i;
+		// A glowing block (lava, glowstone): Minecraft marks its vertices with alpha 254. It is a
+		// light, so Portal's light and shadow stay off it.
+		if ((t[0].color >> 24) == 0xFE && (t[1].color >> 24) == 0xFE && (t[2].color >> 24) == 0xFE) {
+			continue;
+		}
 		float ux = t[1].x - t[0].x, uy = t[1].y - t[0].y, uz = t[1].z - t[0].z;
 		float vx = t[2].x - t[0].x, vy = t[2].y - t[0].y, vz = t[2].z - t[0].z;
 		sdk::Vector n{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx};

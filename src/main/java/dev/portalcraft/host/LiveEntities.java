@@ -26,7 +26,21 @@ public final class LiveEntities {
 	private static final Vec3[] WORLD_AXES = {new Vec3(1, 0, 0), new Vec3(0, -1, 0), new Vec3(0, 0, 1)};
 
 	/** An entity as placed last time: its pose, its brushes, and the box around them (blocks). */
-	public record Placed(Proto.HostEntity pose, List<BspMap.Brush> brushes, @Nullable AABB bounds) {
+	public record Placed(Proto.HostEntity pose, List<BspMap.Brush> brushes, @Nullable AABB bounds, boolean carried) {
+	}
+
+	/** Where the player is while the host's gun holds an object (host units), else null. */
+	private static volatile @Nullable Vec3 carrying;
+	/** A prop this close to the player while the gun holds one is the one it holds (units). */
+	private static final double CARRY_REACH = 110.0;
+
+	/**
+	 * The host's gun holds an object (`player` is where its player stands) or not (null). Portal
+	 * turns off collision between its player and what they carry; without the same here, Steve was
+	 * blocked by the cube in his own hands, and climbed onto it when he looked down.
+	 */
+	public static void carrying(@Nullable Vec3 player) {
+		carrying = player;
 	}
 
 	private static final Map<Integer, Placed> PLACED = new HashMap<>();
@@ -89,14 +103,16 @@ public final class LiveEntities {
 		boolean changed = false;
 		for (Proto.HostEntity e : packet.entities()) {
 			Placed old = PLACED.get(e.index());
-			if (old != null && samePlace(old.pose(), e)) {
+			Vec3 holder = carrying;
+			boolean carried = holder != null && movableProp(e.model()) && e.origin().distanceTo(holder.add(0.0, 0.0, 36.0)) < CARRY_REACH;
+			if (old != null && old.carried() == carried && samePlace(old.pose(), e)) {
 				next.put(e.index(), old);
 				continue;
 			}
 			changed = true;
-			List<BspMap.Brush> brushes = place(map, e);
+			List<BspMap.Brush> brushes = carried ? List.of() : place(map, e);
 			AABB bounds = union(brushes);
-			Placed placed = new Placed(e, brushes, bounds);
+			Placed placed = new Placed(e, brushes, bounds, carried);
 			next.put(e.index(), placed);
 			if (bounds != null) {
 				dirty.add(bounds);

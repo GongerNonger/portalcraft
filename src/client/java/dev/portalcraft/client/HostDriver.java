@@ -143,6 +143,7 @@ public final class HostDriver {
 		// Portal's gun holding an object (its effect state 2): Steve's opens its claws and holds, then lets go.
 		dev.portalcraft.client.gun.GunAnimation.holding(s.gunEffect() == 2);
 		lightFollowsHostPortals(minecraft, s.portals());
+		LiveEntities.carrying(s.gunEffect() == 2 ? s.origin() : null);
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);
 
@@ -189,6 +190,7 @@ public final class HostDriver {
 		}
 
 		carry(player, moved);
+		pushOutOfSolids(player);
 		for (String command; (command = HostLink.takeDevCommand()) != null;) {
 			runCommand(minecraft, command);
 		}
@@ -478,6 +480,32 @@ public final class HostDriver {
 	 * Standing on something the host moved (a lift, a moving panel, a button going down): move
 	 * with it, the way the host would carry its own player.
 	 */
+	/** How far, and which ways, to look for free space when Steve is inside something (blocks). */
+	private static final double[] PUSH_STEPS = {0.05, 0.1, 0.2, 0.3, 0.45, 0.6, 0.8};
+	private static final double[][] PUSH_WAYS = {{1, 0, 0}, {-1, 0, 0}, {0, 0, 1}, {0, 0, -1}, {0.7071, 0, 0.7071}, {0.7071, 0, -0.7071},
+		{-0.7071, 0, 0.7071}, {-0.7071, 0, -0.7071}, {0, 1, 0}};
+
+	/**
+	 * Steve inside something solid (a cube Portal's physics slid into him, a door that closed on
+	 * him): out the shortest way. Minecraft never does this itself: a body already inside a shape
+	 * moves through it freely, which is how Steve could sprint into a cube he had just shoved.
+	 */
+	private static void pushOutOfSolids(LocalPlayer player) {
+		AABB body = player.getBoundingBox().deflate(0.02);
+		if (player.level().noCollision(player, body)) {
+			return;
+		}
+		for (double step : PUSH_STEPS) {
+			for (double[] way : PUSH_WAYS) {
+				Vec3 by = new Vec3(way[0] * step, way[1] * step, way[2] * step);
+				if (player.level().noCollision(player, body.move(by))) {
+					player.setPos(player.position().add(by));
+					return;
+				}
+			}
+		}
+	}
+
 	private static void carry(LocalPlayer player, List<LiveEntities.Moved> moved) {
 		if (moved.isEmpty()) {
 			return;

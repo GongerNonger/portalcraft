@@ -255,6 +255,9 @@ public final class WorldExporter {
 						emitters.add(LightExporter.pack(x, y, z, emission));
 						emitters.add(LightExporter.color(state));
 					}
+					// A block that is itself a light (lava, glowstone, a lamp): drawn at its own full
+					// brightness, with no face shading and none of the host's shadows on it.
+					MESH.glow = emission >= WorldFormat.GLOW_EMISSION;
 					FluidState fluid = state.getFluidState();
 					if (!fluid.isEmpty()) {
 						fluidRenderer.tesselate(level, pos.immutable(), MESH, state, fluid);
@@ -360,6 +363,8 @@ public final class WorldExporter {
 		private final int[] fc = new int[4];
 		private int fqCount;
 		private boolean fluidTranslucent;
+		/** The block being meshed gives off light: its faces go out unshaded and marked unlit (WorldFormat.GLOW_COLOR). */
+		boolean glow;
 
 		void begin(int ox, int oy, int oz) {
 			this.ox = ox;
@@ -380,7 +385,8 @@ public final class WorldExporter {
 				long uv = quad.packedUV(k);
 				out.add(
 					this.ox + (double) (x + p.x()), this.oy + (double) (y + p.y()), this.oz + (double) (z + p.z()),
-					WorldFormat.d3dColor(instance.getColor(k), isTranslucent), UVPair.unpackU(uv), UVPair.unpackV(uv)
+					this.glow && !isTranslucent ? WorldFormat.GLOW_COLOR : WorldFormat.d3dColor(instance.getColor(k), isTranslucent), UVPair.unpackU(uv),
+					UVPair.unpackV(uv)
 				);
 			}
 		}
@@ -409,7 +415,8 @@ public final class WorldExporter {
 			for (int k : WorldFormat.QUAD_TRIANGLES) {
 				int b = k * 5;
 				out.add(this.ox + (double) this.fq[b], this.oy + (double) this.fq[b + 1], this.oz + (double) this.fq[b + 2],
-					WorldFormat.d3dColor(this.fc[k], this.fluidTranslucent), this.fq[b + 3], this.fq[b + 4]);
+					this.glow && !this.fluidTranslucent ? WorldFormat.GLOW_COLOR : WorldFormat.d3dColor(this.fc[k], this.fluidTranslucent), this.fq[b + 3],
+					this.fq[b + 4]);
 			}
 		}
 
