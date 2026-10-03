@@ -32,42 +32,57 @@ def portal(rgb, path):
     img.save(path)
 
 def gun(path):
-    """16x16 item, pointing up-right like vanilla tools. Brass body, obsidian grip, glowing crystal."""
+    """16x16 item, pointing up-right like vanilla tools: Aperture's handheld portal device. White
+    shell over a black core, the grip under the rear, a black collar, and at the front the two
+    prongs we see from the side with the blue glow recessed between them."""
     P = {
-        ".": None,
-        "k": (24, 18, 32, 255),     # outline
-        "o": (52, 38, 70, 255),     # obsidian
-        "O": (78, 60, 104, 255),    # obsidian highlight
-        "b": (170, 120, 48, 255),   # brass
-        "B": (226, 178, 84, 255),   # brass highlight
-        "d": (112, 76, 30, 255),    # brass shadow
-        "c": (90, 220, 255, 255),   # crystal
-        "C": (220, 252, 255, 255),  # crystal core
-        "g": (40, 150, 200, 255),   # crystal edge
+        "k": (22, 22, 28, 255),     # outline
+        "W": (246, 246, 242, 255),  # white shell, lit
+        "w": (206, 208, 210, 255),  # white shell
+        "s": (150, 154, 162, 255),  # white shell, shade
+        "b": (44, 44, 52, 255),     # black core, grip
+        "B": (84, 86, 98, 255),     # black, lit
+        "g": (36, 128, 214, 255),   # glow, edge
+        "c": (96, 200, 255, 255),   # glow
+        "C": (226, 250, 255, 255),  # glow, core
     }
-    rows = [
-        "...........kkk..",
-        "..........kgcgk.",
-        ".........kgcCck.",
-        "........kbgcCgk.",
-        ".......kBbbggk..",
-        "......kBbdbbk...",
-        ".....kBbdbbk....",
-        "....kBbbdbk.....",
-        "...kkbbdbk......",
-        "..kOok.dk.......",
-        ".kOook.k........",
-        "kOoook..........",
-        "kooOk...........",
-        "kook............",
-        ".kk.............",
-        "................",
-    ]
+
+    def body(a, b):
+        # a: along the gun, 0 (rear, bottom-left) .. 30 (front, top-right); b: across, < 0 is the lit upper-left side
+        if 7 <= a <= 11 and 2.5 <= b <= 7.5:
+            return "B" if a <= 8 else "b"  # grip
+        if ((a - 7.0) / 4.2) ** 2 + (b / 3.6) ** 2 <= 1.0:
+            return "W" if b < -1.2 else "w" if b < 1.2 else "s"  # rear bulb
+        if 10 <= a <= 18 and -2.6 <= b <= 2.6:
+            return "b" if b >= 1.0 else ("W" if b < -1.0 else "w")  # barrel
+        return None
+
+    # The front by hand (x, y): at 16x16 the prongs only read pixel by pixel.
+    front = {
+        (8, 4): "B", (9, 5): "B", (10, 6): "b", (11, 7): "b", (9, 4): "B", (10, 5): "b", (11, 6): "b",  # collar
+        (9, 3): "W", (10, 2): "W", (11, 1): "W", (12, 0): "w",                                         # top prong
+        (12, 6): "s", (13, 5): "s", (14, 4): "s", (15, 3): "s",                                        # bottom prong
+        (10, 3): "k", (11, 2): "k", (12, 1): "k", (12, 5): "k", (13, 4): "k", (14, 3): "k",            # gaps
+        (10, 4): "c", (11, 3): "c", (12, 2): "g", (11, 4): "C", (12, 3): "C", (13, 2): "c",            # glow
+        (11, 5): "c", (12, 4): "c", (13, 3): "g",
+    }
+    grid = [[None] * 16 for _ in range(16)]
+    for y in range(16):
+        for x in range(16):
+            a, b = x + (15 - y), x + y - 15
+            grid[y][x] = front.get((x, y)) if a >= 19 else body(a, b)
+    # outline: every empty pixel next to a filled one
+    out = [row[:] for row in grid]
+    for y in range(16):
+        for x in range(16):
+            if grid[y][x] is None and any(0 <= x + dx < 16 and 0 <= y + dy < 16 and grid[y + dy][x + dx] not in (None, "k")
+                                          for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                out[y][x] = "k"
     img = Image.new("RGBA", (16, 16))
-    for y, row in enumerate(rows):
-        for x, ch in enumerate(row):
-            if P.get(ch):
-                img.putpixel((x, y), P[ch])
+    for y in range(16):
+        for x in range(16):
+            if out[y][x]:
+                img.putpixel((x, y), P[out[y][x]])
     img.save(path)
 
 if __name__ == "__main__":
