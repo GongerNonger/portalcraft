@@ -27,6 +27,20 @@ public abstract class LivingEntityAirMixin {
 		}
 	}
 
+	/**
+	 * Inside a host map the server takes the player's moves as sent. Its own check replays each move
+	 * against the blocks and, when the result differs ("moved wrongly"), teleports the client back:
+	 * a jump through one of the host's portals always differs, and Steve was snapped back to the
+	 * portal he went in through, where the host teleported him again and the two fell out of step.
+	 * Vanilla skips that check for a moment after an explosion throws a player; this is that switch.
+	 */
+	@Inject(method = "isInPostImpulseGraceTime", at = @At("HEAD"), cancellable = true)
+	private void portalcraft$hostMovesAreTaken(CallbackInfoReturnable<Boolean> cir) {
+		if ((Object) this instanceof net.minecraft.server.level.ServerPlayer && dev.portalcraft.host.HostCollision.active()) {
+			cir.setReturnValue(true);
+		}
+	}
+
 	@Inject(method = "getEffectiveGravity", at = @At("RETURN"), cancellable = true)
 	private void portalcraft$portalGravity(CallbackInfoReturnable<Double> cir) {
 		if ((Object) this instanceof Player player && PortalAir.active(player) && cir.getReturnValueD() > 0.0) {
