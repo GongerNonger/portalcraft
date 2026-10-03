@@ -360,6 +360,8 @@ public final class WorldExporter {
 		private int ox, oy, oz;
 		// fluid quad assembly: x, y, z, u, v, colour per corner
 		private final float[] fq = new float[4 * 5];
+		private final float[] fqPrevious = new float[4 * 5];
+		private boolean fluidHavePrevious;
 		private final int[] fc = new int[4];
 		private int fqCount;
 		private boolean fluidTranslucent;
@@ -395,6 +397,7 @@ public final class WorldExporter {
 		@Override
 		public VertexConsumer getBuilder(ChunkSectionLayer layer) {
 			this.fluidTranslucent = layer.translucent();
+			this.fluidHavePrevious = false;
 			return this;
 		}
 
@@ -411,6 +414,21 @@ public final class WorldExporter {
 				return;
 			}
 			this.fqCount = 0;
+			// FluidRenderer follows a face it wants seen from both sides (water's surface, its sides)
+			// with the same quad wound the other way, for a renderer that culls back faces. The host
+			// draws every face two-sided: with both, water blended twice (nearly opaque) and the copy,
+			// lit from underneath, left dark squares on the surface.
+			boolean back = this.fluidHavePrevious;
+			for (int k = 0; k < 4 && back; k++) {
+				int a = k * 5, b = ((4 - k) & 3) * 5; // 0, 3, 2, 1
+				back = this.fq[a] == this.fqPrevious[b] && this.fq[a + 1] == this.fqPrevious[b + 1] && this.fq[a + 2] == this.fqPrevious[b + 2];
+			}
+			if (back) {
+				this.fluidHavePrevious = false;
+				return;
+			}
+			System.arraycopy(this.fq, 0, this.fqPrevious, 0, this.fq.length);
+			this.fluidHavePrevious = true;
 			WorldFormat.Vertices out = this.fluidTranslucent ? this.translucent : this.solid;
 			for (int k : WorldFormat.QUAD_TRIANGLES) {
 				int b = k * 5;
