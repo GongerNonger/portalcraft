@@ -94,11 +94,14 @@ defaults (20 updates/s, 100 ms delay) that beats against Minecraft's 20 Hz ticks
 bobs. `play-portal.cmd` launches Portal with `+cl_updaterate 66 +cl_cmdrate 66 +cl_interp 0
 +cl_interp_ratio 1` (one update per server tick, ~15 ms delay), which removes the bob.
 
-Known gaps: moving and dynamic models (chamber doors, the elevator, cubes) aren't solid,
-moving brushes (func_door, func_tracktrain) aren't followed, Minecraft's placed blocks aren't
-drawn in Portal yet, and Minecraft screens (inventory) get no mouse. Steve isn't drawn in the
-views through portals yet (Chell is hidden there, so you see no one), and F5 also takes a Portal
-screenshot unless you unbind it in Portal (`unbind F5`).
+Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
+- Portal's traces don't see Minecraft's blocks: a portal shot at a wall you built lands on the
+  chamber wall behind it, and turrets see and shoot through your blocks. (Cubes, turrets and energy
+  balls do collide with them.)
+- Co-op isn't built yet.
+- A Portal update that moves the engine functions the plugin uses isn't detected; check
+  `portalcraft.log` if Portal misbehaves after a Steam update.
+- F5 also takes a Portal screenshot unless you unbind it in Portal (`unbind F5`).
 
 ## Host-game bridges
 

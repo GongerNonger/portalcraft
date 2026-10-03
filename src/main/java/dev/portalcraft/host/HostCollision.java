@@ -23,10 +23,10 @@ import org.jspecify.annotations.Nullable;
  */
 public final class HostCollision {
 	/** Portal 1's opening: 64 x 108 units. */
-	private static final double PORTAL_HALF_WIDTH = 32.0;
-	private static final double PORTAL_HALF_HEIGHT = 54.0;
+	static final double PORTAL_HALF_WIDTH = 32.0;
+	static final double PORTAL_HALF_HEIGHT = 54.0;
 	/** How far behind the surface the hole reaches, in units. Thicker than any Portal wall. */
-	private static final double HOLE_DEPTH = 72.0;
+	static final double HOLE_DEPTH = 72.0;
 	private static final int BUCKET = 8;
 	/** Columns per block edge for sloped brushes: 1/16 block = 2.5 units. */
 	private static final int COLUMNS = 16;
@@ -148,8 +148,16 @@ public final class HostCollision {
 		return holes;
 	}
 
+	/** The host's portals as last sent ([0] blue, [1] orange), for the server thread (HostPortalTransit). */
+	private static volatile Proto.HostPortal[] portals = new Proto.HostPortal[0];
+
+	public static Proto.HostPortal[] portals() {
+		return portals;
+	}
+
 	/** Recomputes the holes from the host's portals; cheap when nothing changed. */
 	public static void setPortals(Proto.HostPortal[] portals) {
+		HostCollision.portals = portals.clone();
 		List<AABB> next = new ArrayList<>();
 		for (Proto.HostPortal p : portals) {
 			if (p != null && p.linked()) {

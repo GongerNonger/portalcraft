@@ -81,5 +81,7 @@ public class PortalCraft implements ModInitializer {
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostPlates::tick);
 		// Arrows stuck in a host prop come loose when it moves.
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostArrows::tick);
+		// Minecraft's things (items, TNT, mobs, arrows) go through Portal's portals.
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_LEVEL_TICK.register(dev.portalcraft.host.HostPortalTransit::tick);
 	}
 }

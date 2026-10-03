@@ -19,6 +19,8 @@ enemies around him. This is where that holds up, and where it doesn't.
 | Scripted scenes (`point_viewcontrol`: chamber 00's wake-up, the escape ending) | 3 | While a camera or a freeze has Portal's player, Portal moves it and Steve follows with no input, his HUD and hand hidden. |
 | Cubes on Minecraft pressure plates | - | Cubes (and the radio) press wooden and weighted plates; turrets count as mobs, so stone plates too. |
 | Arrows in props | - | Stuck in a cube that then moves, an arrow comes loose and falls. |
+| Minecraft things through portals | - | Items, TNT, mobs, falling blocks, arrows and snowballs go through Portal's portals with their momentum (HostPortalTransit); arrows are caught at the hole's back wall so they keep their speed. |
+| Each chamber its own builds | - | Every map is its own stretch of the Minecraft world (MapRegions, 4096 blocks apart), so builds stay in their chamber. |
 | Floor-portal funneling | everywhere | Portal steers a falling player into a floor portal; PortalAir.funnel does it for Steve (within 1.5 blocks, 10 below). |
 | Minecraft explosions on props | - | TNT, creepers, beds become a Portal blast (`RadiusDamage`, DMG_BLAST, radius 2x power): cubes fly, turrets tip. The player is left out (Minecraft hurts Steve itself). |
 | Arrows, snowballs, punches on props | - | A projectile or a bare-hand punch that lands on a Portal entity hits it (`AddMultiDamage`, DMG_CLUB, force along the hit): cubes get shoved, turrets knocked over. |
