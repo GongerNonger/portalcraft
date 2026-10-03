@@ -9,3 +9,5 @@ logs/
 host/portal/ref/
 host/portal/build/
 .claude/
+.tools/
+dist/

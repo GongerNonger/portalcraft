@@ -38,6 +38,16 @@ The first run of `tools\setup.ps1` does three things:
   builds the plugin if Visual Studio 2022 Build Tools are present, and otherwise uses
   `host\portal\prebuilt\portalcraft.dll`.
 
+## Releases for friends
+
+`powershell -ExecutionPolicy Bypass -File tools\package.ps1` builds both halves and writes
+`dist\PortalCraft-<version>.zip`: unzip anywhere and run `Install PortalCraft.cmd`. It installs the
+plugin into Steam Portal and a portable Prism Launcher with the PortalCraft instance (Minecraft
+26.3, Fabric, Fabric API, the mod, the void world) into `%LOCALAPPDATA%\PortalCraft`, and points
+`portalcraft.ini` at it. The first Portal start opens Prism to sign in with a Microsoft account that
+owns Minecraft; after that Minecraft starts hidden with Portal. Installing a newer zip over it keeps
+the sign-in and the world.
+
 ## Building
 
 ```bat

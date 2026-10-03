@@ -37,3 +37,14 @@ Source SDK 2013 (single-player branch). No Valve source files are included in th
 
 Portal, Half-Life and Source are trademarks of Valve Corporation. Minecraft is a trademark of
 Mojang/Microsoft. This is a fan project, not affiliated with either. You need to own both games.
+
+## Bundled in releases (tools/package.ps1)
+
+- [Prism Launcher](https://prismlauncher.org/) 11.1.1, the official portable Windows build,
+  unmodified, under the GPL-3.0 (its license is in `minecraft/Prism/LICENSE-PrismLauncher.txt`;
+  source: https://github.com/PrismLauncher/PrismLauncher/tree/11.1.1). PortalCraft starts it as a
+  separate program.
+- [Fabric API](https://github.com/FabricMC/fabric) 0.161.0+26.3, unmodified, under the Apache-2.0.
+- The Prism instance setup (`tools/minecraft-bundle`) follows SkyCraft's (MIT, above).
+
+Minecraft itself is not bundled: Prism downloads it from Mojang for a player who owns it.

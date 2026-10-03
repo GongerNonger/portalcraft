@@ -14,7 +14,11 @@
 //   start_with_portal=1           ; 0: start Minecraft yourself (play-portal.cmd, gradle runClient)
 //   launcher=C:\tmp\portalcraft\gradle.cmd
 //   arguments=runClient --no-configuration-cache --args="--quickPlaySingleplayer PortalCraft"
-//   directory=C:\tmp\portalcraft  ; where it runs; its run\logs\latest.log is Minecraft's log
+//   directory=C:\tmp\portalcraft  ; where it runs
+//   log=...                       ; Minecraft's log, for the messages (default: directory\run\logs\latest.log)
+//
+// A release's installer writes one for Prism Launcher instead (launcher=...\prismlauncher.exe,
+// arguments=--launch PortalCraft --world PortalCraft).
 //
 // Minecraft is started with PORTALCRAFT_STARTED_BY_HOST=1, which makes it hide its window and
 // quit again when Portal closes (HostLifecycle.java). Whether one is already running is whether
@@ -24,7 +28,7 @@ namespace {
 
 LogFn g_log = nullptr;
 bool g_startWithPortal = false;
-std::string g_launcher, g_arguments, g_directory, g_iniPath, g_mapsDir;
+std::string g_launcher, g_arguments, g_directory, g_iniPath, g_mapsDir, g_logPath;
 
 enum class State { Unchecked, AlreadyRunning, Started, StartFailed, Off, Linked, Lost };
 State g_state = State::Unchecked;
@@ -52,22 +56,32 @@ bool minecraftRunning() {
 	return taken;
 }
 
+bool endsWith(const std::string& s, const char* suffix) {
+	size_t n = std::strlen(suffix);
+	return s.size() >= n && _stricmp(s.c_str() + s.size() - n, suffix) == 0;
+}
+
 bool start() {
-	std::string command = "cmd.exe /c \"\"" + g_launcher + "\" " + g_arguments + "\"";
+	// A script (gradle.cmd) runs in a console nobody should see; a program (Prism Launcher) starts
+	// as itself, visible, since the first time it asks the player to sign in.
+	bool script = endsWith(g_launcher, ".cmd") || endsWith(g_launcher, ".bat");
+	std::string command = script ? "cmd.exe /c \"\"" + g_launcher + "\" " + g_arguments + "\"" : "\"" + g_launcher + "\" " + g_arguments;
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", "1");
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", g_mapsDir.c_str()); // where Minecraft reads Portal's maps for collision
 	STARTUPINFOA si{};
 	si.cb = sizeof si;
-	si.dwFlags = STARTF_USESHOWWINDOW;
-	si.wShowWindow = SW_HIDE;
+	if (script) {
+		si.dwFlags = STARTF_USESHOWWINDOW;
+		si.wShowWindow = SW_HIDE;
+	}
 	PROCESS_INFORMATION pi{};
 	const char* dir = g_directory.empty() ? nullptr : g_directory.c_str();
+	DWORD flags = CREATE_NEW_PROCESS_GROUP | (script ? CREATE_NO_WINDOW : 0);
 	// Out of Portal's job if it has one (Steam's), so Portal closing doesn't kill Minecraft before
 	// it has saved: it quits by itself once Portal is gone.
-	BOOL ok = CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB,
-		nullptr, dir, &si, &pi);
+	BOOL ok = CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, flags | CREATE_BREAKAWAY_FROM_JOB, nullptr, dir, &si, &pi);
 	if (!ok) {
-		ok = CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, dir, &si, &pi);
+		ok = CreateProcessA(nullptr, command.data(), nullptr, nullptr, FALSE, flags, nullptr, dir, &si, &pi);
 	}
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", nullptr);
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", nullptr);
@@ -115,6 +129,7 @@ void init(LogFn log, HMODULE self) {
 	g_launcher = iniString("launcher", "");
 	g_arguments = iniString("arguments", "");
 	g_directory = iniString("directory", "");
+	g_logPath = iniString("log", (g_directory + "\\run\\logs\\latest.log").c_str());
 	g_log("launcher: %s: start_with_portal %d, launcher \"%s\"", path, g_startWithPortal ? 1 : 0, g_launcher.c_str());
 }
 
@@ -142,17 +157,18 @@ void frame(bool mcLinked, bool inLevel, void* engineClient) {
 	case State::Started:
 	case State::AlreadyRunning:
 		if (seconds < 90) {
-			std::snprintf(text, sizeof text, "PortalCraft: waiting for Minecraft... (%lus)", seconds);
+			std::snprintf(text, sizeof text, "PortalCraft: waiting for Minecraft... (%lus)%s", seconds,
+				seconds >= 20 && !endsWith(g_launcher, ".cmd") ? " If Prism Launcher asks you to sign in, Alt-Tab to it." : "");
 		} else {
-			std::snprintf(text, sizeof text, "PortalCraft: Minecraft still hasn't connected after %lus. Its log: %s\\run\\logs\\latest.log", seconds,
-				g_directory.c_str());
+			std::snprintf(text, sizeof text, "PortalCraft: Minecraft still hasn't connected after %lus. Its log: %s", seconds,
+				g_logPath.c_str());
 		}
 		break;
 	case State::StartFailed:
 		std::snprintf(text, sizeof text, "PortalCraft: couldn't start Minecraft (check launcher= in %s)", g_iniPath.c_str());
 		break;
 	case State::Off:
-		std::snprintf(text, sizeof text, "PortalCraft: Minecraft isn't running. Start it with play-portal.cmd to play as Steve.");
+		std::snprintf(text, sizeof text, "PortalCraft: Minecraft isn't running (start_with_portal=0 in portalcraft.ini): start it yourself to play as Steve.");
 		break;
 	case State::Linked:
 		if (seconds >= 4) {
@@ -164,8 +180,7 @@ void frame(bool mcLinked, bool inLevel, void* engineClient) {
 		if (seconds < 3) {
 			return; // a hitch, most likely
 		}
-		std::snprintf(text, sizeof text, "PortalCraft: Minecraft stopped answering (%lus). Its log: %s\\run\\logs\\latest.log", seconds,
-			g_directory.c_str());
+		std::snprintf(text, sizeof text, "PortalCraft: Minecraft stopped answering (%lus). Its log: %s", seconds, g_logPath.c_str());
 		break;
 	default:
 		return;
