@@ -41,6 +41,16 @@ public abstract class LivingEntityAirMixin {
 		}
 	}
 
+	/**
+	 * A sprint-jump's forward kick is a fixed 0.2 blocks a tick in vanilla, not an attribute: with
+	 * Steve scaled up inside a host map (HostScale) it grows with him, like his speed and his jump.
+	 */
+	@org.spongepowered.asm.mixin.injection.ModifyConstant(method = "jumpFromGround",
+		constant = @org.spongepowered.asm.mixin.injection.Constant(doubleValue = 0.2))
+	private double portalcraft$sprintJumpKick(double kick) {
+		return (Object) this instanceof Player && dev.portalcraft.host.HostCollision.active() ? kick * dev.portalcraft.host.HostScale.STEVE : kick;
+	}
+
 	@Inject(method = "getEffectiveGravity", at = @At("RETURN"), cancellable = true)
 	private void portalcraft$portalGravity(CallbackInfoReturnable<Double> cir) {
 		if ((Object) this instanceof Player player && PortalAir.active(player) && cir.getReturnValueD() > 0.0) {
