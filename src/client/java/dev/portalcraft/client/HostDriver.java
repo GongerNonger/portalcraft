@@ -270,6 +270,11 @@ public final class HostDriver {
 			server.execute(() -> {
 				ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
 				if (sp != null) {
+					// The server takes the jump as its own, or it calls the client's next move "moved
+					// wrongly" and snaps Steve back into the portal he went in through, standing still.
+					// Placed, not teleported: a teleport packet would set the client back a step.
+					sp.setPos(feet);
+					sp.connection.resetPosition();
 					sp.resetFallDistance();
 				}
 			});

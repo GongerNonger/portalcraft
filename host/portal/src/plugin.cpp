@@ -1235,10 +1235,16 @@ const TickSample* tickAt(uint32_t seq) {
 }
 
 // A step of Minecraft's, carried through the crossings Minecraft hadn't taken when it sent it.
+uint32_t g_dbgTagAck = 0, g_dbgTagMatched = 0; // the last step played back, for the trace
+bool g_dbgCarried = false;
+
 Vector stepNow(const TickSample& t) {
 	Xf x;
 	McAt at{t.ack, t.matched};
-	return anyCrossingAfter(at) && crossingsBetween(at, {g_teleportSeq, g_matched}, &x) ? xfPoint(x, toVec(t.pos)) : toVec(t.pos);
+	g_dbgTagAck = t.ack;
+	g_dbgTagMatched = t.matched;
+	g_dbgCarried = anyCrossingAfter(at) && crossingsBetween(at, {g_teleportSeq, g_matched}, &x);
+	return g_dbgCarried ? xfPoint(x, toVec(t.pos)) : toVec(t.pos);
 }
 
 Vector interpolatedMinecraft(Vector* velocity) {
@@ -1501,8 +1507,11 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	}
 	if (g_traceTicks > 0 && g_log) {
 		g_traceTicks--;
-		fprintf(g_log, "S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)", GetTickCount(), zIn, zPortal,
-			origin.z, g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, g_zLift, origin.x, origin.y);
+		fprintf(g_log, "S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)"
+			" | drive %d seq %u ack %u matched %u mc count %u echo %u | crossings %d step tag %u/%u carried %d",
+			GetTickCount(), zIn, zPortal, origin.z, g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, g_zLift, origin.x, origin.y, g_drivingNow,
+			g_teleportSeq, g_mc.teleportAck, g_matched, g_mc.crossCount, g_mc.crossMatchedEcho, g_crossingCount, g_dbgTagAck, g_dbgTagMatched,
+			g_dbgCarried);
 		fputc(10, g_log); // newline
 	}
 	g_origin = origin;
