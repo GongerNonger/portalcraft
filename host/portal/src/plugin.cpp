@@ -1344,6 +1344,54 @@ void updateGunGate() {
 	}
 }
 
+// Portal's gun firing, for Minecraft's gun to flash and animate with it (HostState.shots). A shot
+// shows as the active weapon's next-attack times jumping ahead; which button was down says which
+// colour. Read through the weapon's own send table, so nothing here depends on the build.
+uint8_t g_shots = 0;
+
+void watchGunShots(int buttons) {
+	static void* weaponTable = nullptr;
+	static int nextPrimary = -1, nextSecondary = -1;
+	static uint32_t lastWeapon = 0xFFFFFFFFu;
+	static float lastP = 0.0f, lastS = 0.0f;
+	uint8_t* base = playerFields();
+	if (!base || g_pl.activeWeapon < 0) {
+		return;
+	}
+	uint32_t handle = *reinterpret_cast<uint32_t*>(base + g_pl.activeWeapon);
+	if (handle == 0xFFFFFFFFu) {
+		lastWeapon = handle;
+		return;
+	}
+	void* e = edictAt(int(handle & 0xFFF));
+	if (!edictInUse(e)) {
+		return;
+	}
+	void* networkable = sdk::edictNetworkable(e);
+	auto* weapon = networkable ? static_cast<uint8_t*>(sdk::networkableBaseEntity(networkable)) : nullptr;
+	auto* sc = networkable ? static_cast<sdk::ServerClass*>(sdk::networkableServerClass(networkable)) : nullptr;
+	if (!weapon || !sc || !sc->table) {
+		return;
+	}
+	if (sc->table != weaponTable) {
+		weaponTable = sc->table;
+		nextPrimary = findProp(sc->table, "m_flNextPrimaryAttack", 0);
+		nextSecondary = findProp(sc->table, "m_flNextSecondaryAttack", 0);
+		logf("weapon: %s m_flNextPrimaryAttack %d m_flNextSecondaryAttack %d", sc->name, nextPrimary, nextSecondary);
+	}
+	if (nextPrimary < 0 || nextSecondary < 0) {
+		return;
+	}
+	float p = *reinterpret_cast<float*>(weapon + nextPrimary), s = *reinterpret_cast<float*>(weapon + nextSecondary);
+	if (handle == lastWeapon && (p > lastP + 0.05f || s > lastS + 0.05f)) {
+		bool orange = (buttons & sdk::IN_ATTACK2) && !(buttons & sdk::IN_ATTACK);
+		g_shots = uint8_t(((g_shots + 1) & 0x7F) | (orange ? 0x80 : 0));
+	}
+	lastWeapon = handle;
+	lastP = p;
+	lastS = s;
+}
+
 void logSolidNear(const Vector& at);
 void logHostSolid(const Vector& at, void* playerEntity);
 
@@ -1356,6 +1404,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	auto* mv = static_cast<uint8_t*>(mvRaw);
 	Vector& origin = *reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin);
 	updateGunGate();
+	watchGunShots(*reinterpret_cast<int*>(mv + sdk::kMvButtons));
 
 	if (!g_checkedLayout && g_playerInfoMgr) {
 		g_checkedLayout = true;
@@ -2193,6 +2242,7 @@ void sendState() {
 	s.teleportOrigin = {g_teleportOrigin.x, g_teleportOrigin.y, g_teleportOrigin.z};
 	s.teleportVelocity = {g_teleportVelocity.x, g_teleportVelocity.y, g_teleportVelocity.z};
 	s.teleportKind = g_teleportKind;
+	s.shots = g_shots;
 	if (g_inLevel && g_edicts) {
 		fillPortals(s);
 	}

@@ -58,7 +58,7 @@ public final class Proto {
 	public record HostState(
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
 		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, int teleportKind, HostPortal[] portals,
-		float cursorX, float cursorY, @org.jspecify.annotations.Nullable Crossing crossing, int crossMatched
+		float cursorX, float cursorY, @org.jspecify.annotations.Nullable Crossing crossing, int crossMatched, int shots
 	) {
 		public boolean inGame() {
 			return (flags & HOST_IN_GAME) != 0;
@@ -108,7 +108,7 @@ public final class Proto {
 		int mouse = b.get() & 0xFF;
 		int wheel = b.get(); // signed, wrapping
 		int teleportKind = b.get() & 0xFF; // TeleportKind
-		b.position(b.position() + 1);
+		int shots = b.get() & 0xFF; // the host gun's shot count (7 bits) and last colour (top bit: orange)
 		HostPortal[] portals = new HostPortal[2];
 		for (int i = 0; i < 2; i++) {
 			portals[i] = new HostPortal(b.getInt(), vec(b), vec(b));
@@ -123,7 +123,7 @@ public final class Proto {
 		Vec3 move = vec(b);
 		int crossMatched = b.getInt();
 		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, teleportKind, portals, cursorX,
-			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null, crossMatched);
+			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null, crossMatched, shots);
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */

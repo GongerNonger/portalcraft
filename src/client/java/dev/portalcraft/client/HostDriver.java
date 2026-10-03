@@ -77,6 +77,13 @@ public final class HostDriver {
 	private static Path failedMap;
 	/** When the host's current map was loaded (level starts aren't flings). */
 	private static long mapLoadedAt;
+	/**
+	 * Until then, Steve stays with the host's player instead of falling by himself. A level start
+	 * places him before the map's lift and doors have reached Minecraft (they're streamed a moment
+	 * later): at the start of a chamber he dropped down the lift shaft, hurt, and the lift left
+	 * without him.
+	 */
+	private static long holdWithHostUntil;
 
 	private HostDriver() {
 	}
@@ -112,6 +119,7 @@ public final class HostDriver {
 		loadMap(s.map());
 		HostCollision.setPortals(s.portals());
 		PlayerCrossings.matched(s.crossMatched());
+		gunFollowsHostShots(minecraft, s.shots());
 		lightFollowsHostPortals(minecraft, s.portals());
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);
@@ -174,6 +182,11 @@ public final class HostDriver {
 		look(player, s);
 
 		followHostMoves(minecraft, player, s);
+		if (System.currentTimeMillis() < holdWithHostUntil && teleportAck == s.teleportSeq()) {
+			player.setPos(Units.toMc(s.origin()));
+			player.setDeltaMovement(Vec3.ZERO);
+			player.resetFallDistance();
+		}
 		PortalAir.tick(player);
 		PortalAir.funnel(player, s.portals());
 		HostEvents.drainHits();
@@ -606,22 +619,44 @@ public final class HostDriver {
 	 * Portal's gun lights up in the colour of the portal it last fired. The host places its own
 	 * portals, so whichever of them just appeared or moved sets the Minecraft gun's light.
 	 */
+	private static int lastShots = -1;
+	private static long lastShotAt;
+
+	/** The host's gun fired (HostState.shots changed): Steve's flashes and plays its firing animation. */
+	private static void gunFollowsHostShots(Minecraft minecraft, int shots) {
+		if (lastShots < 0 || shots == lastShots) {
+			lastShots = shots;
+			return;
+		}
+		lastShots = shots;
+		lastShotAt = System.currentTimeMillis();
+		showShot(minecraft, (shots & 0x80) != 0 ? dev.portalcraft.PortalColor.SECONDARY : dev.portalcraft.PortalColor.PRIMARY);
+	}
+
+	private static void showShot(Minecraft minecraft, dev.portalcraft.PortalColor color) {
+		var server = minecraft.getSingleplayerServer();
+		if (server == null || minecraft.player == null) {
+			return;
+		}
+		var uuid = minecraft.player.getUUID();
+		server.execute(() -> {
+			ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+			if (sp != null && sp.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+				dev.portalcraft.PortalGunItem.setLastFired(sp, sp.getMainHandItem(), color);
+			}
+		});
+	}
+
 	private static void lightFollowsHostPortals(Minecraft minecraft, Proto.HostPortal[] portals) {
 		for (int i = 0; i < Math.min(2, portals.length); i++) {
 			Proto.HostPortal p = portals[i];
 			Vec3 at = p != null && (p.flags() & Proto.PORTAL_ACTIVE) != 0 ? p.origin() : null;
 			boolean placed = at != null && (lastPortalAt[i] == null || lastPortalAt[i].distanceToSqr(at) > 1.0);
 			lastPortalAt[i] = at;
-			var server = minecraft.getSingleplayerServer();
-			if (placed && server != null && minecraft.player != null) {
-				var uuid = minecraft.player.getUUID();
-				dev.portalcraft.PortalColor color = i == 0 ? dev.portalcraft.PortalColor.PRIMARY : dev.portalcraft.PortalColor.SECONDARY;
-				server.execute(() -> {
-					ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-					if (sp != null && sp.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
-						dev.portalcraft.PortalGunItem.setLastFired(sp, sp.getMainHandItem(), color);
-					}
-				});
+			// A portal landed with no shot seen for it (a host that doesn't report its shots): the gun
+			// shows it then. With the shot reported, the gun has already flashed.
+			if (placed && System.currentTimeMillis() - lastShotAt > 1500) {
+				showShot(minecraft, i == 0 ? dev.portalcraft.PortalColor.PRIMARY : dev.portalcraft.PortalColor.SECONDARY);
 			}
 		}
 	}
@@ -690,6 +725,9 @@ public final class HostDriver {
 				}
 			} else {
 				PlayerCrossings.forgetPending(); // the host placed him: nothing of ours left to unfold
+				if (System.currentTimeMillis() - mapLoadedAt < 20000) {
+					holdWithHostUntil = System.currentTimeMillis() + 2500;
+				}
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);
 				// Out of a portal with speed: Portal's flight until he lands. (Not a level start, even one

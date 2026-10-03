@@ -28,7 +28,7 @@ class ProtoTest {
 		b.put((byte) 3); // mouse
 		b.put((byte) -2); // wheel
 		b.put((byte) Proto.MOVE_IMPULSE); // teleportKind
-		b.put((byte) 0); // pad
+		b.put((byte) 0x83); // shots: the third, orange
 		for (int i = 0; i < 2; i++) {
 			b.putInt(i + 1).putFloat(i).putFloat(i).putFloat(i).putFloat(0).putFloat(90).putFloat(0);
 		}
@@ -60,6 +60,7 @@ class ProtoTest {
 		assertNotNull(s.crossing());
 		assertEquals(41, s.crossing().base());
 		assertEquals(5, s.crossMatched());
+		assertEquals(0x83, s.shots());
 		assertEquals(90.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).x, 1e-6);
 		assertEquals(5.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).z, 1e-6);
 	}

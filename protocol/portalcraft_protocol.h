@@ -69,7 +69,10 @@ struct HostState {
 	uint8_t mouse;        // bit0 left, bit1 right, bit2 middle
 	int8_t wheel;         // mouse-wheel notches so far, wrapping (up is positive): Minecraft scrolls by the change
 	uint8_t teleportKind; // TeleportKind of the move teleportSeq names
-	uint8_t pad;
+	// The host's portal gun firing: the low 7 bits count its shots (wrapping), the top bit is the
+	// last one's colour (set: orange). Minecraft's gun flashes and plays its firing animation on
+	// each change, whether or not the shot placed a portal.
+	uint8_t shots;
 	HostPortal portals[2]; // [0] blue, [1] orange
 	// PCH2: the OS cursor over the host's window, 0..1 across its client area (top-left origin), or
 	// -1 when there is none. Only meaningful while Minecraft has a screen open (McFlags kMcScreen):
