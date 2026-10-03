@@ -13,6 +13,7 @@ import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
 import dev.portalcraft.host.HostLink;
 import dev.portalcraft.host.LiveEntities;
+import dev.portalcraft.host.PlayerCrossings;
 import dev.portalcraft.host.HostEvents;
 import dev.portalcraft.host.PortalAir;
 import dev.portalcraft.host.Proto;
@@ -110,6 +111,7 @@ public final class HostDriver {
 		}
 		loadMap(s.map());
 		HostCollision.setPortals(s.portals());
+		PlayerCrossings.matched(s.crossMatched());
 		lightFollowsHostPortals(minecraft, s.portals());
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
 		matchHostWindowSize(minecraft);
@@ -138,6 +140,7 @@ public final class HostDriver {
 			// host's own latest move (its level start) was just applied: that already placed us, and
 			// its live origin can be a moment stale (once it put Steve outside the map).
 			resync = false;
+			PlayerCrossings.reset();
 			boolean placed = s.teleportSeq() != 0 && teleportAck == s.teleportSeq() && !player.isDeadOrDying() && !respawned;
 			LOG.info("PortalCraft: resync: host origin {}, last host move #{} to {}{}", s.origin(), s.teleportSeq(), s.teleportOrigin(),
 				placed ? " (already applied: staying)" : "");
@@ -219,10 +222,60 @@ public final class HostDriver {
 		if (!linked || player == null) {
 			return;
 		}
+		Proto.HostState s = HostLink.current();
+		if (s != null && s.inGame()) {
+			crossPortals(minecraft, player, s);
+		}
 		tickSeq++;
-		tickPrevious = Units.toSrc(new Vec3(player.xo, player.yo, player.zo));
-		tickCurrent = Units.toSrc(player.position());
+		tickPrevious = PlayerCrossings.unfold(Units.toSrc(new Vec3(player.xo, player.yo, player.zo)));
+		tickCurrent = PlayerCrossings.unfold(Units.toSrc(player.position()));
 		sendState(minecraft);
+	}
+
+	private static int crossingsLogged;
+
+	/**
+	 * The step that just ended took Steve's centre in through a linked host portal: out of the
+	 * other one, now (PlayerCrossings). Not while the host has a move of its own on the way to us,
+	 * on a lift, or in a scripted scene: then the host has the player.
+	 */
+	private static void crossPortals(Minecraft minecraft, LocalPlayer player, Proto.HostState s) {
+		if (!HostCollision.active() || s.scripted() || s.riding() || s.teleportSeq() != teleportAck
+			|| Units.offsetX() != dev.portalcraft.host.MapRegions.offsetX(s.map())) {
+			return;
+		}
+		double halfHeight = player.getBbHeight() * 0.5 * Units.PER_BLOCK;
+		PlayerCrossings.Carried c = PlayerCrossings.step(s.portals(), Units.toSrc(new Vec3(player.xo, player.yo, player.zo)),
+			Units.toSrc(player.position()), Units.velocityToSrc(player.getDeltaMovement()), halfHeight);
+		if (c == null) {
+			return;
+		}
+		Vec3 feet = Units.toMc(c.feet()), before = Units.toMc(c.previousFeet());
+		Vec3 velocity = Units.velocityToMc(c.velocity());
+		player.setPos(feet);
+		// Last tick's place carried through as well, so this step reads as the same smooth move.
+		player.xo = player.xOld = before.x;
+		player.yo = player.yOld = before.y;
+		player.zo = player.zOld = before.z;
+		player.setDeltaMovement(velocity);
+		player.resetFallDistance();
+		if (velocity.lengthSqr() > 0.1 * 0.1) {
+			PortalAir.startFling();
+		}
+		var server = minecraft.getSingleplayerServer();
+		if (server != null) {
+			var uuid = player.getUUID();
+			server.execute(() -> {
+				ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+				if (sp != null) {
+					sp.resetFallDistance();
+				}
+			});
+		}
+		if (crossingsLogged++ < 40) {
+			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} with velocity {}", c.crossings(), PlayerCrossings.count(), feet,
+				velocity);
+		}
 	}
 
 	/** Once per render frame: tell the host where Minecraft's player is. */
@@ -233,6 +286,9 @@ public final class HostDriver {
 		// The host's moves as soon as they arrive, not at the next tick: while it waits for our
 		// answer it can't drive the player (a real teleport) or has to carry a shove itself.
 		Proto.HostState hs = HostLink.current();
+		if (hs != null) {
+			PlayerCrossings.matched(hs.crossMatched());
+		}
 		// Only once the tick has moved to the host's map's region: a level start applied before that
 		// would land Steve in the last map's stretch of the world (and the void).
 		if (hs != null && minecraft.player != null && hs.inGame() && Units.offsetX() == dev.portalcraft.host.MapRegions.offsetX(hs.map())) {
@@ -258,15 +314,21 @@ public final class HostDriver {
 		Vec3 pos = Vec3.ZERO, vel = Vec3.ZERO;
 		if (ready) {
 			float partial = minecraft.getDeltaTracker().getGameTimeDeltaPartialTick(true);
-			pos = Units.toSrc(player.getPosition(partial));
+			// Unfolded: as if Steve hadn't yet made the portal crossings the host hasn't (PlayerCrossings).
+			pos = PlayerCrossings.unfold(Units.toSrc(player.getPosition(partial)));
 			// Real motion this tick. deltaMovement is already scaled down by ground friction, which
 			// would hand the host about half the walking speed (and weak flings through portals).
-			vel = Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo));
+			vel = PlayerCrossings.unfoldDir(Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo)));
+		}
+		byte[] crossPortal = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+		for (int k = Math.max(1, PlayerCrossings.count() - 3); k <= PlayerCrossings.count(); k++) {
+			crossPortal[k & 3] = (byte) PlayerCrossings.portalOf(k);
 		}
 		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0);
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
-			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F));
+			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),
+			crossPortal));
 		return ready;
 	}
 
@@ -598,13 +660,20 @@ public final class HostDriver {
 				if (c.base() != teleportAck) {
 					return; // composed from an older answer of ours: the next state has the right one
 				}
-				Vec3 pos = Units.toMc(c.point(Units.toSrc(player.position())));
-				Vec3 velocity = Units.velocityToMc(c.dir(Units.velocityToSrc(player.getDeltaMovement())));
-				teleport(minecraft, player, pos, velocity);
-				if (velocity.lengthSqr() > 0.1 * 0.1) {
-					PortalAir.startFling();
+				if (PlayerCrossings.count() > PlayerCrossings.matched()) {
+					// Steve went through himself just before this arrived (PlayerCrossings): it's the same
+					// crossing. He's already out; stop unfolding it and take the move as done.
+					PlayerCrossings.forgetPending();
+				} else {
+					Vec3 pos = Units.toMc(c.point(Units.toSrc(player.position())));
+					Vec3 velocity = Units.velocityToMc(c.dir(Units.velocityToSrc(player.getDeltaMovement())));
+					teleport(minecraft, player, pos, velocity);
+					if (velocity.lengthSqr() > 0.1 * 0.1) {
+						PortalAir.startFling();
+					}
 				}
 			} else {
+				PlayerCrossings.forgetPending(); // the host placed him: nothing of ours left to unfold
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);
 				// Out of a portal with speed: Portal's flight until he lands. (Not a level start, even one

@@ -7,9 +7,9 @@
 import argparse, math, socket, struct, time
 
 HOST = ("127.0.0.1", 27515)
-HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f")
-MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIf")
-assert HOST_STATE.size == 292 and MC_STATE.size == 76
+HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I")
+MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s")
+assert HOST_STATE.size == 296 and MC_STATE.size == 88
 
 
 def parse(data):
@@ -104,7 +104,7 @@ def main():
                 t = time.time() - t0
                 pos = (centre[0] + 64 * math.cos(t), centre[1] + 64 * math.sin(t), centre[2])
                 seq += 1
-                sock.sendto(MC_STATE.pack(b"PCM3", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0), HOST)
+                sock.sendto(MC_STATE.pack(b"PCM4", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0, 0, 0, b"\xff" * 4), HOST)
 
 
 if __name__ == "__main__":

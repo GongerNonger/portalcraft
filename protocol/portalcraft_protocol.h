@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH3"
+	char magic[4]; // "PCH4"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -84,6 +84,9 @@ struct HostState {
 	uint32_t crossValid; // 1: the cross fields are meaningful
 	float crossRot[9];
 	Vec3 crossMove;
+	// PCH4: how many of Minecraft's own portal crossings (McState.crossCount) Portal has made too.
+	// Minecraft sends its positions as if it hadn't yet made the ones after this (see PlayerCrossings).
+	uint32_t crossMatched;
 };
 
 enum McFlags : uint32_t {
@@ -92,7 +95,7 @@ enum McFlags : uint32_t {
 };
 
 struct McState {
-	char magic[4]; // "PCM3"
+	char magic[4]; // "PCM4"
 	uint32_t seq;
 	uint32_t flags;       // McFlags
 	uint32_t teleportAck; // last HostState.teleportSeq Minecraft has applied
@@ -112,6 +115,13 @@ struct McState {
 	// walls stop it (host units; Camera.getMaxZoom). The host's camera stops at the nearer of this
 	// and its own trace, so it never passes into blocks Steve placed (which the host can't trace).
 	float cameraDistance;
+	// PCM4: Minecraft carries its player through the host's portals inside its own physics step.
+	// crossCount counts those crossings since the link started; every position above is "unfolded"
+	// back through the ones after crossMatchedEcho (the HostState.crossMatched it last had), so
+	// Portal, playing them back, crosses its portal where Steve did and teleports its player itself.
+	uint32_t crossCount;
+	uint32_t crossMatchedEcho;
+	uint8_t crossPortal[4]; // the portal (0 blue, 1 orange) crossing k went in through, at [k % 4]; 0xFF unknown
 };
 
 struct Command {
@@ -377,8 +387,8 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 292, "HostState layout");
-static_assert(sizeof(McState) == 76, "McState layout");
+static_assert(sizeof(HostState) == 296, "HostState layout");
+static_assert(sizeof(McState) == 88, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
 
