@@ -378,7 +378,7 @@ bool serverToolsReady() {
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
 struct PlayerOffsets {
 	bool ready = false;
-	int health = -1, lifeState = -1, flags = -1, viewEntity = -1;
+	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1;
 } g_pl;
 
 // Portal's player entity, its send-table offsets looked up the first time. Null between levels.
@@ -397,9 +397,10 @@ uint8_t* playerFields() {
 			g_pl.lifeState = findProp(sc->table, "m_lifeState", 0);
 			g_pl.flags = findProp(sc->table, "m_fFlags", 0);
 			g_pl.viewEntity = findProp(sc->table, "m_hViewEntity", 0);
+			g_pl.activeWeapon = findProp(sc->table, "m_hActiveWeapon", 0);
 		}
-		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState, g_pl.flags,
-			g_pl.viewEntity);
+		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d", sc ? sc->name : "?", g_pl.health, g_pl.lifeState,
+			g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon);
 	}
 	return base;
 }
@@ -1778,6 +1779,18 @@ void sendState() {
 	}
 	if (g_scripted) {
 		s.flags |= pcproto::kHostScripted;
+	}
+	// One portal gun on screen: Portal's own (it animates as it fires) while Steve holds Minecraft's
+	// and Portal's player has one; otherwise Minecraft's hand, and Portal's gun stays hidden.
+	bool portalHasGun = false;
+	if (uint8_t* base = playerFields(); base && g_pl.activeWeapon >= 0) {
+		uint32_t weapon = *reinterpret_cast<uint32_t*>(base + g_pl.activeWeapon);
+		portalHasGun = weapon != 0xFFFFFFFFu && weapon != 0;
+	}
+	bool showPortalGun = portalHasGun && (!mcReady() || g_mc.holdingPortalGun);
+	camera::setViewModel(showPortalGun);
+	if (showPortalGun && mcReady()) {
+		s.flags |= pcproto::kHostGun;
 	}
 	if (!g_engineClient) {
 		g_engineClient = engineInterface("engine.dll", "VEngineClient013");

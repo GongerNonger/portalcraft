@@ -232,8 +232,10 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	g_third = true;
 }
 
+bool g_viewModelAllowed = true;
+
 bool __fastcall hkShouldDrawViewModel(void* self, void* /*edx*/) {
-	return !g_third && reinterpret_cast<BoolFn>(g_hookViewModel.original)(self);
+	return !g_third && g_viewModelAllowed && reinterpret_cast<BoolFn>(g_hookViewModel.original)(self);
 }
 
 bool __fastcall hkShouldDrawCrosshair(void* self, void* /*edx*/) {
@@ -401,6 +403,10 @@ void shutdown() {
 	unpatch(&g_hookGhostDraw);
 	g_initState = 0;
 	g_bodyState = 0;
+}
+
+void setViewModel(bool allowed) {
+	g_viewModelAllowed = allowed;
 }
 
 void setMode(int mode, float minecraftDistance) {
