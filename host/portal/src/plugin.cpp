@@ -320,6 +320,11 @@ void resolvePortalOffsets(void* networkable) {
 SOCKET g_sock = INVALID_SOCKET;
 sockaddr_in g_mcAddr{};
 pcproto::McState g_mc{};
+
+// Half of Steve's hull in Minecraft, which carries his centre through portals: 72 units tall, 60 sneaking.
+float steveHalfHeight() {
+	return g_mc.sneaking ? 30.0f : 36.0f;
+}
 void dropAppliedShoves(uint32_t ack); // the player puppet, below
 // Minecraft's recent physics steps on a smoothed timeline (see interpolatedMinecraft).
 struct TickSample {
@@ -1512,6 +1517,11 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// (PlayerCrossings): that's the match, nothing to hand over. From here on we carry Minecraft's
 	// steps (unfolded until it hears of the match) through Portal's own crossing.
 	bool matchedNow = false;
+	static uint32_t tickNow = 0, lastMatchTick = 0;
+	static uint8_t lastMatchIn = 0xFF; // the portal Steve went into on the newest matched crossing
+	tickNow++;
+	static int pendingTicks = 0; // ticks a crossing of Steve's has gone unmatched
+	pendingTicks = g_mc.crossCount > g_matched ? pendingTicks + 1 : 0;
 	if (!g_needSync && g_haveSet && !g_riding && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
 		dist(origin, g_lastSet) > 24.0f) {
 		Xf x;
@@ -1523,12 +1533,15 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			// the difference a few ticks after every such crossing, when Minecraft heard of the match.)
 			uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
 			Xf plain;
-			if (in < 2 && geometricCrossing(in, 36.0f, &plain)) {
+			if (in < 2 && geometricCrossing(in, steveHalfHeight(), &plain)) {
 				x = plain;
 			}
 			g_matched++;
 			g_crossings[g_crossingCount++] = {0, g_matched, x};
 			matchedNow = true;
+			pendingTicks = 0;
+			lastMatchTick = tickNow;
+			lastMatchIn = in;
 			static int matchLogs = 0;
 			if (matchLogs++ < 60) {
 				logf("Portal matched Steve's crossing %u: (%.1f %.1f %.1f) -> (%.1f %.1f %.1f)", g_matched, g_lastSet.x, g_lastSet.y, g_lastSet.z, origin.x,
@@ -1542,22 +1555,33 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
 		dist(origin, g_lastSet) <= 0.5f) {
 		uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
-		const float kHalf = 36.0f;
+		const float kHalf = steveHalfHeight();
 		if (in < 2) {
 			Vector f, r, u;
 			angleBasis(g_portalsNow[in].angles, &f, &r, &u);
 			const pcproto::Vec3& o = g_portalsNow[in].origin;
 			Vector c{g_lastSet.x - o.x, g_lastSet.y - o.y, g_lastSet.z + kHalf - o.z};
 			float behind = -(c.x * f.x + c.y * f.y + c.z * f.z);
-			static int behindTicks = 0;
-			behindTicks = behind > 4.0f && dist(g_lastSet, toVecP(o)) < 192.0f ? behindTicks + 1 : 0;
+			static int behindTicks = 0, justBehindTicks = 0;
+			bool nearPortal = dist(g_lastSet, toVecP(o)) < 192.0f;
+			behindTicks = behind > 4.0f && nearPortal ? behindTicks + 1 : 0;
+			justBehindTicks = behind > 0.0f && nearPortal ? justBehindTicks + 1 : 0;
 			Xf x;
-			// Two ticks behind with no teleport: Portal has had its chance (it teleports the tick after
-			// the centre crosses at the latest).
-			if (behindTicks >= 2 && geometricCrossing(in, kHalf, &x)) {
-				behindTicks = 0;
+			// Two ticks well behind with no teleport: Portal has had its chance (it teleports the tick
+			// after the centre crosses at the latest). Or six ticks behind by anything at all: Steve
+			// stepped (or crouch-walked) in so slowly that his centre only just crossed, where Portal
+			// never takes its own player through, and it stood under the floor portal for good.
+			// Or eight ticks with a crossing of Steve's unmatched, wherever the player is: a portal
+			// re-placed while he fell through it left Portal unable to follow, Minecraft went on
+			// looping on its own, and the player (played back as if before all those crossings) fell
+			// out of the map.
+			if ((behindTicks >= 2 || justBehindTicks >= 6 || pendingTicks >= 8) && geometricCrossing(in, kHalf, &x)) {
+				behindTicks = justBehindTicks = 0;
+				pendingTicks = pendingTicks >= 8 ? 7 : 0; // still behind after this one: the next goes next tick
 				g_matched++;
 				g_crossings[g_crossingCount++] = {0, g_matched, x};
+				lastMatchTick = tickNow;
+				lastMatchIn = in;
 				static int forceLogs = 0;
 				if (forceLogs++ < 30) {
 					logf("Portal didn't take Steve's crossing %u (%.0f units behind portal %u): made it ourselves", g_matched, behind, in);
@@ -1566,8 +1590,27 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
+	// Portal took its player straight back in through the portal Steve has just come out of, and
+	// Minecraft hasn't: after a slow crossing he stands with his centre a unit in front of it, and
+	// Portal's own test (its ducked player's centre is lower than Steve's) flips. Not handed over:
+	// the player goes back to where Minecraft has Steve, below. Handed over, he ping-ponged.
+	bool bounced = false;
+	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount == g_matched && lastMatchIn < 2 && tickNow - lastMatchTick < 20 &&
+		dist(origin, g_lastSet) > 24.0f) {
+		Xf x;
+		const pcproto::Vec3& out = g_portalsNow[1 - lastMatchIn].origin;
+		const pcproto::Vec3& in = g_portalsNow[lastMatchIn].origin;
+		if (portalCrossing(g_lastSet, origin, &x) && dist(g_lastSet, toVecP(out)) < dist(g_lastSet, toVecP(in))) {
+			bounced = true;
+			static int bounceLogs = 0;
+			if (bounceLogs++ < 30) {
+				logf("Portal took its player back through portal %u right after Steve's crossing %u: not handed over", 1 - lastMatchIn, g_matched);
+			}
+		}
+	}
+
 	// (Riding a lift, the lift moving the player is the point: it's not handed over, see updateRiding.)
-	if (!matchedNow && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
+	if (!matchedNow && !bounced && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = mvVelocity;

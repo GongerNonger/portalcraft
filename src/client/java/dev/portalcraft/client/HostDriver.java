@@ -273,6 +273,63 @@ public final class HostDriver {
 	}
 
 	private static int crossingsLogged;
+	private static int liftLogs;
+
+	/**
+	 * Steve with his feet in a floor after a shove from the host: up onto it. Minecraft doesn't stop a body that starts its step inside a shape,
+	 * so left there he sinks through the floor and out of the map. Only up, and only half a block:
+	 * a hull caught in a wall or a ceiling is left for the host to push out. Not every tick: under
+	 * the ceiling portal in testchmb_a_10 something in Minecraft's copy of the map is solid where
+	 * Portal lets its player through, and lifting Steve off it stopped his infinite fall.
+	 */
+	private static void liftOutOfTheFloor(LocalPlayer player) {
+		if (!HostCollision.active()) {
+			return;
+		}
+		// Only his feet: the bottom half block of the hull in something, the rest of it free. (Any
+		// overlap at all took Steve coming out of a ceiling portal against its rim, lifted him back
+		// up into it and stopped his fall.)
+		AABB body = player.getBoundingBox().deflate(0.02);
+		if (body.getYsize() <= 0.6) {
+			return;
+		}
+		AABB feet = new AABB(body.minX, body.minY, body.minZ, body.maxX, body.minY + 0.5, body.maxZ);
+		AABB rest = new AABB(body.minX, body.minY + 0.5, body.minZ, body.maxX, body.maxY, body.maxZ);
+		if (player.level().noCollision(player, feet) || !player.level().noCollision(player, rest)) {
+			return;
+		}
+		Vec3 lifted = clearOfTheFloor(player, player.position(), 32);
+		if (lifted != player.position()) {
+			if (liftLogs++ < 20) {
+				LOG.info("PortalCraft: Steve's feet were in the floor at {} (host {}): lifted {} blocks", player.position(), Units.toSrc(player.position()),
+					lifted.y - player.position().y);
+			}
+			player.setPos(lifted);
+			if (player.getDeltaMovement().y < 0.0) {
+				player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.0, 1.0));
+			}
+		}
+	}
+
+	/**
+	 * `feet`, or the nearest place up to a quarter block higher where Steve's hull touches nothing.
+	 * A body that starts a step inside a floor isn't stopped by it: out of a portal a hair low,
+	 * Steve sank through the floor and out of the map.
+	 */
+	private static Vec3 clearOfTheFloor(LocalPlayer player, Vec3 feet) {
+		return clearOfTheFloor(player, feet, 16);
+	}
+
+	/** As above, looking up to `steps` 64ths of a block higher. Returns `feet` itself if nowhere is clear. */
+	private static Vec3 clearOfTheFloor(LocalPlayer player, Vec3 feet, int steps) {
+		for (int i = 0; i <= steps; i++) {
+			Vec3 at = i == 0 ? feet : feet.add(0.0, i / 64.0, 0.0);
+			if (player.level().noCollision(player, player.getBoundingBox().move(at.subtract(player.position())).deflate(0.001))) {
+				return at;
+			}
+		}
+		return feet;
+	}
 
 	/**
 	 * The step that just ended took Steve's centre in through a linked host portal: out of the
@@ -290,7 +347,7 @@ public final class HostDriver {
 		if (c == null) {
 			return;
 		}
-		Vec3 feet = Units.toMc(c.feet()), before = Units.toMc(c.previousFeet());
+		Vec3 feet = clearOfTheFloor(player, Units.toMc(c.feet())), before = Units.toMc(c.previousFeet());
 		Vec3 velocity = Units.velocityToMc(c.velocity());
 		player.setPos(feet);
 		// Last tick's place carried through as well, so this step reads as the same smooth move.
@@ -758,6 +815,7 @@ public final class HostDriver {
 				Vec3 by = s.teleportVelocity();
 				if (by.lengthSqr() < 64.0 * 64.0) {
 					player.setPos(player.position().add(by.x / Units.PER_BLOCK, by.z / Units.PER_BLOCK, -by.y / Units.PER_BLOCK));
+					liftOutOfTheFloor(player); // a shove can leave his feet in the floor
 				}
 			} else if (s.crossing() != null && s.teleportKind() == Proto.MOVE_TELEPORT) {
 				// Portal crossings: carry where Steve is now (and how fast) through them. Jumping to

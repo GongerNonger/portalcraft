@@ -14,6 +14,7 @@
 		"FlowingFluidMixin",
 		"LivingEntityAirMixin",
 		"PlayerDropsMixin",
+		"PlayerEdgeMixin",
 		"PressurePlateInvoker",
 		"ProjectileHitMixin",
 		"ProjectileTransitMixin",

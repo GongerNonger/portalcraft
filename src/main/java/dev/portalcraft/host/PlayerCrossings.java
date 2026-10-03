@@ -165,8 +165,17 @@ public final class PlayerCrossings {
 		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip, fitted);
 	}
 
-	/** The hull is kept this far inside the opening's sides, and its long ends (units). */
-	private static final double FIT_SIDE = 1.0, FIT_END = 1.5;
+	/**
+	 * The hull is kept this far inside the opening's sides, and its long ends (units). Not less at
+	 * the ends: Minecraft's floor under a wall portal can stand half a unit over the portal's own
+	 * bottom edge, and with 0.25 Steve came out a hair inside it and sank through the floor.
+	 */
+	private static final double FIT_SIDE = 0.0, FIT_END = 1.5;
+	/**
+	 * ... and his centre at least this far out in front of the portal. Stepping through slowly left
+	 * it a tenth of a unit out, where Portal's own test flipped and took its player straight back.
+	 */
+	private static final double FIT_FRONT = 2.0;
 
 	/**
 	 * How far to move a hull whose centre comes out of `out` at `centre` so that it is inside the
@@ -183,8 +192,10 @@ public final class PlayerCrossings {
 	 */
 	static Vec3 fit(HostPortalTransit.Frame out, Vec3 centre, double halfWidth, double halfHeight) {
 		Vec3 rel = centre.subtract(out.origin);
+		double front = rel.dot(out.forward);
 		return out.right.scale(fitAlong(rel.dot(out.right), out.right, HostCollision.PORTAL_HALF_WIDTH - FIT_SIDE, halfWidth, halfHeight))
-			.add(out.up.scale(fitAlong(rel.dot(out.up), out.up, HostCollision.PORTAL_HALF_HEIGHT - FIT_END, halfWidth, halfHeight)));
+			.add(out.up.scale(fitAlong(rel.dot(out.up), out.up, HostCollision.PORTAL_HALF_HEIGHT - FIT_END, halfWidth, halfHeight)))
+			.add(out.forward.scale(Math.max(0.0, FIT_FRONT - front)));
 	}
 
 	private static double fitAlong(double at, Vec3 axis, double opening, double halfWidth, double halfHeight) {
