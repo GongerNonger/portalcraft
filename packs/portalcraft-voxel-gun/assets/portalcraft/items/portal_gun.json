@@ -1,0 +1,4307 @@
+{
+  "model": {
+    "type": "minecraft:select",
+    "property": "minecraft:display_context",
+    "cases": [
+      {
+        "when": [
+          "gui",
+          "ground",
+          "fixed",
+          "on_shelf"
+        ],
+        "model": {
+          "type": "minecraft:model",
+          "model": "portalcraft:item/portal_gun"
+        }
+      },
+      {
+        "when": [
+          "thirdperson_righthand",
+          "thirdperson_lefthand",
+          "head"
+        ],
+        "model": {
+          "type": "minecraft:model",
+          "model": "portalcraft:item/portal_gun_third"
+        }
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:range_dispatch",
+      "property": "portalcraft:fire_frame",
+      "entries": [
+        {
+          "threshold": 1,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 2,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 3,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 4,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 5,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 6,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 7,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 8,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 9,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 10,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 11,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 12,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 13,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_13",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_13",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 14,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_14",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_14",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 15,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_15",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_15",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 16,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/cover_16",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/bend_16",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 17,
+          "model": {
+            "type": "minecraft:model",
+            "model": "portalcraft:item/portal_gun_in_hand",
+            "tints": [
+              {
+                "type": "minecraft:custom_model_data",
+                "index": 0,
+                "default": -13988609
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 1,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 2,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 3,
+                "gain": 1.0
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 101,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 102,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 103,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 104,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 105,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 106,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 107,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 108,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 109,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 110,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 111,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 112,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/cover_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_pickup/bend_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 113,
+          "model": {
+            "type": "minecraft:model",
+            "model": "portalcraft:item/portal_gun_in_hand",
+            "tints": [
+              {
+                "type": "minecraft:custom_model_data",
+                "index": 0,
+                "default": -13988609
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 1,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 2,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 3,
+                "gain": 1.0
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 201,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_1",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 202,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_2",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 203,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_3",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 204,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_4",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 205,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_5",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 206,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_6",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 207,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_7",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 208,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_8",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 209,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_9",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 210,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_10",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 211,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_11",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 212,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_12",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 213,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_13",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_13",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 214,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_14",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_14",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 215,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_15",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_15",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 216,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_16",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_16",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 217,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_17",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_17",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 218,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_18",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_18",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 219,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_19",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_19",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 220,
+          "model": {
+            "type": "minecraft:composite",
+            "models": [
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_fire/body",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/cover_20",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              },
+              {
+                "type": "minecraft:model",
+                "model": "portalcraft:item/portal_gun_release/bend_20",
+                "tints": [
+                  {
+                    "type": "minecraft:custom_model_data",
+                    "index": 0,
+                    "default": -13988609
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 1,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 2,
+                    "gain": 4.0
+                  },
+                  {
+                    "type": "portalcraft:gun_glow",
+                    "zone": 3,
+                    "gain": 1.0
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 221,
+          "model": {
+            "type": "minecraft:model",
+            "model": "portalcraft:item/portal_gun_in_hand",
+            "tints": [
+              {
+                "type": "minecraft:custom_model_data",
+                "index": 0,
+                "default": -13988609
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 1,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 2,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 3,
+                "gain": 1.0
+              }
+            ]
+          }
+        },
+        {
+          "threshold": 222,
+          "model": {
+            "type": "minecraft:model",
+            "model": "portalcraft:item/portal_gun_in_hand",
+            "tints": [
+              {
+                "type": "minecraft:custom_model_data",
+                "index": 0,
+                "default": -13988609
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 1,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 2,
+                "gain": 4.0
+              },
+              {
+                "type": "portalcraft:gun_glow",
+                "zone": 3,
+                "gain": 1.0
+              }
+            ]
+          }
+        }
+      ],
+      "fallback": {
+        "type": "minecraft:model",
+        "model": "portalcraft:item/portal_gun_in_hand",
+        "tints": [
+          {
+            "type": "minecraft:custom_model_data",
+            "index": 0,
+            "default": -13988609
+          },
+          {
+            "type": "portalcraft:gun_glow",
+            "zone": 1,
+            "gain": 4.0
+          },
+          {
+            "type": "portalcraft:gun_glow",
+            "zone": 2,
+            "gain": 4.0
+          },
+          {
+            "type": "portalcraft:gun_glow",
+            "zone": 3,
+            "gain": 1.0
+          }
+        ]
+      }
+    }
+  }
+}
