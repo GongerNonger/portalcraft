@@ -183,6 +183,7 @@ using BoolFn = bool(__thiscall*)(void* self);
 constexpr float kDistance = 160.0f; // Minecraft's third-person distance for a player Steve's size, in units
 constexpr float kHull = 6.0f;
 
+bool g_grounded = false; // Minecraft has Steve on the ground (setGrounded)
 float g_wantEye = 0.0f; // the eye's height over the feet to show (0: Portal's own)
 
 void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
@@ -222,7 +223,23 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 			eye = dz; // a fresh view: start from where Portal has it
 		}
 		eye += (g_wantEye - eye) * 0.2f;
-		origin.z = feet.z + eye;
+		// Small steps under a walking Steve are smoothed out of the view, as Source does for its own
+		// player on stairs. Minecraft builds a sloped or domed surface (a floor button's top, a ramp)
+		// out of two-unit columns, and takes each as an instant step: walking over the button the
+		// eye twitched a unit up or down at every one. Only while he's on the ground, and only up to
+		// a stair's height: a jump, a fall or a teleport is shown as it is.
+		static float shownFeet = 0.0f;
+		static DWORD last = 0;
+		DWORD now = GetTickCount();
+		float dt = last && now - last < 200 ? float(now - last) / 1000.0f : 0.0f;
+		last = now;
+		if (!g_grounded || dt == 0.0f || std::fabs(feet.z - shownFeet) > 18.0f) {
+			shownFeet = feet.z;
+		} else {
+			float k = dt * 14.0f;
+			shownFeet += (feet.z - shownFeet) * (k > 1.0f ? 1.0f : k);
+		}
+		origin.z = shownFeet + eye;
 	}
 	if (g_mode == 0) {
 		return;
@@ -415,6 +432,17 @@ void shutdown() {
 	unpatch(&g_hookGhostDraw);
 	g_initState = 0;
 	g_bodyState = 0;
+}
+
+void setGrounded(bool grounded, float verticalSpeed) {
+	// On the ground now or a moment ago (sinking a hair into a button's top and being set back on
+	// it reads as off the ground for a tick), and not on the way up or down at a jump's speed.
+	static DWORD lastOn = 0;
+	DWORD now = GetTickCount();
+	if (grounded) {
+		lastOn = now;
+	}
+	g_grounded = now - lastOn < 150 && std::fabs(verticalSpeed) < 120.0f;
 }
 
 void setEyeHeight(float units) {

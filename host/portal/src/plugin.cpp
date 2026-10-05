@@ -2692,6 +2692,7 @@ public:
 		camera::init(&logf);
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		camera::setEyeHeight(following() && !g_scripted ? (g_mc.sneaking ? 50.8f : 64.0f) : 0.0f);
+		camera::setGrounded(g_mc.onGround != 0, g_mc.velocity.z);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
 		watchWheel();
