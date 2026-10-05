@@ -207,8 +207,10 @@ public final class HostDriver {
 		carry(player, moved);
 		pushOutOfSolids(player);
 		pushProps(player);
-		if (player.getDeltaMovement().y > -0.5) {
-			liftOutOfTheFloor(player); // not in a fast fall: see there
+		// Not in a fast fall (see there), and not on a lift: its platform rises under Steve every tick,
+		// each tick read as "feet in the floor", and riding one shook all the way up.
+		if (player.getDeltaMovement().y > -0.5 && !s.riding() && !LiveEntities.onFixture(player.getBoundingBox())) {
+			liftOutOfTheFloor(player);
 		}
 		for (String command; (command = HostLink.takeDevCommand()) != null;) {
 			runCommand(minecraft, command);

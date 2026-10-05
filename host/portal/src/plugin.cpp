@@ -2136,26 +2136,12 @@ public:
 	virtual int GetTraceType() { return 0; }
 };
 
-// The player's standing hull swept from `from` to `*to` (feet), against the loose props only. If
-// one is in the way, `*to` becomes where the hull stops, and true. Starting inside one: no answer
-// (Portal's physics has that case).
-bool clampToProps(const Vector& from, Vector* to) {
-	static int tick = 0;
-	if ((tick++ & 31) == 0) {
-		refreshLooseProps();
-	}
-	if (g_loosePropCount == 0 || dist(from, *to) < 0.01f) {
-		return false; // (a sweep of no length reads as blocked)
-	}
-	if (!g_serverTrace && g_engineFactory) {
-		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);
-	}
-	if (!g_serverTrace) {
-		return false;
-	}
+// One sweep of the player's standing hull (feet `from` to `to`) against the loose props. False if
+// nothing is hit or it starts inside one; else where the hull stops and the face it stopped on.
+bool sweepProps(const Vector& from, const Vector& to, Vector* end, Vector* normal) {
 	TraceRayArgs ray{};
 	ray.start[0] = from.x, ray.start[1] = from.y, ray.start[2] = from.z + 36.0f;
-	ray.delta[0] = to->x - from.x, ray.delta[1] = to->y - from.y, ray.delta[2] = to->z - from.z;
+	ray.delta[0] = to.x - from.x, ray.delta[1] = to.y - from.y, ray.delta[2] = to.z - from.z;
 	ray.extents[0] = ray.extents[1] = 16.0f, ray.extents[2] = 36.0f;
 	ray.isSwept = true;
 	TraceLooseProps filter;
@@ -2171,14 +2157,51 @@ bool clampToProps(const Vector& from, Vector* to) {
 	if (tr[55] /* startsolid */ || !(fraction < 1.0f)) {
 		return false;
 	}
-	Vector end;
-	std::memcpy(&end, tr + 12, 12);
-	*to = {end.x, end.y, end.z - 36.0f};
+	Vector e;
+	std::memcpy(&e, tr + 12, 12);
+	std::memcpy(normal, tr + 24, 12);
+	*end = {e.x, e.y, e.z - 36.0f};
+	return true;
+}
+
+// The player's standing hull swept from `from` to `*to` (feet), against the loose props only. If
+// one is in the way, `*to` becomes where the hull ends up: stopped at it and slid along its face,
+// as Source's own movement does. Starting inside one: no answer (Portal's physics has that case).
+// Not while the gun holds an object: the cube in front of the player is not in his way (it stopped
+// him dead, and Steve couldn't walk at all carrying one).
+bool clampToProps(const Vector& from, Vector* to) {
+	static int tick = 0;
+	if ((tick++ & 31) == 0) {
+		refreshLooseProps();
+	}
+	if (g_loosePropCount == 0 || g_gunEffect == 2 || dist(from, *to) < 0.01f) {
+		return false; // (a sweep of no length reads as blocked)
+	}
+	if (!g_serverTrace && g_engineFactory) {
+		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);
+	}
+	if (!g_serverTrace) {
+		return false;
+	}
+	Vector end, n;
+	if (!sweepProps(from, *to, &end, &n)) {
+		return false;
+	}
+	// What is left of the move, without the part into the face; a hair off the face first.
+	Vector rest{to->x - end.x, to->y - end.y, to->z - end.z};
+	float into = rest.x * n.x + rest.y * n.y + rest.z * n.z;
+	rest = {rest.x - n.x * into, rest.y - n.y * into, rest.z - n.z * into};
+	Vector start{end.x + n.x * 0.05f, end.y + n.y * 0.05f, end.z + n.z * 0.05f};
+	Vector slid{start.x + rest.x, start.y + rest.y, start.z + rest.z};
+	Vector end2, n2;
+	if (dist(start, slid) > 0.01f && sweepProps(start, slid, &end2, &n2)) {
+		slid = end2;
+	}
 	static int logs = 0;
 	if (logs++ < 10) {
-		logf("props: a loose prop stops the player at (%.1f %.1f %.1f), short of Minecraft's (%.1f %.1f %.1f)", to->x, to->y, to->z, from.x + ray.delta[0],
-			from.y + ray.delta[1], from.z + ray.delta[2]);
+		logf("props: a loose prop is in the way of (%.1f %.1f %.1f): the player goes to (%.1f %.1f %.1f)", to->x, to->y, to->z, slid.x, slid.y, slid.z);
 	}
+	*to = slid;
 	return true;
 }
 

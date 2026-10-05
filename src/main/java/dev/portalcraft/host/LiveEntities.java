@@ -89,6 +89,11 @@ public final class LiveEntities {
 		return false;
 	}
 
+	/** True if the feet of `body` are on or in one of the host's fixtures (a lift's platform, a button, a door). */
+	public static boolean onFixture(AABB body) {
+		return overlaps(new AABB(body.minX, body.minY - 0.1, body.minZ, body.maxX, body.minY + 0.5, body.maxZ), false);
+	}
+
 	private static boolean overlaps(AABB body, boolean movable) {
 		for (Placed p : PLACED.values()) {
 			if (p.bounds() == null || movableProp(p.pose().model()) != movable || !p.bounds().intersects(body)) {
