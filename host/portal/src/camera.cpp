@@ -183,6 +183,7 @@ using BoolFn = bool(__thiscall*)(void* self);
 constexpr float kDistance = 160.0f; // Minecraft's third-person distance for a player Steve's size, in units
 constexpr float kHull = 6.0f;
 
+bool g_sprinting = false; // Minecraft has Steve sprinting (setSprinting)
 bool g_grounded = false; // Minecraft has Steve on the ground (setGrounded)
 float g_wantEye = 0.0f; // the eye's height over the feet to show (0: Portal's own)
 
@@ -215,6 +216,26 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	}
 	g_feet = feet;
 	g_feetValid = true;
+	// Sprinting widens the view by a tenth, eased in and out, as Minecraft's own view does: Portal
+	// draws the world here, so without it nothing on screen says Steve has broken into a run.
+	// (CViewSetup's fov sits just before its origin; left alone if it doesn't read like one.)
+	{
+		static float sprint = 0.0f;
+		static DWORD lastFov = 0;
+		DWORD nowFov = GetTickCount();
+		float step = lastFov && nowFov - lastFov < 200 ? float(nowFov - lastFov) / 1000.0f * 6.0f : 0.0f;
+		lastFov = nowFov;
+		sprint += ((g_sprinting ? 1.0f : 0.0f) - sprint) * (step > 1.0f ? 1.0f : step);
+		float& fov = *reinterpret_cast<float*>(setup + kSetupOrigin - 8);
+		static bool logged = false;
+		if (!logged) {
+			logged = true;
+			g_log("camera: view fov reads %.1f", fov);
+		}
+		if (fov > 40.0f && fov < 130.0f) {
+			fov *= 1.0f + 0.1f * sprint;
+		}
+	}
 	// Steve's eye height, not Chell's: sneaking, Portal ducks its player and drops the eye to 28 units,
 	// most of the way to the floor, where Minecraft's sneak only dips to about 51.
 	if (g_wantEye > 0.0f) {
@@ -443,6 +464,10 @@ void setGrounded(bool grounded, float verticalSpeed) {
 		lastOn = now;
 	}
 	g_grounded = now - lastOn < 150 && std::fabs(verticalSpeed) < 120.0f;
+}
+
+void setSprinting(bool sprinting) {
+	g_sprinting = sprinting;
 }
 
 void setEyeHeight(float units) {

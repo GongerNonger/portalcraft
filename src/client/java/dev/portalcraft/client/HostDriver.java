@@ -378,8 +378,18 @@ public final class HostDriver {
 		if (LiveEntities.besideFixture(feet)) {
 			return;
 		}
-		// Nor off a cube: one tipped against his shins read as a floor half a block up, tick after
-		// tick, and Steve climbed it. (pushOutOfSolids moves him out of a prop, sideways first.)
+		// A cube he is standing on that has come up a hair under his soles (it settles and jiggles
+		// under his weight): back onto its top. Left alone he sank through it in a few seconds.
+		double propTop = LiveEntities.propTopUnder(feet);
+		if (!Double.isNaN(propTop)) {
+			player.setPos(player.getX(), propTop + 0.005, player.getZ());
+			if (player.getDeltaMovement().y < 0.0) {
+				player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.0, 1.0));
+			}
+			return;
+		}
+		// Not off the side of one, though: a cube against his shins read as a floor half a block up,
+		// tick after tick, and Steve climbed it. (pushOutOfSolids moves him out of a prop, sideways first.)
 		if (LiveEntities.overlapsProp(feet.inflate(0.15, 0.0, 0.15))) {
 			return;
 		}
@@ -517,7 +527,7 @@ public final class HostDriver {
 		for (int k = Math.max(1, PlayerCrossings.count() - 3); k <= PlayerCrossings.count(); k++) {
 			crossPortal[k & 3] = (byte) PlayerCrossings.portalOf(k);
 		}
-		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0);
+		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0) | (ready && player.isSprinting() ? Proto.MC_SPRINT : 0);
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),

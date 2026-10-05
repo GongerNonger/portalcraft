@@ -30,6 +30,8 @@ public final class Proto {
 	public static final int MOVE_SHOVE = 0, MOVE_IMPULSE = 1, MOVE_TELEPORT = 2;
 	/** McFlags kMcScreen: a screen is open, so the host frees its mouse and sends the cursor. */
 	public static final int MC_SCREEN = 1 << 1;
+	/** McFlags kMcSprint: Steve is sprinting (the host widens its view, the only sign of it there is). */
+	public static final int MC_SPRINT = 1 << 2;
 
 	private Proto() {
 	}

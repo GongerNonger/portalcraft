@@ -639,6 +639,8 @@ DWORD g_rideStill = 0; // when the lift last stopped moving
 
 bool collideableOrigin(int index, Vector* out);
 
+bool g_onLooseProp = false; // Portal has its player standing on a loose prop (a cube)
+
 void updateRiding() {
 	uint8_t* base = playerFields();
 	bool moving = false;
@@ -656,6 +658,7 @@ void updateRiding() {
 			const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
 			loose = cls && (std::strncmp(cls, "prop_physics", 12) == 0 || std::strncmp(cls, "npc_", 4) == 0);
 		}
+		g_onLooseProp = loose;
 		if (index > 1 && !loose && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
 			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
 				moving = true;
@@ -1611,7 +1614,19 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	}
 
 	// (Riding a lift, the lift moving the player is the point: it's not handed over, see updateRiding.)
-	if (!matchedNow && !bounced && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
+	// Standing on a cube, Portal drags its player back over it as he walks (its physics has him
+	// stuck to the cube under his feet): handed to Minecraft, every step Steve took on a cube was
+	// undone and he couldn't walk off one. Small moves of Portal's there are not handed over.
+	bool draggedOnProp = g_onLooseProp && g_haveSet && !g_needSync && !impulse && dist(origin, g_lastSet) < 12.0f;
+	// Nor is a small move straight up or down: Portal settling its player onto its own floor. On a
+	// slope the two floors differ at every step (Portal's is the smooth ramp, Minecraft's a flight of
+	// two-unit columns), each settling was handed over as a shove, pushed Steve into the next column
+	// or off it, and walking over the wedges of a floor button shook hard.
+	if (g_haveSet && !g_needSync && !impulse && std::fabs(origin.x - g_lastSet.x) < 0.5f && std::fabs(origin.y - g_lastSet.y) < 0.5f &&
+		std::fabs(origin.z - g_lastSet.z) < 3.0f) {
+		draggedOnProp = true;
+	}
+	if (!matchedNow && !bounced && !draggedOnProp && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = mvVelocity;
@@ -2726,6 +2741,7 @@ public:
 		camera::setMode(following() ? g_mc.cameraMode : 0, g_mc.cameraDistance);
 		camera::setEyeHeight(following() && !g_scripted ? (g_mc.sneaking ? 50.8f : 64.0f) : 0.0f);
 		camera::setGrounded(g_mc.onGround != 0, g_mc.velocity.z);
+		camera::setSprinting(following() && !g_scripted && (g_mc.flags & pcproto::kMcSprint) != 0);
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
 		watchWheel();

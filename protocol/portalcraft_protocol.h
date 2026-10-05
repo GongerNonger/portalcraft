@@ -103,6 +103,7 @@ struct HostState {
 enum McFlags : uint32_t {
 	kMcReady = 1u << 0,  // in a world with a player: the host may follow origin/velocity
 	kMcScreen = 1u << 1, // a Minecraft screen (inventory, chest, chat) is open: the host frees the mouse
+	kMcSprint = 1u << 2, // Steve is sprinting: the host widens its view a little, as Minecraft's own does
 };
 
 struct McState {

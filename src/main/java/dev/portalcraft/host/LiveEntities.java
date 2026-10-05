@@ -89,6 +89,27 @@ public final class LiveEntities {
 		return false;
 	}
 
+	/**
+	 * The top (Minecraft y) of a movable prop that `feet`, the bottom slab of a hull, has sunk a
+	 * little way into from above: the cube Steve is standing on. NaN if there is none.
+	 */
+	public static double propTopUnder(AABB feet) {
+		double top = Double.NaN;
+		for (Placed p : PLACED.values()) {
+			if (p.bounds() == null || !movableProp(p.pose().model()) || !p.bounds().intersects(feet)) {
+				continue;
+			}
+			for (BspMap.Brush brush : p.brushes()) {
+				AABB box = brush.mcBox();
+				// Its top no more than the slab's height over his soles, and most of him over it.
+				if (box.intersects(feet) && box.maxY > feet.minY && box.maxY <= feet.maxY && (Double.isNaN(top) || box.maxY > top)) {
+					top = box.maxY;
+				}
+			}
+		}
+		return top;
+	}
+
 	/** True if the feet of `body` are on or in one of the host's fixtures (a lift's platform, a button, a door). */
 	public static boolean onFixture(AABB body) {
 		return overlaps(new AABB(body.minX, body.minY - 0.1, body.minZ, body.maxX, body.minY + 0.5, body.maxZ), false);
@@ -318,7 +339,10 @@ public final class LiveEntities {
 				lo = new Vec3(Math.min(lo.x, in.x), Math.min(lo.y, in.y), Math.min(lo.z, in.z));
 				hi = new Vec3(Math.max(hi.x, in.x), Math.max(hi.y, in.y), Math.max(hi.z, in.z));
 			}
-			BspMap.Brush upright = box(lo.subtract(PROP_SKIN, PROP_SKIN, PROP_SKIN), hi.add(PROP_SKIN, PROP_SKIN, PROP_SKIN)).transformed(e.origin(), turned);
+			// The skin on its sides only. Its top is where Portal has it: half a unit higher, Portal's
+			// player (set where Steve stands) dropped that half unit onto the real cube every tick, and
+			// Portal moved it back along the cube as it did: Steve couldn't walk off a cube he stood on.
+			BspMap.Brush upright = box(lo.subtract(PROP_SKIN, PROP_SKIN, PROP_SKIN), hi.add(PROP_SKIN, PROP_SKIN, 0.03)).transformed(e.origin(), turned);
 			if (upright != null) {
 				out.clear();
 				out.add(upright);

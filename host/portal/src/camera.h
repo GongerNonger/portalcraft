@@ -18,6 +18,8 @@ void setMode(int mode, float minecraftDistance);
 void setEyeHeight(float units);
 // Steve is standing on something (the view smooths small steps only then).
 void setGrounded(bool grounded, float verticalSpeed);
+// Steve is sprinting: the view widens a little while he is.
+void setSprinting(bool sprinting);
 // Whether Portal may draw its viewmodel (its portal gun) at all.
 void setViewModel(bool allowed);
 
