@@ -206,6 +206,7 @@ public final class HostDriver {
 
 		carry(player, moved);
 		pushOutOfSolids(player);
+		pushProps(player);
 		if (player.getDeltaMovement().y > -0.5) {
 			liftOutOfTheFloor(player); // not in a fast fall: see there
 		}
@@ -291,6 +292,54 @@ public final class HostDriver {
 	}
 
 	private static int crossingsLogged;
+
+	/** How fast a cube is shoved by a walking Steve, as the speed of the "hit" it takes each tick (blocks/tick). */
+	private static final double PROP_PUSH = 0.1;
+	private static int pushedProp = -1, pushedStuck;
+	private static Vec3 pushedAt = Vec3.ZERO;
+
+	/**
+	 * Steve walking into one of the host's movable props shoves it along: a small hit on it every
+	 * tick he is stopped against it, the way he pushes it. (Portal's own player does this by
+	 * touching it; Steve is kept just clear of it, see LiveEntities.PROP_SKIN.)
+	 */
+	private static void pushProps(LocalPlayer player) {
+		if (!HostCollision.active() || !player.horizontalCollision || (player.xxa == 0.0F && player.zza == 0.0F)) {
+			pushedProp = -1;
+			return;
+		}
+		double yaw = Math.toRadians(player.getYRot());
+		Vec3 forward = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw)), left = new Vec3(Math.cos(yaw), 0.0, Math.sin(yaw));
+		Vec3 way = forward.scale(player.zza).add(left.scale(player.xxa));
+		if (way.lengthSqr() < 1.0e-6) {
+			return;
+		}
+		way = way.normalize();
+		AABB ahead = player.getBoundingBox().move(way.scale(0.15));
+		if (!LiveEntities.overlapsProp(ahead)) {
+			return;
+		}
+		// At a cube's own middle height (20 units up when it stands on Steve's floor): higher, it tipped over instead of sliding.
+		Vec3 at = player.position().add(0.0, 20.0 / Units.PER_BLOCK, 0.0).add(way.scale(player.getBbWidth() * 0.5 + 0.12));
+		// Not one that isn't going anywhere (against a wall): shoved on, it tipped up and Steve
+		// climbed it. Four ticks without it moving and he just leans on it, until it moves or he lets up.
+		int index = LiveEntities.entityAt(at, 0.15);
+		Vec3 now = index < 0 ? null : LiveEntities.originOf(index);
+		if (now == null || !LiveEntities.movable(index)) {
+			pushedProp = -1;
+			return;
+		}
+		if (index != pushedProp) {
+			pushedProp = index;
+			pushedStuck = 0;
+		} else {
+			pushedStuck = now.distanceToSqr(pushedAt) < 0.3 * 0.3 ? pushedStuck + 1 : 0;
+		}
+		pushedAt = now;
+		if (pushedStuck < 4) {
+			HostEvents.hit(at, way.scale(PROP_PUSH), 0.0F);
+		}
+	}
 	private static int liftLogs;
 
 	/**
@@ -323,6 +372,11 @@ public final class HostDriver {
 		// and "up onto the floor" put him back in the portal. (A lift's platform is a floor: with every
 		// fixture left out, Steve sank through the lift at the level's start.)
 		if (LiveEntities.besideFixture(feet)) {
+			return;
+		}
+		// Nor off a cube: one tipped against his shins read as a floor half a block up, tick after
+		// tick, and Steve climbed it. (pushOutOfSolids moves him out of a prop, sideways first.)
+		if (LiveEntities.overlapsProp(feet.inflate(0.15, 0.0, 0.15))) {
 			return;
 		}
 		for (int i = 1; i <= 32; i++) {

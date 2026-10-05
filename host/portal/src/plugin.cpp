@@ -1442,6 +1442,7 @@ void watchGunShots(int buttons) {
 
 void logSolidNear(const Vector& at);
 void logHostSolid(const Vector& at, void* playerEntity);
+bool clampToProps(const Vector& from, Vector* to);
 
 using ProcessMovementFn = void(__thiscall*)(void* self, void* player, void* mv);
 ProcessMovementFn g_serverOriginal = nullptr;
@@ -1650,6 +1651,16 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (g_drivingNow) {
 		Vector portalWent = origin;
 		applyMinecraft(mv);
+		// Portal's own answer to "can the player go there": its hull swept from where it was to where
+		// Minecraft has Steve, against Portal's loose props where they are this tick. Minecraft stops
+		// Steve at its copy of a cube, a tick old; placed a hair inside the real one, the player was
+		// thrown clear by Portal's physics (up onto the cube, or shaking against it).
+		if (!g_riding && g_haveSet && dist(g_lastSet, origin) < 24.0f) {
+			Vector to = origin;
+			if (clampToProps(g_lastSet, &to)) {
+				origin = to;
+			}
+		}
 		if (g_riding) {
 			origin.z = zPortal; // the lift carries the player; Minecraft follows (kHostRiding)
 			g_zLift = 0.0f;
@@ -1702,6 +1713,13 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 	float zPortal = reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z;
 	if (drive) {
 		applyMinecraft(mv);
+		Vector& predicted = *reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin);
+		if (!g_riding && g_haveSet && dist(g_lastSet, predicted) < 24.0f) {
+			Vector to = predicted; // the same check as the server's, so the two draw the player in one place
+			if (clampToProps(g_lastSet, &to)) {
+				predicted = to;
+			}
+		}
 		if (g_riding) {
 			reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z = zPortal;
 		}
@@ -2059,6 +2077,84 @@ public:
 	virtual int GetTraceType() { return 0; }
 	void* skip = nullptr;
 };
+
+// Portal's loose physics props (cubes, the radio, a camera knocked off its wall), refreshed every
+// few ticks: the things a move of Steve's is checked against (clampToProps).
+void* g_looseProps[64];
+int g_loosePropCount = 0;
+
+void refreshLooseProps() {
+	g_loosePropCount = 0;
+	for (int i = 2; i < 2048 && g_loosePropCount < 64; i++) {
+		void* e = edictAt(i);
+		void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
+		const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
+		if (cls && std::strncmp(cls, "prop_physics", 12) == 0) {
+			if (void* entity = sdk::networkableBaseEntity(networkable)) {
+				g_looseProps[g_loosePropCount++] = entity;
+			}
+		}
+	}
+}
+
+class TraceLooseProps {
+public:
+	virtual bool ShouldHitEntity(void* entity, int) {
+		for (int i = 0; i < g_loosePropCount; i++) {
+			if (g_looseProps[i] == entity) {
+				return true;
+			}
+		}
+		return false;
+	}
+	virtual int GetTraceType() { return 0; }
+};
+
+// The player's standing hull swept from `from` to `*to` (feet), against the loose props only. If
+// one is in the way, `*to` becomes where the hull stops, and true. Starting inside one: no answer
+// (Portal's physics has that case).
+bool clampToProps(const Vector& from, Vector* to) {
+	static int tick = 0;
+	if ((tick++ & 31) == 0) {
+		refreshLooseProps();
+	}
+	if (g_loosePropCount == 0) {
+		return false;
+	}
+	if (!g_serverTrace && g_engineFactory) {
+		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);
+	}
+	if (!g_serverTrace) {
+		return false;
+	}
+	TraceRayArgs ray{};
+	ray.start[0] = from.x, ray.start[1] = from.y, ray.start[2] = from.z + 36.0f;
+	ray.delta[0] = to->x - from.x, ray.delta[1] = to->y - from.y, ray.delta[2] = to->z - from.z;
+	ray.extents[0] = ray.extents[1] = 16.0f, ray.extents[2] = 36.0f;
+	ray.isSwept = true;
+	TraceLooseProps filter;
+	alignas(16) uint8_t tr[256] = {};
+	__try {
+		sdk::vcall<void>(g_serverTrace, 4, static_cast<const void*>(&ray), 0x201400Bu /* MASK_PLAYERSOLID */, static_cast<void*>(&filter),
+			static_cast<void*>(tr));
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+	float fraction;
+	std::memcpy(&fraction, tr + 44, 4);
+	if (tr[55] /* startsolid */ || !(fraction < 1.0f)) {
+		return false;
+	}
+	Vector end;
+	std::memcpy(&end, tr + 12, 12);
+	*to = {end.x, end.y, end.z - 36.0f};
+	static int logs = 0;
+	if (logs++ < 10) {
+		logf("props: a loose prop stops the player at (%.1f %.1f %.1f), short of Minecraft's (%.1f %.1f %.1f)", to->x, to->y, to->z, from.x + ray.delta[0],
+			from.y + ray.delta[1], from.z + ray.delta[2]);
+	}
+	return true;
+}
 
 void logHostSolid(const Vector& at, void* playerEntity) {
 	if (!g_serverTrace && g_engineFactory) {

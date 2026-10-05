@@ -103,6 +103,16 @@ public final class LiveEntities {
 		return false;
 	}
 
+	/**
+	 * A movable prop is this much bigger to Steve than it is (units). His hull stops against
+	 * Minecraft's copy of it, which is a tick old and built of columns that can fall a unit short;
+	 * without the skin Portal's own player, played back where Steve stands, ended up a hair inside
+	 * the real cube, and Portal's physics threw the two apart: Steve hopped and shook pushing a
+	 * cube or holding one against a wall. With it they never touch, and Steve pushes a cube he
+	 * walks into himself (HostDriver.pushProps).
+	 */
+	private static final double PROP_SKIN = 1.5;
+
 	/** Portal 1's movable props by model: cubes (metal_box), turrets, the radio. Floor buttons and the rest stay put. */
 	private static boolean movableProp(String model) {
 		return model.endsWith(".mdl") && (model.contains("metal_box") || model.contains("turret") || model.contains("radio"));
@@ -214,6 +224,18 @@ public final class LiveEntities {
 	 * The host entity whose collision holds `point` (Minecraft coordinates, within `margin`
 	 * blocks), or -1. The smallest one wins, so a cube on a lift is the cube.
 	 */
+	/** Where host entity `index` is (host units), or null if it isn't one of the solid ones we hold. */
+	public static @Nullable Vec3 originOf(int index) {
+		Placed p = PLACED.get(index);
+		return p == null ? null : p.pose().origin();
+	}
+
+	/** True if host entity `index` is a movable prop (a cube, a turret, the radio). */
+	public static boolean movable(int index) {
+		Placed p = PLACED.get(index);
+		return p != null && movableProp(p.pose().model());
+	}
+
 	public static int entityAt(Vec3 point, double margin) {
 		int best = -1;
 		double bestSize = Double.MAX_VALUE;
@@ -261,11 +283,25 @@ public final class LiveEntities {
 			StaticProps.Shape shape = SHAPES.computeIfAbsent(model, m -> StaticProps.shape(files, m, true));
 			if (shape != null) {
 				for (Phy.Hull hull : shape.hulls()) {
-					BspMap.Brush b = StaticProps.brush(hull, e.origin(), axes, shape.fromPhy() ? StaticProps.COLLISION_MARGIN : 0.0);
+					BspMap.Brush b = StaticProps.brush(hull, e.origin(), axes,
+						(shape.fromPhy() ? StaticProps.COLLISION_MARGIN : 0.0) + (movableProp(model) ? PROP_SKIN : 0.0));
 					if (b != null) {
 						out.add(b);
 					}
 				}
+			}
+		}
+		if (!out.isEmpty() && movableProp(model)) {
+			// A movable prop is the upright box around itself, however it lies. Tipped a few degrees,
+			// a cube's leaning face became a flight of two-unit columns, each a step Steve could take,
+			// and pushing a cube into a corner he walked up its side onto it.
+			AABB all = union(out);
+			Vec3 a = Units.toSrc(new Vec3(all.minX, all.minY, all.minZ)), c = Units.toSrc(new Vec3(all.maxX, all.maxY, all.maxZ));
+			BspMap.Brush upright = box(new Vec3(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.min(a.z, c.z)),
+				new Vec3(Math.max(a.x, c.x), Math.max(a.y, c.y), Math.max(a.z, c.z))).transformed(Vec3.ZERO, WORLD_AXES);
+			if (upright != null) {
+				out.clear();
+				out.add(upright);
 			}
 		}
 		if (out.isEmpty() && (e.solid() == SOLID_BBOX || e.solid() == SOLID_OBB || e.solid() == SOLID_OBB_YAW || e.solid() == SOLID_VPHYSICS)) {
