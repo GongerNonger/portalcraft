@@ -1661,7 +1661,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				// ... and Minecraft is told, as a shove back to where the player stopped: left to
 				// itself Steve walked on (through where Minecraft thought the cube wasn't) and the two
 				// stood 19 units apart, the player stuck behind the cube.
-				if (dist(to, origin) > 0.5f) {
+				// Only when they have really parted (8 units): told of every small stop, Minecraft was
+				// shoved back a unit a tick all the while Steve pushed a cube, and he shuddered against it.
+				if (dist(to, origin) > 8.0f) {
 					g_teleportSeq++;
 					g_teleportOrigin = to;
 					g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
@@ -2132,8 +2134,8 @@ bool clampToProps(const Vector& from, Vector* to) {
 	if ((tick++ & 31) == 0) {
 		refreshLooseProps();
 	}
-	if (g_loosePropCount == 0) {
-		return false;
+	if (g_loosePropCount == 0 || dist(from, *to) < 0.01f) {
+		return false; // (a sweep of no length reads as blocked)
 	}
 	if (!g_serverTrace && g_engineFactory) {
 		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);

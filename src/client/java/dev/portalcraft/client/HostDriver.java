@@ -294,7 +294,7 @@ public final class HostDriver {
 	private static int crossingsLogged;
 
 	/** How fast a cube is shoved by a walking Steve, as the speed of the "hit" it takes each tick (blocks/tick). */
-	private static final double PROP_PUSH = 0.1;
+	private static final double PROP_PUSH = 0.15;
 	private static int pushedProp = -1, pushedStuck;
 	private static Vec3 pushedAt = Vec3.ZERO;
 
@@ -333,11 +333,13 @@ public final class HostDriver {
 			pushedProp = index;
 			pushedStuck = 0;
 		} else {
-			pushedStuck = now.distanceToSqr(pushedAt) < 0.3 * 0.3 ? pushedStuck + 1 : 0;
+			pushedStuck = now.distanceToSqr(pushedAt) < 0.1 * 0.1 ? pushedStuck + 1 : 0;
 		}
 		pushedAt = now;
-		if (pushedStuck < 4) {
-			HostEvents.hit(at, way.scale(PROP_PUSH), 0.0F);
+		if (pushedStuck < 6) {
+			// Through its middle, wherever Steve touches it: shoved at the corner he had met, a cube
+			// turned on the spot and hardly went anywhere.
+			HostEvents.hit(Units.toMc(now), way.scale(PROP_PUSH), 0.0F);
 		}
 	}
 	private static int liftLogs;

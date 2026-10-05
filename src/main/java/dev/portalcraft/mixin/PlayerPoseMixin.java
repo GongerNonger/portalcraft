@@ -28,6 +28,8 @@ public abstract class PlayerPoseMixin {
 			return;
 		}
 		Player self = (Player) (Object) this;
-		cir.setReturnValue(self.level().noCollision(self, self.getDimensions(pose).makeBoundingBox(self.position()).deflate(0.1, 1.0E-7, 0.1)));
+		net.minecraft.world.phys.AABB core = self.getDimensions(pose).makeBoundingBox(self.position()).deflate(0.1, 1.0E-7, 0.1);
+		// ... and never on account of a cube: one pushed against him made him duck.
+		cir.setReturnValue(self.level().noCollision(self, core) || dev.portalcraft.host.LiveEntities.overlapsProp(core));
 	}
 }
