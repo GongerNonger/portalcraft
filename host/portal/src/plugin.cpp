@@ -2106,6 +2106,16 @@ void refreshLooseProps() {
 		void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
 		const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
 		if (cls && std::strncmp(cls, "prop_physics", 12) == 0) {
+			// Only the ones a player moves: cubes and the radio, by model, as Minecraft picks them
+			// (LiveEntities.movableProp). Portal's floor buttons have a physics prop in them too; with
+			// every prop_physics in the list the sweep stopped Steve at a button's lip, and he couldn't
+			// walk up onto it.
+			void* col = g_colState == 1 ? collideableOf(e) : nullptr;
+			void* model = col && g_modelInfo ? sdk::vcall<void*>(col, kColModel) : nullptr;
+			const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : nullptr;
+			if (!name || (!std::strstr(name, "metal_box") && !std::strstr(name, "radio"))) {
+				continue;
+			}
 			if (void* entity = sdk::networkableBaseEntity(networkable)) {
 				g_looseProps[g_loosePropCount++] = entity;
 			}
