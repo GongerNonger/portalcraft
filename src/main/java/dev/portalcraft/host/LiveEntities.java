@@ -108,10 +108,11 @@ public final class LiveEntities {
 	 * Minecraft's copy of it, which is a tick old and built of columns that can fall a unit short;
 	 * without the skin Portal's own player, played back where Steve stands, ended up a hair inside
 	 * the real cube, and Portal's physics threw the two apart: Steve hopped and shook pushing a
-	 * cube or holding one against a wall. With it they never touch, and Steve pushes a cube he
-	 * walks into himself (HostDriver.pushProps).
+	 * cube or holding one against a wall. Half a unit, so he doesn't stand visibly off it; the
+	 * plugin's own sweep against Portal's props (clampToProps) catches what this doesn't, and Steve
+	 * pushes a cube he walks into himself (HostDriver.pushProps).
 	 */
-	private static final double PROP_SKIN = 1.5;
+	private static final double PROP_SKIN = 0.5;
 
 	/** Portal 1's movable props by model: cubes (metal_box), turrets, the radio. Floor buttons and the rest stay put. */
 	private static boolean movableProp(String model) {
@@ -283,8 +284,7 @@ public final class LiveEntities {
 			StaticProps.Shape shape = SHAPES.computeIfAbsent(model, m -> StaticProps.shape(files, m, true));
 			if (shape != null) {
 				for (Phy.Hull hull : shape.hulls()) {
-					BspMap.Brush b = StaticProps.brush(hull, e.origin(), axes,
-						(shape.fromPhy() ? StaticProps.COLLISION_MARGIN : 0.0) + (movableProp(model) ? PROP_SKIN : 0.0));
+					BspMap.Brush b = StaticProps.brush(hull, e.origin(), axes, shape.fromPhy() ? StaticProps.COLLISION_MARGIN : 0.0);
 					if (b != null) {
 						out.add(b);
 					}
@@ -292,13 +292,28 @@ public final class LiveEntities {
 			}
 		}
 		if (!out.isEmpty() && movableProp(model)) {
-			// A movable prop is the upright box around itself, however it lies. Tipped a few degrees,
-			// a cube's leaning face became a flight of two-unit columns, each a step Steve could take,
-			// and pushing a cube into a corner he walked up its side onto it.
-			AABB all = union(out);
-			Vec3 a = Units.toSrc(new Vec3(all.minX, all.minY, all.minZ)), c = Units.toSrc(new Vec3(all.maxX, all.maxY, all.maxZ));
-			BspMap.Brush upright = box(new Vec3(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.min(a.z, c.z)),
-				new Vec3(Math.max(a.x, c.x), Math.max(a.y, c.y), Math.max(a.z, c.z))).transformed(Vec3.ZERO, WORLD_AXES);
+			// A movable prop is an upright box to Steve: its own box, turned the way it is turned on
+			// the floor but never tipped. Tipped a few degrees, a cube's leaning face became a flight of
+			// two-unit columns, each a step Steve could take, and pushing a cube into a corner he walked
+			// up its side onto it. (The box around it squared to the world, as this was for a day,
+			// stood up to 8 units proud of a cube turned 45 degrees.)
+			Vec3 flat = axes[0];
+			for (Vec3 axis : axes) {
+				if (Math.abs(axis.z) < Math.abs(flat.z)) {
+					flat = axis; // the most level of its three axes gives the turn
+				}
+			}
+			Vec3[] turned = Units.angleVectors(new Vec3(0.0, Math.toDegrees(Math.atan2(flat.y, flat.x)), 0.0));
+			Vec3 lo = new Vec3(1e9, 1e9, 1e9), hi = new Vec3(-1e9, -1e9, -1e9);
+			Vec3 mins = e.mins(), maxs = e.maxs();
+			for (int corner = 0; corner < 8; corner++) {
+				Vec3 local = new Vec3((corner & 1) == 0 ? mins.x : maxs.x, (corner & 2) == 0 ? mins.y : maxs.y, (corner & 4) == 0 ? mins.z : maxs.z);
+				Vec3 world = axes[0].scale(local.x).subtract(axes[1].scale(local.y)).add(axes[2].scale(local.z)); // Source's y is to the left
+				Vec3 in = new Vec3(world.dot(turned[0]), -world.dot(turned[1]), world.z);
+				lo = new Vec3(Math.min(lo.x, in.x), Math.min(lo.y, in.y), Math.min(lo.z, in.z));
+				hi = new Vec3(Math.max(hi.x, in.x), Math.max(hi.y, in.y), Math.max(hi.z, in.z));
+			}
+			BspMap.Brush upright = box(lo.subtract(PROP_SKIN, PROP_SKIN, PROP_SKIN), hi.add(PROP_SKIN, PROP_SKIN, PROP_SKIN)).transformed(e.origin(), turned);
 			if (upright != null) {
 				out.clear();
 				out.add(upright);

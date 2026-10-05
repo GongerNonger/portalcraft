@@ -1658,6 +1658,20 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		if (!g_riding && g_haveSet && dist(g_lastSet, origin) < 24.0f) {
 			Vector to = origin;
 			if (clampToProps(g_lastSet, &to)) {
+				// ... and Minecraft is told, as a shove back to where the player stopped: left to
+				// itself Steve walked on (through where Minecraft thought the cube wasn't) and the two
+				// stood 19 units apart, the player stuck behind the cube.
+				if (dist(to, origin) > 0.5f) {
+					g_teleportSeq++;
+					g_teleportOrigin = to;
+					g_teleportVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
+					g_teleportKind = pcproto::kMoveShove;
+					if (g_shoveCount == kShoves) {
+						std::memmove(g_shoves, g_shoves + 1, sizeof(Shove) * (kShoves - 1));
+						g_shoveCount--;
+					}
+					g_shoves[g_shoveCount++] = {g_teleportSeq, {to.x - origin.x, to.y - origin.y, to.z - origin.z}};
+				}
 				origin = to;
 			}
 		}
