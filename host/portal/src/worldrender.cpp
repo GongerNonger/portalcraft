@@ -813,6 +813,35 @@ void __fastcall hkDrawTranslucentSurfaces(void* self, void* /*edx*/, void* list,
 	g_translucentOriginal(self, list, sortIndex, flags, shadowDepth);
 }
 
+// An experiment, off unless Portal is started with -pcearlysolid: our solids straight after the
+// view's opaque world (IVRenderView::DrawWorldLists, slot 13) instead of at its first translucent
+// world surface. A moving platform's laser beams and other see-through entities are drawn from the
+// far leaves forward, some before that first surface, and a block drawn after a beam covers it;
+// this early they can't. But with it every block showed a rim while the camera moved (cause not
+// found; the view's matrix is the same at both points), so it is not the default.
+using DrawWorldListsFn = void(__thiscall*)(void* self, void* list, unsigned long flags, float waterZAdjust);
+DrawWorldListsFn g_worldListsOriginal = nullptr;
+
+void __fastcall hkDrawWorldLists(void* self, void* /*edx*/, void* list, unsigned long flags, float waterZAdjust) {
+	g_worldListsOriginal(self, list, flags, waterZAdjust);
+	if (g_viewDepth > 0 && g_viewDepth <= kMaxViews) {
+		ViewEntry& e = g_views[g_viewDepth - 1];
+		if (!e.solidDone && (e.isMain || e.throughPortal)) {
+			e.solidDone = true;
+			if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
+				if (e.isMain) {
+					g_mainSolidDone = true;
+					draw(dev, worldToScreen(), false, kPassSolid);
+				} else if (g_renderView) {
+					float worldToProjection[16];
+					portalMatrix(e, worldToProjection);
+					draw(dev, worldToProjection, true, kPassSolid);
+				}
+			}
+		}
+	}
+}
+
 void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
 	if (g_viewDepth > 0) {
 		g_viewDepth--;
@@ -942,6 +971,10 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
 	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
 	hook(vt, 18, reinterpret_cast<void*>(&hkDrawTranslucentSurfaces), reinterpret_cast<void**>(&g_translucentOriginal));
+	if (std::strstr(GetCommandLineA(), "-pcearlysolid")) {
+		hook(vt, 13, reinterpret_cast<void*>(&hkDrawWorldLists), reinterpret_cast<void**>(&g_worldListsOriginal));
+		log("world: -pcearlysolid: solids drawn straight after the opaque world (experiment)");
+	}
 	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
 	return true;
 }
