@@ -291,6 +291,13 @@ public final class LiveEntities {
 
 	private static List<BspMap.Brush> place(BspMap map, Proto.HostEntity e) {
 		List<BspMap.Brush> out = new ArrayList<>();
+		// A security camera is nothing to Steve. It turns to watch the player, so its nine small
+		// pieces sweep through wherever he is near it: beside the ceiling portal in testchmb_a_10 he
+		// was lifted onto it, pushed back through the portal, or left standing on it in mid-air, by
+		// turns. Portal's own player barely meets one (it hangs high on a wall).
+		if (e.model().contains("security_camera")) {
+			return out;
+		}
 		Vec3[] axes = Units.angleVectors(e.angles());
 		String model = e.model();
 		if (e.solid() == SOLID_BSP && model.startsWith("*")) {

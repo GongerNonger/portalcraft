@@ -51,6 +51,12 @@ public abstract class EntityStepMixin {
 		if (!self.onGround() && movement.y > 0.0) {
 			return; // on the way up in a jump
 		}
+		// Not up onto a security camera (or a door's edge) beside him: dropping out of the ceiling
+		// portal next to one, Steve stepped onto it and stood there under the portal.
+		if (dev.portalcraft.host.LiveEntities.besideFixture(new AABB(box.minX, box.minY - 0.25, box.minZ, box.maxX, box.minY + 0.5, box.maxZ)
+			.expandTowards(movement.x, 0.0, movement.z))) {
+			return;
+		}
 		Vec3 best = null;
 		double bestRise = 0.0, bestDistance = got.horizontalDistanceSqr() + 1.0e-9;
 		for (double rise = RISE; rise <= self.maxUpStep() + 1.0e-6; rise += RISE) {

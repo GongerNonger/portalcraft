@@ -371,7 +371,7 @@ public final class HostDriver {
 
 	/**
 	 * Steve with his feet in a floor (a shove from the host put them there, or a prop did): up onto it. Minecraft doesn't stop a body that starts its step inside a shape,
-	 * so left there he sinks through the floor and out of the map. Only up, and only half a block:
+	 * so left there he sinks through the floor and out of the map. Only up, and only a quarter block:
 	 * a hull caught in a wall or a ceiling is left for the host to push out. Every tick except in a
 	 * fast fall: out of the ceiling portal in testchmb_a_10 it once took something for a floor,
 	 * lifted Steve and stopped his infinite fall.
@@ -416,7 +416,9 @@ public final class HostDriver {
 		if (LiveEntities.overlapsProp(feet.inflate(0.15, 0.0, 0.15))) {
 			return;
 		}
-		for (int i = 1; i <= 32; i++) {
+		// A quarter of a block at most: sinking is caught within a tick or two, a unit or so deep. More
+		// than that is something he has come down beside (a fitting under a ceiling), not a floor.
+		for (int i = 1; i <= 16; i++) {
 			double up = i / 64.0;
 			if (player.level().noCollision(player, new AABB(core.minX, core.minY + up + 0.005, core.minZ, core.maxX, core.maxY + up - 0.02, core.maxZ))) {
 				if (liftLogs++ < 60) {
