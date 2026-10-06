@@ -300,6 +300,11 @@ public final class LiveEntities {
 		if (e.model().contains("security_camera")) {
 			return out;
 		}
+		// Nor is an energy ball: it is a thing that kills on touch, which Portal sees to itself (its
+		// player is where Steve is). As a solid box in Minecraft it would carry or block him instead.
+		if (e.model().contains("combineball")) {
+			return out;
+		}
 		Vec3[] axes = Units.angleVectors(e.angles());
 		String model = e.model();
 		if (e.solid() == SOLID_BSP && model.startsWith("*")) {
