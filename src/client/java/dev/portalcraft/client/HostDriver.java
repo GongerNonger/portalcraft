@@ -2,6 +2,7 @@ package dev.portalcraft.client;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import com.mojang.blaze3d.platform.InputConstants;
@@ -484,6 +485,7 @@ public final class HostDriver {
 		if (c == null) {
 			return;
 		}
+		turnWithCrossing(player, s.portals(), c);
 		// The rest of the step after the portal, swept against the world from where he came out. At
 		// speed that is up to a block and a half: out of a portal facing a wall close by, Steve was
 		// put inside the wall, or beyond it.
@@ -937,8 +939,45 @@ public final class HostDriver {
 	 * moved smoothly, so the gap between them jumped and the hand skipped while turning; crossing
 	 * 180 degrees swung the interpolation the long way round.
 	 */
+	/**
+	 * Steve's heading turns with him through a portal. The view is Portal's, and Portal turns it when
+	 * its own player goes through, a tick or two after Steve has in Minecraft: until then the keys
+	 * still pushed him the way he had been facing, sideways to where he now walks, and out of a
+	 * wall portal onto a wall at right angles he drifted aside and lost a fifth of his speed (it felt
+	 * like catching a foot on the way through). Wall portals only: through a floor or a ceiling the
+	 * turn isn't a turn about the upright.
+	 */
+	private record Turn(int crossing, float degrees) {
+	}
+
+	private static final List<Turn> TURNS = new ArrayList<>();
+
+	private static void turnWithCrossing(LocalPlayer player, Proto.HostPortal[] portals, PlayerCrossings.Carried c) {
+		if (c.crossings() != 1 || portals.length < 2 || portals[0] == null || portals[1] == null) {
+			return;
+		}
+		Proto.HostPortal out = portals[c.exit()], in = portals[1 - c.exit()];
+		if (Math.abs(Units.angleVectors(in.angles())[0].z) > 0.1 || Math.abs(Units.angleVectors(out.angles())[0].z) > 0.1) {
+			return;
+		}
+		double hostYaw = Math.toRadians(-player.getYRot() - 90.0F); // Units.yawToMc, the other way
+		Vec3 carried = dev.portalcraft.host.HostPortalTransit.carryDirection(in, out, new Vec3(Math.cos(hostYaw), Math.sin(hostYaw), 0.0));
+		float turned = (float) Math.toDegrees(Math.atan2(carried.y, carried.x) - hostYaw);
+		TURNS.add(new Turn(PlayerCrossings.count(), net.minecraft.util.Mth.wrapDegrees(-turned)));
+	}
+
+	/** The turns of the crossings Portal hasn't made yet (degrees of Minecraft yaw). */
+	private static float pendingTurn() {
+		TURNS.removeIf(t -> t.crossing() <= PlayerCrossings.matched() || t.crossing() > PlayerCrossings.count());
+		float sum = 0.0F;
+		for (Turn t : TURNS) {
+			sum += t.degrees();
+		}
+		return sum;
+	}
+
 	private static void look(LocalPlayer player, Proto.HostState s) {
-		float dy = net.minecraft.util.Mth.wrapDegrees(Units.yawToMc(s.yaw()) - player.getYRot());
+		float dy = net.minecraft.util.Mth.wrapDegrees(Units.yawToMc(s.yaw()) + pendingTurn() - player.getYRot());
 		float dx = s.pitch() - player.getXRot();
 		player.setYRot(player.getYRot() + dy);
 		player.setXRot(s.pitch());

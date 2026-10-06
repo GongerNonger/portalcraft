@@ -164,7 +164,7 @@ public final class HostPortalTransit {
 	}
 
 	/** A direction through `in` and out of `out` (for tests). */
-	static Vec3 carryDirection(Proto.HostPortal in, Proto.HostPortal out, Vec3 v) {
+	public static Vec3 carryDirection(Proto.HostPortal in, Proto.HostPortal out, Vec3 v) {
 		return new Frame(out).carry(new Frame(in), v);
 	}
 
