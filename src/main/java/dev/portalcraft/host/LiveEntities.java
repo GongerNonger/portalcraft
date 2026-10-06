@@ -305,6 +305,14 @@ public final class LiveEntities {
 		if (e.model().contains("combineball")) {
 			return out;
 		}
+		// Nor is Portal's own player model. Near a portal Portal keeps a physics clone of its player on
+		// the other side (its shadow clones, for things that straddle a portal): a solid copy of Chell
+		// standing just outside the exit Steve is about to come out of. As a solid in Minecraft it
+		// stopped him dead in the portal's mouth about two times in five, and Portal then took its
+		// player back through (seen: three crossings for one, a hard hand-over).
+		if (e.model().contains("models/player/")) {
+			return out;
+		}
 		Vec3[] axes = Units.angleVectors(e.angles());
 		String model = e.model();
 		if (e.solid() == SOLID_BSP && model.startsWith("*")) {
