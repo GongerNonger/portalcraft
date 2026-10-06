@@ -77,6 +77,9 @@ public final class HostDriver {
 	private static Path failedMap;
 	/** When the host's current map was loaded (level starts aren't flings). */
 	private static long mapLoadedAt;
+	/** For the gun's draw animation: whether it was in hand last tick, and the level start it last played for. */
+	private static boolean gunWasInHand;
+	private static long drawnForMapAt;
 	/**
 	 * Until then, Steve stays with the host's player instead of falling by himself. A level start
 	 * places him before the map's lift and doors have reached Minecraft (they're streamed a moment
@@ -169,6 +172,12 @@ public final class HostDriver {
 		gunFollowsHostShots(minecraft, s.shots());
 		// Portal's gun holding an object (its effect state 2): Steve's opens its claws and holds, then lets go.
 		dev.portalcraft.client.gun.GunAnimation.holding(s.gunEffect() == 2);
+		boolean gunInHand = minecraft.player != null && minecraft.player.getMainHandItem().is(PortalCraft.PORTAL_GUN);
+		if (gunInHand && (!gunWasInHand || mapLoadedAt != drawnForMapAt)) {
+			dev.portalcraft.client.gun.GunAnimation.draw(); // just selected, or a level just began
+		}
+		gunWasInHand = gunInHand;
+		drawnForMapAt = mapLoadedAt;
 		lightFollowsHostPortals(minecraft, s.portals());
 		LiveEntities.carrying(s.gunEffect() == 2 ? s.origin() : null);
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
@@ -905,6 +914,12 @@ public final class HostDriver {
 			Proto.HostPortal p = portals[i];
 			Vec3 at = p != null && (p.flags() & Proto.PORTAL_ACTIVE) != 0 ? p.origin() : null;
 			boolean placed = at != null && (lastPortalAt[i] == null || lastPortalAt[i].distanceToSqr(at) > 1.0);
+			// A portal gone with nothing shot in its place, in a level that has been running: an
+			// emancipation grid took it, and Portal's gun plays its fizzle. (A level change clears them too.)
+			if (at == null && lastPortalAt[i] != null && System.currentTimeMillis() - mapLoadedAt > 3000 && minecraft.player != null
+				&& minecraft.player.isAlive() && minecraft.player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+				dev.portalcraft.client.gun.GunAnimation.fizzle();
+			}
 			lastPortalAt[i] = at;
 			// A portal landed with no shot seen for it (a host that doesn't report its shots): the gun
 			// shows it then. With the shot reported, the gun has already flashed.

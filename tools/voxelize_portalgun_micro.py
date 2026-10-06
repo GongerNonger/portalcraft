@@ -953,13 +953,15 @@ def glass_edge(p):
         p["edge"][g] = np.clip(np.abs(((c[:, :2] - mid) / half) @ side) ** 2, 0, 0.999)
 
 
-def grab_frames(a, gun, palette, display, textures, tint, rest_model, write, grow):
+def grab_frames(a, gun, palette, display, textures, tint, rest_model, write, grow, names=(("pickup", 100), ("release", 200)), group="portal_gun_pickup"):
     """--grab: poses for the `pickup` and `release` sequences as per_frame()'s are for fire1. Their
     claws turn at the root too, so less rides the front cover here than when firing (its own
     `portal_gun_pickup/cover`, shared by both), and more is voxelized per pose. Returns the item
-    definition's entries (fire_frame 101.., 201..) and each sequence's recoil frames."""
+    definition's entries (fire_frame 101.., 201..) and each sequence's recoil frames. `names` and
+    `group` are for the same again with other sequences (the fizzle: 301..), whose shared cover and
+    body models go under `group`."""
     m, bones = gun.model, range(len(gun.model.bones))
-    seqs = (("pickup", gun.anims["@pickup"], 100), ("release", gun.anims["@release"], 200))
+    seqs = tuple((name, gun.anims["@" + name], base) for name, base in names)
     rels = [gun.relative(m.skin(an, f)) for _, an, _ in seqs for f in range(an["frames"])]
     still = {b for b in bones if all(np.abs(r[b] - np.eye(4)).max() < 1e-3 for r in rels)}
     slides = {b for b in bones if b not in still and all(np.abs(r[b] - r[gun.cover]).max() < 1e-3 for r in rels)}
@@ -969,7 +971,7 @@ def grab_frames(a, gun, palette, display, textures, tint, rest_model, write, gro
     print(f"grab: triangles: {(kind == 0).sum()} of the body, {(kind == 1).sum()} riding the front cover, {(kind == 2).sum()} that bend")
     rest = gun.relative(gun.idle)
     models = os.path.join(a.pack, "assets", "portalcraft", "models", "item")
-    os.makedirs(os.path.join(models, "portal_gun_pickup"), exist_ok=True)
+    os.makedirs(os.path.join(models, group), exist_ok=True)
     body = "portal_gun_fire/body"
     for name in ("body", "cover"):
         part = gun.part(gun.tris[kind == (name == "cover")], rest)
@@ -979,9 +981,9 @@ def grab_frames(a, gun, palette, display, textures, tint, rest_model, write, gro
             print("grab: the body is the firing poses' (portal_gun_fire/body)")
             continue
         if name == "body":
-            body = "portal_gun_pickup/body"
-        write(f"portal_gun_pickup/{name}", {"textures": textures, "elements": el, "display": display})
-        print(f"portal_gun_pickup/{name}: {len(el)} elements, {faces} faces")
+            body = f"{group}/body"
+        write(f"{group}/{name}", {"textures": textures, "elements": el, "display": display})
+        print(f"{group}/{name}: {len(el)} elements, {faces} faces")
     fp = display["firstperson_righthand"]
     cases, recoils, worst = [], {}, 0.0
     for seq, an, base in seqs:
@@ -999,7 +1001,7 @@ def grab_frames(a, gun, palette, display, textures, tint, rest_model, write, gro
                 print(f"portal_gun_{seq} {n} (frame {n - 1}): the gun at rest; recoil t {r['t']} blocks, r {r['r']} deg")
                 continue
             slide = gun.in_pixels(rel[gun.cover])
-            write(f"portal_gun_{seq}/cover_{n}", {"parent": "portalcraft:item/portal_gun_pickup/cover",
+            write(f"portal_gun_{seq}/cover_{n}", {"parent": f"portalcraft:item/{group}/cover",
                                                  "display": {ctx: moved_display(entry, slide) for ctx, entry in display.items()}})
             part = gun.part(gun.tris[kind == 2], rel)
             glass_edge(part)
@@ -1044,6 +1046,16 @@ def per_frame(a, gun, fire, parts, palette, display, textures, tint, item, write
         more, grabs = grab_frames(a, gun, palette, display, textures, tint, static["model"]["fallback"], write, grow)
         cases += more
         data.update(grabs)
+        # The fizzle (walking through an emancipation grid with portals out): poses at 301..316.
+        more, fizzles = grab_frames(a, gun, palette, display, textures, tint, static["model"]["fallback"], write, grow,
+                                    names=(("fizzle", 300),), group="portal_gun_fizzle")
+        cases += more
+        data.update(fizzles)
+        # Drawing the gun moves it whole (no part bends): its motion only, no poses.
+        draw = gun.anims["@draw"]
+        data["draw"] = [recoil_frame(fp, gun.in_pixels(np.linalg.inv(gun.idle[gun.root]) @ m.skin(draw, f)[gun.root])) for f in range(draw["frames"])]
+        bends = max(np.abs(gun.relative(m.skin(draw, f))[b] - np.eye(4)).max() for f in range(draw["frames"]) for b in range(gun.root, len(m.bones)))
+        print(f"draw: {draw['frames']} frames of motion; its parts leave their rest pose by at most {bends:.4f}")
     palette.save(os.path.join(assets, "textures", "item", "portal_gun_voxels.png"))
     with open(os.path.join(assets, "gun_recoil.json"), "w") as f:
         json.dump(data, f, indent=1)

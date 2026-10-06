@@ -21,7 +21,8 @@ import org.slf4j.LoggerFactory;
  * in game ticks sent over the network: which pose the model shows (FireFrame, for item models that
  * have the frames), and the whole gun's motion, eased between the animation's frames every rendered
  * frame (applyRecoil, from the resource pack's portalcraft:gun_recoil.json). Portal's own
- * sequences, 30 frames a second: firing, picking an object up (and holding it), letting it go.
+ * sequences, 30 frames a second: firing, picking an object up (and holding it), letting it go,
+ * the fizzle as an emancipation grid takes its portals, and drawing the gun.
  */
 public final class GunAnimation {
 	private static final Logger LOG = LoggerFactory.getLogger("portalcraft");
@@ -37,7 +38,11 @@ public final class GunAnimation {
 		 * poses can't blend, so it starts at the frame whose claws are as they are held (wide open)
 		 * and closes from there.
 		 */
-		RELEASE(21, 11, 200, "release");
+		RELEASE(21, 11, 200, "release"),
+		/** The portals were taken away (an emancipation grid): the claws and the cover shake. */
+		FIZZLE(16, 0, 300, "fizzle"),
+		/** The gun comes up into view. The whole gun's motion only: it has no poses (base -1). */
+		DRAW(31, 0, -1, "draw");
 
 		public final int frames;
 		final int first;
@@ -78,6 +83,20 @@ public final class GunAnimation {
 		shotAt = System.nanoTime();
 		if (!holding) {
 			play(Sequence.FIRE);
+		}
+	}
+
+	/** Its portals were taken away without a shot. Not over an object it holds: the claws stay open. */
+	public static void fizzle() {
+		if (!holding) {
+			play(Sequence.FIZZLE);
+		}
+	}
+
+	/** The gun came to hand (a level began, or it was just selected). */
+	public static void draw() {
+		if (!holding) {
+			play(Sequence.DRAW);
 		}
 	}
 
@@ -123,7 +142,7 @@ public final class GunAnimation {
 	/** FireFrame's value: 0 at rest, else the sequence's base + the current frame + 1. */
 	public static float frameValue() {
 		double f = frames();
-		return f < 0.0 ? 0.0F : (float) (playing.base + 1 + (int) f);
+		return f < 0.0 || playing.base < 0 ? 0.0F : (float) (playing.base + 1 + (int) f);
 	}
 
 	/**
