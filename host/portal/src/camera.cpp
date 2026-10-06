@@ -61,6 +61,8 @@ struct Hook {
 	int slot = -1;
 	void* original = nullptr;
 };
+float g_portalAt[2][3] = {};
+bool g_portalsLinked = false;
 Hook g_hookView, g_hookViewModel, g_hookCrosshair, g_hookPlayerDraw, g_hookGhostDraw;
 
 bool g_hideBody = false;
@@ -214,6 +216,17 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 		lastOwn = nowOwn;
 	} else if (nowOwn - lastOwn < 1500 && std::fabs(dx) < 110.0f && std::fabs(dy) < 110.0f && std::fabs(dz) < 110.0f) {
 		eyeOverFeet = true;
+	} else if (g_portalsLinked) {
+		// Walking into a portal, the eye is through it before the body: Portal draws the view from
+		// the far portal while the feet are still at the near one (its CalcPortalView). With the
+		// portals far apart that eye is nowhere near the feet, but it is still the player's own.
+		for (int i = 0; i < 2 && !eyeOverFeet; i++) {
+			const float* nearP = g_portalAt[i];
+			const float* farP = g_portalAt[1 - i];
+			bool feetAtNear = std::fabs(feet.x - nearP[0]) < 100.0f && std::fabs(feet.y - nearP[1]) < 100.0f && std::fabs(feet.z - nearP[2]) < 130.0f;
+			bool eyeAtFar = std::fabs(origin.x - farP[0]) < 100.0f && std::fabs(origin.y - farP[1]) < 100.0f && std::fabs(origin.z - farP[2]) < 130.0f;
+			eyeOverFeet = feetAtNear && eyeAtFar;
+		}
 	}
 	if (!eyeOverFeet) {
 		if (g_setupMisses++ == 0) {
@@ -481,6 +494,12 @@ void setGrounded(bool grounded, float verticalSpeed) {
 
 void setSprinting(bool sprinting) {
 	g_sprinting = sprinting;
+}
+
+void setPortals(const float* blue, const float* orange, bool linked) {
+	std::memcpy(g_portalAt[0], blue, sizeof g_portalAt[0]);
+	std::memcpy(g_portalAt[1], orange, sizeof g_portalAt[1]);
+	g_portalsLinked = linked;
 }
 
 void setEyeHeight(float units) {

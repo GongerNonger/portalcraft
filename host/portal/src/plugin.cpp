@@ -156,6 +156,7 @@ int g_crossingCount = 0;
 uint32_t g_opaqueSeq = 0;                 // the newest host move that isn't a crossing (a level start, a trigger_teleport)
 uint32_t g_matched = 0;                   // Minecraft's own crossings (McState.crossCount) Portal has made too
 pcproto::HostPortal g_portalsNow[2] = {}; // as last sent
+DWORD g_portalsChangedAt = 0;             // when either last moved, opened, linked or closed
 
 // A place on Minecraft's timeline: the host moves it has taken, and the matches it knows of.
 struct McAt {
@@ -1420,10 +1421,11 @@ void updateGunGate() {
 // colour. Read through the weapon's own send table, so nothing here depends on the build.
 uint8_t g_shots = 0;
 uint32_t g_gunEffect = 0xFFFFFFFFu; // the gun's m_EffectState (2: holding an object), for Minecraft's grab animations
+uint8_t g_gunFizzles = 0;            // times an emancipation grid has fizzled the gun (HostState.gunEffect, second byte)
 
 void watchGunShots(int buttons) {
 	static void* weaponTable = nullptr;
-	static int nextPrimary = -1, nextSecondary = -1, effectState = -1;
+	static int nextPrimary = -1, nextSecondary = -1, effectState = -1, effectsMax1 = -1, effectsMax2 = -1;
 	static uint32_t lastWeapon = 0xFFFFFFFFu;
 	static float lastP = 0.0f, lastS = 0.0f;
 	uint8_t* base = playerFields();
@@ -1450,8 +1452,25 @@ void watchGunShots(int buttons) {
 		nextPrimary = findProp(sc->table, "m_flNextPrimaryAttack", 0);
 		nextSecondary = findProp(sc->table, "m_flNextSecondaryAttack", 0);
 		effectState = findProp(sc->table, "m_EffectState", 0);
+		effectsMax1 = findProp(sc->table, "m_fEffectsMaxSize1", 0);
+		effectsMax2 = findProp(sc->table, "m_fEffectsMaxSize2", 0);
+		logf("weapon: m_fEffectsMaxSize1 %d m_fEffectsMaxSize2 %d", effectsMax1, effectsMax2);
 		logf("weapon: %s m_flNextPrimaryAttack %d m_flNextSecondaryAttack %d m_EffectState %d", sc->name, nextPrimary, nextSecondary, effectState);
 	}
+	// The gun's fizzle: an emancipation grid, as it takes the player's portals, pulses the gun's
+	// glow (m_fEffectsMaxSize1/2 jump from 4 to 50 and shrink back) and plays its fizzle animation.
+	// Nothing else does: a portal a door or a moving wall closes goes without either.
+	if (effectsMax1 >= 0 && effectsMax2 >= 0) {
+		static float lastMax = 0.0f;
+		float m1 = *reinterpret_cast<float*>(weapon + effectsMax1), m2 = *reinterpret_cast<float*>(weapon + effectsMax2);
+		float most = m1 > m2 ? m1 : m2;
+		if (most > 30.0f && lastMax <= 30.0f && handle == lastWeapon) {
+			g_gunFizzles++;
+			logf("gun fizzle %u (glow %.0f %.0f)", unsigned(g_gunFizzles), m1, m2);
+		}
+		lastMax = most;
+	}
+	uint32_t effectBefore = g_gunEffect;
 	if (effectState >= 0) {
 		uint32_t effect = *reinterpret_cast<uint32_t*>(weapon + effectState);
 		static int effectLogs = 0;
@@ -1464,8 +1483,17 @@ void watchGunShots(int buttons) {
 		return;
 	}
 	float p = *reinterpret_cast<float*>(weapon + nextPrimary), s = *reinterpret_cast<float*>(weapon + nextSecondary);
-	if (handle == lastWeapon && (p > lastP + 0.05f || s > lastS + 0.05f)) {
-		bool orange = (buttons & sdk::IN_ATTACK2) && !(buttons & sdk::IN_ATTACK);
+	// Only with a fire button down and the gun's state unchanged this tick: letting go of an object
+	// pushes the same timers on by half a second (so does drawing the gun), and every cube Steve put
+	// down flashed the gun and turned its light blue.
+	// (This tick's buttons or the last's: the weapon fires after the move this is called from, so the
+	// jump is seen a tick later, when a short click may already be over.)
+	static int lastButtons = 0;
+	bool firing = ((buttons | lastButtons) & (sdk::IN_ATTACK | sdk::IN_ATTACK2)) != 0 && g_gunEffect == effectBefore && g_gunEffect != 2;
+	int shotButtons = (buttons & (sdk::IN_ATTACK | sdk::IN_ATTACK2)) ? buttons : lastButtons;
+	lastButtons = buttons;
+	if (handle == lastWeapon && firing && (p > lastP + 0.05f || s > lastS + 0.05f)) {
+		bool orange = (shotButtons & sdk::IN_ATTACK2) && !(shotButtons & sdk::IN_ATTACK);
 		g_shots = uint8_t(((g_shots + 1) & 0x7F) | (orange ? 0x80 : 0));
 	}
 	lastWeapon = handle;
@@ -1543,6 +1571,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
 			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
 		}
+		// Nor what Portal's physics does to its player on a loose prop. He is set down on the cube
+		// from Minecraft every tick, the cube gives under him, and now and then the physics answers
+		// with a kick: stepping from a block onto a cube Steve was thrown 270 units into the air (431
+		// u/s straight up, handed on as an impulse) and died of the fall.
+		if (impulse && g_onLooseProp && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 700.0f * 700.0f) {
+			impulse = false;
+		}
 		if (impulse && g_crossedAt != 0 && GetTickCount() - g_crossedAt < 500 && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 300.0f * 300.0f) {
 			impulse = false; // Portal working its player clear of a portal's rim (see g_crossedAt)
 		}
@@ -1616,7 +1651,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			// re-placed while he fell through it left Portal unable to follow, Minecraft went on
 			// looping on its own, and the player (played back as if before all those crossings) fell
 			// out of the map.
-			if ((behindTicks >= 2 || justBehindTicks >= 6 || pendingTicks >= 8) && geometricCrossing(in, kHalf, &x)) {
+			// Or at once, behind a portal that has only just opened or moved: Portal teleports only
+			// what the portal "owns", and it takes ownership of its player as he first touches the space
+			// in front of it with his centre in front of its plane. One that opens under his feet (or is
+			// re-placed as he falls through) never owns him and never takes him; waiting the ticks above
+			// for it, he hung in the opening and the two sides came apart (one such start in five bobbed).
+			bool justOpened = behind > 0.0f && nearPortal && g_portalsChangedAt != 0 && GetTickCount() - g_portalsChangedAt < 600;
+			if ((behindTicks >= 2 || justBehindTicks >= 6 || pendingTicks >= 8 || justOpened) && geometricCrossing(in, kHalf, &x)) {
 				behindTicks = justBehindTicks = 0;
 				pendingTicks = pendingTicks >= 8 ? 7 : 0; // still behind after this one: the next goes next tick
 				g_matched++;
@@ -2049,8 +2090,14 @@ uint32_t g_entitySeq = 0;
 int g_entitySendCountdown = 0;
 pcproto::Vec3 g_lastEntityOrigin[2048];
 
+// Not Portal's shadow clones (physicsshadowclone): for every loose physics thing near a portal (a
+// cube, a turret, the radio, its own player) Portal keeps a solid copy mirrored through the portal
+// pair, usually in or behind the other portal's wall, and lets it collide only with what is in
+// that portal's hole. Streamed to Minecraft a cube's clone was a second cube, standing in the
+// mouth of the exit; the player's stopped Steve coming out of it.
 bool interestingClass(const char* cls) {
 	return cls && std::strcmp(cls, "player") != 0 && std::strcmp(cls, "prop_portal") != 0 && std::strcmp(cls, "worldspawn") != 0 &&
+		std::strcmp(cls, "physicsshadowclone") != 0 && std::strcmp(cls, "portalsimulator_collisionentity") != 0 &&
 		std::strcmp(cls, "func_clip_vphysics") != 0 && std::strcmp(cls, "func_vehicleclip") != 0 && std::strncmp(cls, "trigger_", 8) != 0;
 }
 
@@ -2549,7 +2596,7 @@ void sendState() {
 	}
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
-	s.gunEffect = g_gunEffect;
+	s.gunEffect = (g_gunEffect & 0xFFu) | (uint32_t(g_gunFizzles) << 8); // its state (0xFF: unknown), and its fizzles
 	// Portal's light at the player's chest, for Minecraft to light Steve's hand by (eased, so walking
 	// past a lamp doesn't flicker). An engine slot, so only on a build it was checked on.
 	s.handLight = {-1.0f, 0.0f, 0.0f};
@@ -2570,6 +2617,7 @@ void sendState() {
 		fillPortals(s);
 	}
 	if (std::memcmp(g_portalsNow, s.portals, sizeof g_portalsNow) != 0) {
+		g_portalsChangedAt = GetTickCount();
 		for (int i = 0; i < 2; i++) { // dev: where the portals are, for scripted tests
 			logf("portals: %s flags %#x at (%.1f %.1f %.1f) angles (%.0f %.0f %.0f)", i ? "orange" : "blue", s.portals[i].flags, s.portals[i].origin.x,
 				s.portals[i].origin.y, s.portals[i].origin.z, s.portals[i].angles.x, s.portals[i].angles.y, s.portals[i].angles.z);
@@ -2786,6 +2834,8 @@ public:
 		camera::setEyeHeight(following() && !g_scripted ? (g_mc.sneaking ? 50.8f : 64.0f) : 0.0f);
 		camera::setGrounded(g_mc.onGround != 0, g_mc.velocity.z);
 		camera::setSprinting(following() && !g_scripted && (g_mc.flags & pcproto::kMcSprint) != 0);
+		camera::setPortals(&g_portalsNow[0].origin.x, &g_portalsNow[1].origin.x,
+			(g_portalsNow[0].flags & pcproto::kPortalLinked) && (g_portalsNow[1].flags & pcproto::kPortalLinked));
 		camera::setHideBody(mcReady()); // Chell -> Steve (worldrender draws him)
 		updateMouseCapture();
 		watchWheel();

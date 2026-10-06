@@ -97,7 +97,7 @@ struct HostState {
 	// PCH6: the host gun's effect state (Portal's m_EffectState: 0 none, 1 ready, 2 holding an
 	// object), or 0xFFFFFFFF when unknown. Minecraft's gun plays Portal's pickup and release
 	// animations as it starts and stops holding.
-	uint32_t gunEffect;
+	uint32_t gunEffect; // low byte: the gun's m_EffectState (2: holding an object; 0xFF unknown); second byte: a count of its fizzles
 };
 
 enum McFlags : uint32_t {

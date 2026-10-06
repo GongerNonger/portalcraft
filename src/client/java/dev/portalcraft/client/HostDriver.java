@@ -80,6 +80,7 @@ public final class HostDriver {
 	private static long mapLoadedAt;
 	/** For the gun's draw animation: whether it was in hand last tick, and the level start it last played for. */
 	private static boolean gunWasInHand;
+	private static int lastGunFizzles = -1;
 	private static long drawnForMapAt;
 	/**
 	 * Until then, Steve stays with the host's player instead of falling by himself. A level start
@@ -173,6 +174,14 @@ public final class HostDriver {
 		gunFollowsHostShots(minecraft, s.shots());
 		// Portal's gun holding an object (its effect state 2): Steve's opens its claws and holds, then lets go.
 		dev.portalcraft.client.gun.GunAnimation.holding(s.gunEffect() == 2);
+		// The gun's fizzle, when Portal's own gun fizzles: an emancipation grid taking its portals
+		// (HostState.gunFizzles counts them). Not whenever a portal goes away: one a door or a moving
+		// wall closes goes quietly in Portal, and played the fizzle here.
+		if (lastGunFizzles >= 0 && s.gunFizzles() != lastGunFizzles && minecraft.player != null && minecraft.player.isAlive()
+			&& minecraft.player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
+			dev.portalcraft.client.gun.GunAnimation.fizzle();
+		}
+		lastGunFizzles = s.gunFizzles();
 		boolean gunInHand = minecraft.player != null && minecraft.player.getMainHandItem().is(PortalCraft.PORTAL_GUN);
 		if (gunInHand && (!gunWasInHand || mapLoadedAt != drawnForMapAt)) {
 			dev.portalcraft.client.gun.GunAnimation.draw(); // just selected, or a level just began
@@ -939,12 +948,6 @@ public final class HostDriver {
 			Proto.HostPortal p = portals[i];
 			Vec3 at = p != null && (p.flags() & Proto.PORTAL_ACTIVE) != 0 ? p.origin() : null;
 			boolean placed = at != null && (lastPortalAt[i] == null || lastPortalAt[i].distanceToSqr(at) > 1.0);
-			// A portal gone with nothing shot in its place, in a level that has been running: an
-			// emancipation grid took it, and Portal's gun plays its fizzle. (A level change clears them too.)
-			if (at == null && lastPortalAt[i] != null && System.currentTimeMillis() - mapLoadedAt > 3000 && minecraft.player != null
-				&& minecraft.player.isAlive() && minecraft.player.getMainHandItem().is(PortalCraft.PORTAL_GUN)) {
-				dev.portalcraft.client.gun.GunAnimation.fizzle();
-			}
 			lastPortalAt[i] = at;
 			// A portal landed with no shot seen for it (a host that doesn't report its shots): the gun
 			// shows it then. With the shot reported, the gun has already flashed.
@@ -967,8 +970,9 @@ public final class HostDriver {
 	 * its own player goes through, a tick or two after Steve has in Minecraft: until then the keys
 	 * still pushed him the way he had been facing, sideways to where he now walks, and out of a
 	 * wall portal onto a wall at right angles he drifted aside and lost a fifth of his speed (it felt
-	 * like catching a foot on the way through). Wall portals only: through a floor or a ceiling the
-	 * turn isn't a turn about the upright.
+	 * like catching a foot on the way through). Portal turns the whole view through the pair, pitch
+	 * and all, in the tick it teleports; here the heading is where that turned view points along the
+	 * ground (through a floor or a ceiling too, unless it then points straight up or down).
 	 */
 	private record Turn(int crossing, float degrees) {
 	}
@@ -980,11 +984,13 @@ public final class HostDriver {
 			return;
 		}
 		Proto.HostPortal out = portals[c.exit()], in = portals[1 - c.exit()];
-		if (Math.abs(Units.angleVectors(in.angles())[0].z) > 0.1 || Math.abs(Units.angleVectors(out.angles())[0].z) > 0.1) {
-			return;
-		}
 		double hostYaw = Math.toRadians(-player.getYRot() - 90.0F); // Units.yawToMc, the other way
-		Vec3 carried = dev.portalcraft.host.HostPortalTransit.carryDirection(in, out, new Vec3(Math.cos(hostYaw), Math.sin(hostYaw), 0.0));
+		double pitch = Math.toRadians(player.getXRot()); // down is positive, as Source has it
+		Vec3 view = new Vec3(Math.cos(hostYaw) * Math.cos(pitch), Math.sin(hostYaw) * Math.cos(pitch), -Math.sin(pitch));
+		Vec3 carried = dev.portalcraft.host.HostPortalTransit.carryDirection(in, out, view);
+		if (carried.x * carried.x + carried.y * carried.y < 0.15 * 0.15) {
+			return; // straight up or down: no heading to take from it
+		}
 		float turned = (float) Math.toDegrees(Math.atan2(carried.y, carried.x) - hostYaw);
 		TURNS.add(new Turn(PlayerCrossings.count(), net.minecraft.util.Mth.wrapDegrees(-turned)));
 	}

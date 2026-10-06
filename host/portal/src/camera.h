@@ -20,6 +20,9 @@ void setEyeHeight(float units);
 void setGrounded(bool grounded, float verticalSpeed);
 // Steve is sprinting: the view widens a little while he is.
 void setSprinting(bool sprinting);
+// The two portals' origins (3 floats each) and whether both are open and linked: Portal puts the eye
+// through a portal before the player's body goes (see the view hook).
+void setPortals(const float* blue, const float* orange, bool linked);
 // Whether Portal may draw its viewmodel (its portal gun) at all.
 void setViewModel(bool allowed);
 
