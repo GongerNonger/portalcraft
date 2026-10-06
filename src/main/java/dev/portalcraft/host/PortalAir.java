@@ -81,7 +81,7 @@ public final class PortalAir {
 	 */
 	public static void funnel(Player player, Proto.HostPortal[] portals) {
 		Vec3 v = player.getDeltaMovement();
-		if (!HostCollision.active() || portals == null || player.onGround() || v.y > -0.3 || player.isInWater() || player.getAbilities().flying
+		if (!HostCollision.active() || portals == null || player.onGround() || v.y > -0.3 || player.isInWater() || player.getAbilities().flying || player.isFallFlying()
 			|| player.xxa != 0.0F || player.zza != 0.0F) {
 			return;
 		}

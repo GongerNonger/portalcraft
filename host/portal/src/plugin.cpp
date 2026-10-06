@@ -323,6 +323,9 @@ pcproto::McState g_mc{};
 
 // Half of Steve's hull in Minecraft, which carries his centre through portals: 72 units tall, 60 sneaking.
 float steveHalfHeight() {
+	if (g_mc.flags & pcproto::kMcGliding) {
+		return 12.0f; // the elytra's hull: 0.6 blocks at Steve's scale
+	}
 	return g_mc.sneaking ? 30.0f : 36.0f;
 }
 void dropAppliedShoves(uint32_t ack); // the player puppet, below

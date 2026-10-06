@@ -202,6 +202,19 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	// view entity, or if the layout were ever different.) Only then is it ours to move.
 	float dx = origin.x - feet.x, dy = origin.y - feet.y, dz = origin.z - feet.z;
 	bool eyeOverFeet = std::fabs(dx) < 4.0f && std::fabs(dy) < 4.0f && dz > 10.0f && dz < 90.0f;
+	// Just through a portal, Portal swings its view round over about half a second (the eye comes
+	// out of a floor portal sideways and rights itself), and all that while the eye is not over the
+	// feet. Taken for "not the player's own view", Steve's body vanished in third person for that
+	// half second and the camera dropped into his head. For a second and a half after the view was
+	// last plainly his own, an eye anywhere near the feet still is.
+	static DWORD lastOwn = 0;
+	DWORD nowOwn = GetTickCount();
+	bool plainlyOwn = eyeOverFeet;
+	if (eyeOverFeet) {
+		lastOwn = nowOwn;
+	} else if (nowOwn - lastOwn < 1500 && std::fabs(dx) < 110.0f && std::fabs(dy) < 110.0f && std::fabs(dz) < 110.0f) {
+		eyeOverFeet = true;
+	}
 	if (!eyeOverFeet) {
 		if (g_setupMisses++ == 0) {
 			g_log("camera: view (%.1f %.1f %.1f) isn't over the player's feet (%.1f %.1f %.1f): leaving it alone (logged once)", origin.x, origin.y,
@@ -238,7 +251,7 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	}
 	// Steve's eye height, not Chell's: sneaking, Portal ducks its player and drops the eye to 28 units,
 	// most of the way to the floor, where Minecraft's sneak only dips to about 51.
-	if (g_wantEye > 0.0f) {
+	if (g_wantEye > 0.0f && plainlyOwn) { // (not during Portal's swing after a portal: that eye is Portal's to move)
 		static float eye = 64.0f;
 		if (std::fabs(eye - dz) > 40.0f) {
 			eye = dz; // a fresh view: start from where Portal has it

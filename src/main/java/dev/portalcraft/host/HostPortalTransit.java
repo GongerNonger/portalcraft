@@ -32,7 +32,13 @@ import org.jspecify.annotations.Nullable;
  * gets its speed back from how far it moved.
  */
 public final class HostPortalTransit {
-	private static final int COOLDOWN_TICKS = 10;
+	/**
+	 * Ticks before the same thing can go through again. One: it comes out moving away from the exit, so
+	 * it can't turn straight back in, and at ten (half a second) an arrow dropped into a floor portal
+	 * under a ceiling one was past the floor portal again before it was allowed through, and fell out
+	 * of the bottom of the hole.
+	 */
+	private static final int COOLDOWN_TICKS = 1;
 	/** Searched this far around a portal (blocks): the fastest thing moves about 4 a tick. */
 	private static final double REACH = 5.0;
 

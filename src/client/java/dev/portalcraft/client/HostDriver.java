@@ -561,7 +561,8 @@ public final class HostDriver {
 		for (int k = Math.max(1, PlayerCrossings.count() - 3); k <= PlayerCrossings.count(); k++) {
 			crossPortal[k & 3] = (byte) PlayerCrossings.portalOf(k);
 		}
-		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0) | (ready && player.isSprinting() ? Proto.MC_SPRINT : 0);
+		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0) | (ready && player.isSprinting() ? Proto.MC_SPRINT : 0)
+			| (ready && player.isFallFlying() ? Proto.MC_GLIDING : 0);
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),

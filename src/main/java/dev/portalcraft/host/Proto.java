@@ -32,6 +32,8 @@ public final class Proto {
 	public static final int MC_SCREEN = 1 << 1;
 	/** McFlags kMcSprint: Steve is sprinting (the host widens its view, the only sign of it there is). */
 	public static final int MC_SPRINT = 1 << 2;
+	/** McFlags kMcGliding: Steve is gliding on an elytra, in the low hull (the host carries him through portals by its middle). */
+	public static final int MC_GLIDING = 1 << 3;
 
 	private Proto() {
 	}
