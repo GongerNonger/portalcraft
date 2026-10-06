@@ -639,6 +639,17 @@ bool g_riding = false;
 int g_rideEntity = -1;
 float g_rideLastZ = 0.0f;
 DWORD g_rideStill = 0; // when the lift last stopped moving
+// A platform that carries the player sideways (the light-rail platforms). Portal moves its player
+// along with it, and as he jumps off it Portal's velocity for him jumps too: read as impulses and
+// shoves and handed to Minecraft, each one replaced Steve's own jump (seen: a jump on a moving
+// platform cut to 18 units of 40, five hand-overs in six ticks, Steve thrown about). On one, and
+// for a moment after leaving it, Portal's small moves and velocity changes are the platform's and
+// are not handed over; Minecraft carries Steve on its own copy of the platform.
+float g_rideLastX = 0.0f, g_rideLastY = 0.0f;
+DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sideways
+bool carriedLately() {
+	return g_carriedAt != 0 && GetTickCount() - g_carriedAt < 1500;
+}
 
 bool collideableOrigin(int index, Vector* out);
 
@@ -666,8 +677,13 @@ void updateRiding() {
 			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
 				moving = true;
 			}
+			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f)) {
+				g_carriedAt = GetTickCount();
+			}
 			g_rideEntity = index;
 			g_rideLastZ = o.z;
+			g_rideLastX = o.x;
+			g_rideLastY = o.y;
 		} else {
 			g_rideEntity = -1;
 		}
@@ -1513,6 +1529,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		Vector dv{mvVelocity.x - g_lastSetVelocity.x, mvVelocity.y - g_lastSetVelocity.y, mvVelocity.z - g_lastSetVelocity.z};
 		// Only a pure velocity change: a physics shove (which also moves the player) stays a shove.
 		impulse = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z > 40.0f * 40.0f && dist(origin, g_lastSet) <= 0.5f;
+		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
+			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
+		}
 		static int impulseLogs = 0;
 		if (impulse && impulseLogs++ < 40) {
 			logf("impulse: Portal changed the velocity by (%.0f %.0f %.0f) to (%.0f %.0f %.0f)", dv.x, dv.y, dv.z, mvVelocity.x, mvVelocity.y,
@@ -1628,6 +1647,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (g_haveSet && !g_needSync && !impulse && std::fabs(origin.x - g_lastSet.x) < 0.5f && std::fabs(origin.y - g_lastSet.y) < 0.5f &&
 		std::fabs(origin.z - g_lastSet.z) < 3.0f) {
 		draggedOnProp = true;
+	}
+	if (carriedLately() && g_haveSet && !g_needSync && !impulse && dist(origin, g_lastSet) < 12.0f) {
+		draggedOnProp = true; // carried by a moving platform (see g_carriedAt)
 	}
 	if (!matchedNow && !bounced && !draggedOnProp && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
 		g_teleportSeq++;
