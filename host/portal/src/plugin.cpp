@@ -1570,6 +1570,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
 			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
 		}
+		// Nor what Portal's physics does to its player on a loose prop. He is set down on the cube
+		// from Minecraft every tick, the cube gives under him, and now and then the physics answers
+		// with a kick: stepping from a block onto a cube Steve was thrown 270 units into the air (431
+		// u/s straight up, handed on as an impulse) and died of the fall.
+		if (impulse && g_onLooseProp && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 700.0f * 700.0f) {
+			impulse = false;
+		}
 		if (impulse && g_crossedAt != 0 && GetTickCount() - g_crossedAt < 500 && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 300.0f * 300.0f) {
 			impulse = false; // Portal working its player clear of a portal's rim (see g_crossedAt)
 		}
