@@ -155,8 +155,8 @@ public final class LiveEntities {
 	private LiveEntities() {
 	}
 
-	/** An entity that moved in the latest update: where it was, and by how much (blocks). */
-	public record Moved(AABB before, Vec3 delta) {
+	/** An entity that moved in the latest update: where it was, by how much (blocks), and whether it is a loose prop (a cube). */
+	public record Moved(AABB before, Vec3 delta, boolean loose) {
 	}
 
 	/** Applies the newest entity packet. Returns the entities that moved, for carrying riders. */
@@ -214,7 +214,7 @@ public final class LiveEntities {
 				LOG.info("PortalCraft: entity #{} {} moved to {}", e.index(), e.model(), e.origin());
 			}
 			if (old != null && old.bounds() != null && old.pose().model().equals(e.model())) {
-				moved.add(new Moved(old.bounds(), Units.toMc(e.origin()).subtract(Units.toMc(old.pose().origin()))));
+				moved.add(new Moved(old.bounds(), Units.toMc(e.origin()).subtract(Units.toMc(old.pose().origin())), movableProp(e.model())));
 			}
 		}
 		for (Map.Entry<Integer, Placed> gone : PLACED.entrySet()) {

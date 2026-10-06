@@ -707,13 +707,17 @@ public final class HostDriver {
 	/**
 	 * Steve inside one of the host's loose props (a cube Portal's physics slid into him): out the
 	 * shortest way. Minecraft never does this itself: a body already inside a shape moves through
-	 * it freely, which is how Steve could sprint into a cube he had just shoved. Only props: used
-	 * on anything solid, it took Steve coming out of a ceiling portal a little off-centre (his
+	 * it freely, which is how Steve could sprint into a cube he had just shoved. Only props (and
+	 * Minecraft's blocks, below), not the host's own geometry: used on anything solid, it took Steve coming out of a ceiling portal a little off-centre (his
 	 * shoulder in the ceiling beside it) and pushed him up, back through the portal.
 	 */
 	private static void pushOutOfSolids(LocalPlayer player) {
 		AABB body = player.getBoundingBox().deflate(0.02);
-		if (!LiveEntities.overlapsProp(body) || player.level().noCollision(player, body)) {
+		// ... and Minecraft's own blocks, which Portal knows nothing about: a move of Portal's (a
+		// teleport, a shove) can leave Steve standing partly in one he placed. Minecraft's answer to
+		// that is a nudge of a tenth of a block a tick away from the block's cell, which with his
+		// wider hull never gets him out: he shook to and fro in its corner for as long as he stood there.
+		if (!(LiveEntities.overlapsProp(body) || player.level().collidesWithSuffocatingBlock(player, body)) || player.level().noCollision(player, body)) {
 			return;
 		}
 		for (double step : PUSH_STEPS) {
@@ -737,6 +741,13 @@ public final class HostDriver {
 		AABB feet = player.getBoundingBox();
 		feet = new AABB(feet.minX, feet.minY - 0.2, feet.minZ, feet.maxX, feet.minY + 0.1, feet.maxZ);
 		for (LiveEntities.Moved m : moved) {
+			// A cube carries Steve only from under his feet. One he stood against was "carrying" him
+			// too: pushed into a corner it sprang back a few units each tick, he was moved along with
+			// it into the cube, pushed out of it the next tick, and so on: standing still beside a
+			// cornered cube he shook three units to and fro.
+			if (m.loose() && m.before().maxY > player.getY() + 0.15) {
+				continue;
+			}
 			if (m.before().intersects(feet) && m.delta().lengthSqr() < 4.0) {
 				player.setPos(player.position().add(m.delta()));
 				return;
