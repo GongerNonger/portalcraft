@@ -1002,7 +1002,11 @@ public final class HostDriver {
 		}
 	}
 
-	private static void teleport(Minecraft minecraft, LocalPlayer player, Vec3 pos, Vec3 velocity) {
+	private static void teleport(Minecraft minecraft, LocalPlayer player, Vec3 pos, Vec3 handed) {
+		// Never faster than Portal lets anything move: a player Portal pushed out of a portal's frame came
+		// back at twice that once, and flew out of the map through the walls.
+		double speed = handed.length();
+		Vec3 velocity = speed > PortalAir.MAX_SPEED ? handed.scale(PortalAir.MAX_SPEED / speed) : handed;
 		boolean far = player.position().distanceToSqr(pos) > 0.25;
 		player.setPos(pos);
 		player.setDeltaMovement(velocity);
