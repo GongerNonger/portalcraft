@@ -89,6 +89,7 @@ public final class GunAnimation {
 	/** Its portals were taken away without a shot. Not over an object it holds: the claws stay open. */
 	public static void fizzle() {
 		if (!holding) {
+			LOG.info("PortalCraft: the gun fizzles (a portal was taken away)");
 			play(Sequence.FIZZLE);
 		}
 	}
@@ -96,6 +97,7 @@ public final class GunAnimation {
 	/** The gun came to hand (a level began, or it was just selected). */
 	public static void draw() {
 		if (!holding) {
+			LOG.info("PortalCraft: the gun is drawn");
 			play(Sequence.DRAW);
 		}
 	}
@@ -231,8 +233,8 @@ public final class GunAnimation {
 					}
 					out.put(s, List.copyOf(list));
 				}
-				LOG.info("PortalCraft: gun motion: {} fire, {} pickup, {} release frames", out.get(Sequence.FIRE).size(), out.get(Sequence.PICKUP).size(),
-					out.get(Sequence.RELEASE).size());
+				LOG.info("PortalCraft: gun motion: {} fire, {} pickup, {} release, {} fizzle, {} draw frames", out.get(Sequence.FIRE).size(), out.get(Sequence.PICKUP).size(),
+					out.get(Sequence.RELEASE).size(), out.get(Sequence.FIZZLE).size(), out.get(Sequence.DRAW).size());
 			} catch (java.io.IOException | RuntimeException e) {
 				LOG.warn("PortalCraft: can't read gun_recoil.json: {}", e.toString());
 				out.clear();
