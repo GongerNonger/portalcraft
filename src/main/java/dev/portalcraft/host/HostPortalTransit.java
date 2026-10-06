@@ -139,6 +139,15 @@ public final class HostPortalTransit {
 		Vec3 target = Units.toMc(exitCentre).add(centreToFeet);
 
 		Vec3 v = out.carry(in, Units.velocityToSrc(velocity));
+		// Up out of a floor portal at no less than Portal sends its own things: 50 units a second, 225
+		// floor to floor. Slower, whatever was dropped into one portal crept over the rim of the other
+		// and fell straight back in.
+		if (out.forward.z > 0.7071) {
+			double least = in.forward.z > 0.7071 ? 225.0 : 50.0;
+			if (v.z < least) {
+				v = new Vec3(v.x, v.y, least);
+			}
+		}
 		Vec3 newVelocity = Units.velocityToMc(v);
 		if (newVelocity.length() > PortalAir.MAX_SPEED) {
 			newVelocity = newVelocity.normalize().scale(PortalAir.MAX_SPEED);
