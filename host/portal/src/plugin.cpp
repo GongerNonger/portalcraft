@@ -36,6 +36,7 @@ namespace {
 // ---- logging -------------------------------------------------------------------------
 
 FILE* g_log = nullptr;
+char g_logDir[MAX_PATH] = {}; // portal\addons\, with its trailing backslash: where the log is
 using MsgFn = void (*)(const char*, ...);
 MsgFn g_msg = nullptr;
 
@@ -458,6 +459,156 @@ bool devMode() {
 		dev = line && std::strstr(line, "-portalcraftdev") ? 1 : 0;
 	}
 	return dev == 1;
+}
+
+// ---- dev: the last 45 seconds, kept for a replay ---------------------------------------------
+// When the player hits a bug, what he did to get there used to be a guess. In dev mode every
+// server tick's input (the keys and buttons Minecraft was sent, the view) and where it left the
+// player go into a ring: one small copy a tick, no file touched. "PCQ1" (tools/fake_mc.py
+// --dump-replay) writes the ring out as text, a line per tick, and fake_mc.py --replay feeds the
+// same input back a tick at a time ("PCK2").
+struct ReplayTick {
+	double time; // nowSeconds()
+	uint8_t keys[32];
+	uint8_t mouse, shots, hostFlags;
+	uint8_t mcBits; // Minecraft's side: 1 on the ground, 2 sneaking, 4 holding the portal gun, 8 a screen is open
+	int8_t wheel;
+	float pitch, yaw;
+	pcproto::Vec3 origin, velocity, mcOrigin;
+	uint32_t frame; // the recorded tick a replay was feeding in here (PCK2), 0 when the input was live
+	pcproto::HostPortal portals[2];
+};
+constexpr size_t kReplayTicks = 3000; // 45 seconds at Portal's 66.7 ticks a second
+std::vector<ReplayTick> g_replay; // stays empty outside dev mode
+size_t g_replayNext = 0, g_replayCount = 0;
+
+// Dev: a replay's input ("PCK2"), on top of the fake keys above.
+uint32_t g_fakeFrame = 0;        // the recorded tick being fed in, 0 when none
+int g_fakeWheel = 0;             // wheel notches not yet added to HostState.wheel
+uint8_t g_fakePortalButtons = 0; // DevPortalButtons the replay holds down in Portal itself
+
+// Presses and releases Portal's own fire and use, as the player's clicks on its window did: a
+// replay runs with Portal's window in the background, where it reads no mouse or keyboard.
+void setPortalButtons(uint8_t wanted) {
+	static const char* const kNames[] = {"attack", "attack2", "use"};
+	for (int i = 0; i < 3; i++) {
+		uint8_t bit = uint8_t(1u << i);
+		if (((wanted ^ g_fakePortalButtons) & bit) && g_engineServer) {
+			char cmd[16];
+			snprintf(cmd, sizeof cmd, "%c%s\n", (wanted & bit) ? '+' : '-', kNames[i]);
+			sdk::serverCommand(g_engineServer, cmd);
+		}
+	}
+	g_fakePortalButtons = wanted;
+}
+
+void recordReplay(const pcproto::HostState& s) {
+	if (!devMode() || !(s.flags & pcproto::kHostInGame)) {
+		return;
+	}
+	// Paused (the menu, the console): nothing happens, and the wait mustn't push the bug out of the ring.
+	if (g_engineClient && sdk::clientIsPaused(g_engineClient)) {
+		return;
+	}
+	if (g_replay.empty()) {
+		g_replay.resize(kReplayTicks);
+	}
+	ReplayTick& t = g_replay[g_replayNext];
+	t.time = nowSeconds();
+	std::memcpy(t.keys, s.keys, sizeof t.keys);
+	t.mouse = s.mouse;
+	t.shots = s.shots;
+	t.hostFlags = uint8_t(s.flags);
+	bool linked = mcReady();
+	t.mcBits = uint8_t(!linked ? 0 : (g_mc.onGround ? 1 : 0) | (g_mc.sneaking ? 2 : 0) | (g_mc.holdingPortalGun ? 4 : 0) |
+		((g_mc.flags & pcproto::kMcScreen) ? 8 : 0));
+	t.wheel = s.wheel;
+	t.pitch = s.pitch;
+	t.yaw = s.yaw;
+	t.origin = s.origin;
+	t.velocity = s.velocity;
+	t.mcOrigin = linked ? g_mc.origin : s.origin;
+	t.frame = g_fakeFrame;
+	std::memcpy(t.portals, s.portals, sizeof t.portals);
+	g_replayNext = (g_replayNext + 1) % kReplayTicks;
+	if (g_replayCount < kReplayTicks) {
+		g_replayCount++;
+	}
+}
+
+void writeReplayPortal(FILE* f, const char* lead, int which, const pcproto::HostPortal& p) {
+	fprintf(f, "%s%s 0x%x %.3f %.3f %.3f %.3f %.3f %.3f\n", lead, which ? "orange" : "blue", p.flags, p.origin.x, p.origin.y, p.origin.z, p.angles.x,
+		p.angles.y, p.angles.z);
+}
+
+// Writes the ring to addons\replay-<name>.txt and tells whoever asked where it went.
+void dumpReplay(const char* name, const sockaddr_in& from) {
+	char safe[64];
+	size_t len = 0;
+	for (const char* c = name; *c && len < sizeof safe - 1; c++) { // a file name, not a path
+		bool plain = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '-' || *c == '_';
+		safe[len++] = plain ? *c : '_';
+	}
+	safe[len] = 0;
+	char path[MAX_PATH + 80];
+	snprintf(path, sizeof path, "%sreplay-%s.txt", g_logDir, len ? safe : "dump");
+	FILE* f = g_replayCount ? std::fopen(path, "w") : nullptr;
+	if (!f) {
+		logf(g_replayCount ? "replay: couldn't write %s" : "replay: nothing recorded yet (no level played since Portal started)", path);
+		return;
+	}
+	size_t first = (g_replayNext + kReplayTicks - g_replayCount) % kReplayTicks;
+	const ReplayTick& oldest = g_replay[first];
+	const ReplayTick& newest = g_replay[(g_replayNext + kReplayTicks - 1) % kReplayTicks];
+	// The length of a tick, measured: the gaps a pause left in the ring aren't ticks.
+	double sum = 0.0;
+	int gaps = 0;
+	for (size_t i = 1; i < g_replayCount; i++) {
+		double d = g_replay[(first + i) % kReplayTicks].time - g_replay[(first + i - 1) % kReplayTicks].time;
+		if (d < 0.1) {
+			sum += d;
+			gaps++;
+		}
+	}
+	fprintf(f, "portalcraft-replay 1\n");
+	fprintf(f, "map %s\n", g_map);
+	fprintf(f, "ticks %zu\n", g_replayCount);
+	fprintf(f, "tick_ms %.3f\n", gaps ? sum * 1000.0 / gaps : 15.0);
+	// The portals as they are now, at the end. Where they were before is in the P lines below.
+	writeReplayPortal(f, "portal ", 0, newest.portals[0]);
+	writeReplayPortal(f, "portal ", 1, newest.portals[1]);
+	fprintf(f, "# P tick colour flags, origin x y z, angles pitch yaw roll: a portal as it was at tick 0, and whenever it changed\n");
+	fprintf(f, "# keys: pressed SDL scancodes; mouse: 1 left 2 right 4 middle; hostflags: HostFlags; shots: HostState.shots\n");
+	fprintf(f, "# mc x y z: where Minecraft had Steve; mcbits: 1 on ground, 2 sneaking, 4 holds the portal gun, 8 a screen is open\n");
+	fprintf(f, "# frame: the recorded tick a replay was feeding in (0: live input)\n");
+	fprintf(f, "columns tick ms keys mouse wheel pitch yaw x y z vx vy vz hostflags shots mcx mcy mcz mcbits frame\n");
+	for (size_t i = 0; i < g_replayCount; i++) {
+		const ReplayTick& t = g_replay[(first + i) % kReplayTicks];
+		for (int p = 0; p < 2; p++) {
+			if (i == 0 || std::memcmp(&t.portals[p], &g_replay[(first + i - 1) % kReplayTicks].portals[p], sizeof t.portals[p]) != 0) {
+				char lead[24];
+				snprintf(lead, sizeof lead, "P %zu ", i);
+				writeReplayPortal(f, lead, p, t.portals[p]);
+			}
+		}
+		fprintf(f, "T %zu %.1f ", i, (t.time - oldest.time) * 1000.0);
+		bool any = false;
+		for (int k = 0; k < 256; k++) {
+			if (t.keys[k >> 3] & (1 << (k & 7))) {
+				fprintf(f, any ? ",%d" : "%d", k);
+				any = true;
+			}
+		}
+		fprintf(f, "%s %u %d %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.2f 0x%x %u %.3f %.3f %.3f %u %u\n", any ? "" : "-", t.mouse, t.wheel, t.pitch, t.yaw,
+			t.origin.x, t.origin.y, t.origin.z, t.velocity.x, t.velocity.y, t.velocity.z, t.hostFlags, t.shots, t.mcOrigin.x, t.mcOrigin.y,
+			t.mcOrigin.z, t.mcBits, t.frame);
+	}
+	std::fclose(f);
+	logf("replay: wrote %zu ticks (%.1f s) of %s to %s", g_replayCount, newest.time - oldest.time, g_map, path);
+	char reply[4 + sizeof path];
+	std::memcpy(reply, "PCQ1", 4);
+	std::strcpy(reply + 4, path);
+	sendto(g_sock, reply, int(4 + std::strlen(path) + 1), 0, reinterpret_cast<const sockaddr*>(&from), sizeof from);
 }
 
 // ---- builds whose interface slots were checked --------------------------------------------
@@ -1007,7 +1158,9 @@ void receiveHit(const char* buf) {
 void linkPoll() {
 	static char buf[16384]; // PCS1 carries up to 512 block boxes
 	for (int i = 0; i < 64; i++) {
-		int n = recv(g_sock, buf, sizeof buf, 0);
+		sockaddr_in from{}; // who sent it: a replay dump answers them
+		int fromSize = sizeof from;
+		int n = recvfrom(g_sock, buf, sizeof buf, 0, reinterpret_cast<sockaddr*>(&from), &fromSize);
 		if (n <= 0) {
 			return;
 		}
@@ -1089,6 +1242,27 @@ void linkPoll() {
 			std::memcpy(&ms, buf + 36, 4);
 			g_fakeMouse = n == 41 ? uint8_t(buf[40]) : 0;
 			g_fakeUntil = GetTickCount() + ms;
+		} else if (n == sizeof(pcproto::DevInput) && std::memcmp(buf, "PCK2", 4) == 0 && devMode()) {
+			// Dev: one tick of a replay (tools/fake_mc.py --replay): the keys, the buttons and the view
+			// together, so a tick never goes out with one of them a packet behind the others.
+			pcproto::DevInput in;
+			std::memcpy(&in, buf, sizeof in);
+			std::memcpy(g_fakeKeys, in.keys, 32);
+			g_fakeMouse = in.mouse;
+			g_fakeUntil = GetTickCount() + in.holdMs;
+			g_fakeFrame = in.frame;
+			g_fakeWheel += in.wheel;
+			if ((in.flags & pcproto::kDevInputView) && g_engineClient) {
+				sdk::QAngle view{in.pitch, in.yaw, 0.0f};
+				sdk::clientSetViewAngles(g_engineClient, &view);
+			}
+			if (in.flags & pcproto::kDevInputPortalButtons) {
+				setPortalButtons(in.portalButtons);
+			}
+		} else if (n >= 4 && n < 4 + 64 && std::memcmp(buf, "PCQ1", 4) == 0 && devMode()) {
+			char name[64] = {};
+			std::memcpy(name, buf + 4, size_t(n - 4));
+			dumpReplay(name, from);
 		} else if (n == 4 + 8 && std::memcmp(buf, "PCV1", 4) == 0 && g_engineClient && devMode()) {
 			// Dev: point the camera (pitch, yaw), e.g. to aim at a floor for a placement test.
 			float pitchYaw[2];
@@ -2332,6 +2506,10 @@ void sendState() {
 			s.keys[i] |= g_fakeKeys[i];
 		}
 		s.mouse |= g_fakeMouse;
+	} else if (g_fakeFrame || g_fakePortalButtons) {
+		// The replay ended, or died holding fire: let go.
+		g_fakeFrame = 0;
+		setPortalButtons(0);
 	}
 	s.origin = {g_origin.x, g_origin.y, g_origin.z};
 	s.velocity = {g_velocity.x, g_velocity.y, g_velocity.z};
@@ -2388,7 +2566,10 @@ void sendState() {
 	}
 	s.crossMatched = g_matched;
 	fillCursor(s);
+	g_wheelDelta += g_fakeWheel * WHEEL_DELTA; // a replay's scrolling
+	g_fakeWheel = 0;
 	s.wheel = int8_t(g_wheelDelta / WHEEL_DELTA);
+	recordReplay(s);
 	sendTyped();
 	sendto(g_sock, reinterpret_cast<const char*>(&s), sizeof s, 0, reinterpret_cast<sockaddr*>(&g_mcAddr), sizeof g_mcAddr);
 
@@ -2477,6 +2658,8 @@ public:
 		char path[MAX_PATH];
 		GetModuleFileNameA(g_self, path, MAX_PATH);
 		if (char* slash = std::strrchr(path, '\\')) {
+			slash[1] = 0;
+			std::strcpy(g_logDir, path);
 			std::strcpy(slash + 1, "portalcraft.log");
 		}
 		g_log = std::fopen(path, "w");
@@ -2535,6 +2718,7 @@ public:
 		g_colState = 0;
 		g_entityCount = 0;
 		std::memset(g_lastEntityOrigin, 0, sizeof g_lastEntityOrigin);
+		g_replayNext = g_replayCount = 0; // a recording is of one level: a replay can't cross a level change
 		logf("LevelInit %s", g_map);
 		worldrender::levelChanged();
 	}

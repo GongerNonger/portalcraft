@@ -3,10 +3,17 @@
   python fake_mc.py            # watch what Portal sends
   python fake_mc.py --follow   # also take over the player and walk it in a slow circle
   python fake_mc.py --cmd "map testchmb_a_00"   # run a console command in Portal and exit
+
+Reproducing what the player did (Portal started with -portalcraftdev; it keeps the last 45 seconds):
+  python fake_mc.py --dump-replay bug1          # write them to portal\\addons\\replay-bug1.txt
+  python fake_mc.py --replay <that file> --replay-check   # play them back, then say how far it parted
 """
-import argparse, math, socket, struct, time
+import argparse, math, os, socket, struct, time
 
 HOST = ("127.0.0.1", 27515)
+MC = ("127.0.0.1", 27516)
+DEV_INPUT = struct.Struct("<4s32sBBbBffII")  # "PCK2", pcproto::DevInput
+assert DEV_INPUT.size == 56
 HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I")
 MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s")
 assert HOST_STATE.size == 312 and MC_STATE.size == 88
@@ -20,6 +27,206 @@ def parse(data):
     s["portals"] = [dict(flags=p[i * 7], origin=p[i * 7 + 1:i * 7 + 4], angles=p[i * 7 + 4:i * 7 + 7]) for i in range(2)]
     s["pressed"] = [i for i in range(256) if s["keys"][i >> 3] & (1 << (i & 7))]
     return s
+
+
+# ---- replays: the plugin's recording of the last 45 seconds, dumped as text and fed back ----------
+
+INT_COLUMNS = ("tick", "mouse", "wheel", "hostflags", "shots", "mcbits", "frame")
+
+
+def load_replay(path):
+    """A dump the plugin wrote: its header, the portals' changes, and a dict per tick (by column name)."""
+    rec = dict(path=path, map="", tick_ms=15.0, portal={}, changes=[], ticks=[])
+    columns = None
+    with open(path) as f:
+        if not f.readline().startswith("portalcraft-replay"):
+            raise SystemExit(f"{path} is not a replay dump")
+        for line in f:
+            w = line.split()
+            if not w or w[0].startswith("#"):
+                continue
+            if w[0] == "map":
+                rec["map"] = w[1] if len(w) > 1 else ""
+            elif w[0] == "tick_ms":
+                rec["tick_ms"] = float(w[1])
+            elif w[0] == "portal":
+                rec["portal"][w[1]] = dict(flags=int(w[2], 0), origin=tuple(map(float, w[3:6])), angles=tuple(map(float, w[6:9])))
+            elif w[0] == "P":
+                rec["changes"].append(dict(tick=int(w[1]), colour=w[2], flags=int(w[3], 0), origin=tuple(map(float, w[4:7])),
+                                           angles=tuple(map(float, w[7:10]))))
+            elif w[0] == "columns":
+                columns = w[1:]
+            elif w[0] == "T" and columns:
+                t = dict(zip(columns, w[1:]))
+                for name in columns:
+                    if name == "keys":
+                        t[name] = [] if t[name] == "-" else [int(k) for k in t[name].split(",")]
+                    elif name in INT_COLUMNS:
+                        t[name] = int(t[name], 0)
+                    else:
+                        t[name] = float(t[name])
+                t["pos"] = (t["x"], t["y"], t["z"])
+                rec["ticks"].append(t)
+    if not rec["ticks"]:
+        raise SystemExit(f"{path} has no ticks in it")
+    return rec
+
+
+def replay_start(ticks, last):
+    """Where to start: the whole recording, or its last N seconds, moved to a tick where the player
+    stood still if there is one. A replay can put Steve in a place but can't give him a velocity, so
+    one that starts in the middle of a jump or a fling has parted from the recording by its first tick."""
+    def still(t):
+        return math.sqrt(t["vx"] ** 2 + t["vy"] ** 2 + t["vz"] ** 2) < 1.0
+
+    start = 0
+    if last:
+        cutoff = ticks[-1]["ms"] - last * 1000.0
+        start = next(i for i, t in enumerate(ticks) if t["ms"] >= cutoff)
+    for i in list(range(start, -1, -1)) + list(range(start + 1, len(ticks))):  # earlier first: more run-up, not less
+        if still(ticks[i]):
+            return i, True
+    return start, False
+
+
+def portals_at(rec, tick):
+    """Each colour's portal as it was at a tick of the recording."""
+    at = {}
+    for c in rec["changes"]:
+        if c["tick"] <= tick:
+            at[c["colour"]] = c
+    return at
+
+
+def wait_until(due):
+    # Windows sleeps in steps of a millisecond or more: sleep most of the way, spin the rest.
+    while True:
+        left = due - time.perf_counter()
+        if left <= 0:
+            return
+        if left > 0.003:
+            time.sleep(left - 0.002)
+
+
+def run_replay(sock, rec, start, settle):
+    ticks = rec["ticks"]
+    first = ticks[start]
+    sock.sendto(b"PCD1" + struct.pack("<3f", *first["pos"]), MC)  # Minecraft moves Steve; Portal follows
+    sock.sendto(b"PCV1" + struct.pack("<2f", first["pitch"], first["yaw"]), HOST)
+    time.sleep(settle)
+    due, previous, late, pauses = time.perf_counter(), first, 0, 0
+    for t in ticks[start:]:
+        gap = t["ms"] - previous["ms"]
+        if gap > 250.0:  # the game was paused here: the recording skipped it, and so do we
+            gap, pauses = rec["tick_ms"], pauses + 1
+        due += gap / 1000.0
+        if time.perf_counter() - due > 0.03:
+            late += 1
+        wait_until(due)
+        bits = bytearray(32)
+        for k in t["keys"]:
+            bits[k >> 3] |= 1 << (k & 7)
+        # Portal's own fire and use, which the player's clicks and E reached by way of its window.
+        # Not while a Minecraft screen was open: Portal didn't see them then.
+        buttons = 0 if t["mcbits"] & 8 else (t["mouse"] & 3) | (4 if 8 in t["keys"] else 0)
+        wheel = (t["wheel"] - previous["wheel"] + 128) % 256 - 128
+        sock.sendto(DEV_INPUT.pack(b"PCK2", bytes(bits), t["mouse"], 3, wheel, buttons, t["pitch"], t["yaw"], 250, t["tick"] + 1), HOST)
+        previous = t
+    sock.sendto(DEV_INPUT.pack(b"PCK2", bytes(32), 0, 2, 0, 0, 0.0, 0.0, 0, 0), HOST)  # let go of everything
+    print(f"replayed {len(ticks) - start} ticks, {(ticks[-1]['ms'] - first['ms']) / 1000.0:.1f} s"
+          + (f"; skipped {pauses} pause(s)" if pauses else "") + (f"; {late} ticks sent over 30 ms late" if late else ""))
+
+
+def dump_replay(sock, name):
+    """Asks the plugin to write its recording; returns the path it wrote, or None."""
+    sock.sendto(b"PCQ1" + name.encode() + b"\0", HOST)
+    sock.settimeout(3.0)
+    try:
+        data = sock.recv(1024)
+    except OSError:  # a timeout, or Windows saying nobody listens on the port
+        print("no answer from the plugin: is Portal running with -portalcraftdev, and in a level? (see portalcraft.log)")
+        return None
+    if data[:4] != b"PCQ1":
+        return None
+    return data[4:].split(b"\0")[0].decode(errors="replace")
+
+
+def shots_fired(ticks):
+    return sum(1 for a, b in zip(ticks, ticks[1:]) if a["shots"] != b["shots"])
+
+
+def distance(a, b):
+    return math.sqrt(sum((p - q) ** 2 for p, q in zip(a, b)))
+
+
+def compare_replay(rec, check):
+    """How far a replay parted from the recording it played. `check` is a dump taken after the replay:
+    its frame column says which recorded tick was being fed in at each of its own ticks."""
+    ticks, run = check["ticks"], []
+    end = max((i for i, t in enumerate(ticks) if t["frame"]), default=-1)
+    while end >= 0 and ticks[end]["frame"] and (not run or ticks[end]["frame"] <= run[-1]["frame"]):
+        run.append(ticks[end])  # only the last replay in the dump, if an earlier one is still in it
+        end -= 1
+    run = [t for t in reversed(run) if t["frame"] <= len(rec["ticks"])]
+    if not run:
+        print("replay check: the dump has no replayed ticks in it (frame is 0 throughout)")
+        return
+    if check["map"] != rec["map"]:
+        print(f"replay check: WRONG MAP: recorded on {rec['map']}, replayed on {check['map']}")
+    pairs = [(t, rec["ticks"][t["frame"] - 1]) for t in run]
+    apart = [distance(t["pos"], r["pos"]) for t, r in pairs]
+    worst = max(range(len(apart)), key=apart.__getitem__)
+    first, last = pairs[0][1], pairs[-1][1]
+    seconds = lambda r: (r["ms"] - first["ms"]) / 1000.0
+    fed = len({t["frame"] for t in run})
+    print(f"replay check: recorded ticks {first['tick']}..{last['tick']} ({seconds(last):.1f} s) on {rec['map']}; "
+          f"{fed} of {last['tick'] - first['tick'] + 1} reached a tick of their own")
+    print(f"  apart at the start {apart[0]:.1f} units, at the end {apart[-1]:.1f}, at most {apart[worst]:.1f} "
+          f"(tick {pairs[worst][1]['tick']}, {seconds(pairs[worst][1]):.1f} s in), on average {sum(apart) / len(apart):.1f}  [40 units = 1 block]")
+    parted = next((i for i, d in enumerate(apart) if d > 16.0), None)
+    if parted is None:
+        print("  never more than 16 units apart")
+    else:
+        r, t = pairs[parted][1], pairs[parted][0]
+        print(f"  first over 16 units apart at tick {r['tick']} ({seconds(r):.1f} s in): recorded ({r['x']:.1f} {r['y']:.1f} {r['z']:.1f}), "
+              f"replayed ({t['x']:.1f} {t['y']:.1f} {t['z']:.1f})")
+    recorded_shots = shots_fired(rec["ticks"][first["tick"]:last["tick"] + 1])
+    print(f"  portal gun shots: {recorded_shots} recorded, {shots_fired(run)} replayed")
+    then = portals_at(rec, last["tick"])
+    for colour in ("blue", "orange"):
+        a, b = then.get(colour), check["portal"].get(colour)
+        if a and b and (a["flags"] & 2 or b["flags"] & 2):
+            if (a["flags"] & 2) != (b["flags"] & 2):
+                print(f"  {colour} portal: {'open' if a['flags'] & 2 else 'not open'} in the recording, {'open' if b['flags'] & 2 else 'not open'} after the replay")
+            else:
+                print(f"  {colour} portal: {distance(a['origin'], b['origin']):.1f} units from where the recording had it")
+
+
+def replay_main(a, sock):
+    rec = load_replay(a.replay)
+    if a.replay_check:  # a dump taken earlier: compare only, nothing is sent to the game
+        compare_replay(rec, load_replay(a.replay_check))
+        return
+    ticks = rec["ticks"]
+    start, still = replay_start(ticks, a.replay_last)
+    first = ticks[start]
+    print(f"replaying {a.replay}: {rec['map']}, ticks {first['tick']}..{ticks[-1]['tick']} of {len(ticks)}, "
+          f"{(ticks[-1]['ms'] - first['ms']) / 1000.0:.1f} s, from ({first['x']:.1f} {first['y']:.1f} {first['z']:.1f})")
+    print(f"  Portal must already be on {rec['map']}: a replay doesn't load the map")
+    if not still:
+        print(f"  the player never stands still in it: starting at {first['vx']:.0f} {first['vy']:.0f} {first['vz']:.0f} units/s, which a replay can't give Steve")
+    for colour, p in portals_at(rec, first["tick"]).items():
+        if p["flags"] & 2:
+            print(f"  the {colour} portal was already open at ({p['origin'][0]:.1f} {p['origin'][1]:.1f} {p['origin'][2]:.1f}), "
+                  f"angles ({p['angles'][0]:.0f} {p['angles'][1]:.0f} {p['angles'][2]:.0f}): a replay doesn't put it there, place it first")
+    run_replay(sock, rec, start, a.replay_settle)
+    if a.replay_check is not None:
+        time.sleep(0.3)  # the plugin lets go, and Steve's last step arrives
+        name = os.path.splitext(os.path.basename(a.replay))[0]
+        path = dump_replay(sock, ((name[7:] if name.startswith("replay-") else name) + "-check")[-60:])
+        if path:
+            print(f"replay check: the replay's own recording is {path}")
+            compare_replay(rec, load_replay(path))
 
 
 def main():
@@ -38,9 +245,25 @@ def main():
     ap.add_argument("--blast", help="test a Minecraft explosion in Portal: x,y,z,radius,damage (host units), e.g. --blast=0,0,64,320,120")
     ap.add_argument("--hit", help="test a Minecraft hit on a Portal entity: index,x,y,z,fx,fy,fz,damage")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
+    ap.add_argument("--dump-replay", nargs="?", const="", metavar="NAME",
+                    help="dev: write the plugin's recording of the last 45 seconds to portal\\addons\\replay-NAME.txt")
+    ap.add_argument("--replay", metavar="FILE", help="dev: play a --dump-replay file back: Steve to its start, then its keys, buttons and view tick by tick")
+    ap.add_argument("--replay-check", nargs="?", const="", metavar="DUMP",
+                    help="with --replay: afterwards, dump the replay's own recording and print how far it parted from FILE. "
+                         "Given a DUMP taken earlier, only compares the two (nothing is sent to the game)")
+    ap.add_argument("--replay-last", type=float, metavar="SECONDS", help="with --replay: only the last SECONDS of the file")
+    ap.add_argument("--replay-settle", type=float, default=1.5, metavar="SECONDS", help="with --replay: the wait after moving Steve to the start")
     ap.add_argument("--seconds", type=float, default=10)
     a = ap.parse_args()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if a.replay:
+        replay_main(a, sock)
+        return
+    if a.dump_replay is not None:
+        path = dump_replay(sock, a.dump_replay or time.strftime("%Y%m%d-%H%M%S"))
+        if path:
+            print(path)
+        return
     if a.view:
         p, y = (float(v) for v in a.view.split(","))
         sock.sendto(b"PCV1" + struct.pack("<2f", p, y), HOST)

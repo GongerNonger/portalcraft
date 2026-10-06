@@ -108,7 +108,9 @@ for the slim model) to play as yourself, in Minecraft and in Portal's third pers
 Link: UDP on 127.0.0.1 ports 27515/27516, layout in `protocol/portalcraft_protocol.h`.
 Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.log`.
 Dev tools: `host\portal\tools\fake_mc.py` (stand-in for Minecraft, `--cmd` console commands,
-`--keys` test input).
+`--keys` test input). With `-portalcraftdev` the plugin keeps the last 45 seconds of play:
+`--dump-replay NAME` writes them to `addons\replay-NAME.txt`, and `--replay FILE --replay-check`
+plays them back and says how far the replay parted from the recording.
 
 Camera smoothness: Portal's single-player client doesn't predict the player (`cl_predict` is
 forced to 0), so its camera follows the server through network interpolation. At Portal's

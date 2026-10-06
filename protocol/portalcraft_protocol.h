@@ -140,6 +140,38 @@ struct Command {
 	char text[252]; // a console command, NUL-terminated
 };
 
+// ---- dev: replaying a recorded stretch of play (tools/fake_mc.py --replay; host only) ------------
+// One tick of recorded input, fed back to the host: it holds these keys and buttons in HostState
+// (as "PCK1" does) until holdMs runs out or the next one arrives, and points its camera. Minecraft
+// never sees this packet, only the HostState it produces. Taken in dev mode only.
+enum DevInputFlags : uint8_t {
+	kDevInputView = 1u << 0,          // pitch and yaw are set: point the host's camera there
+	kDevInputPortalButtons = 1u << 1, // portalButtons is set: press and release them in Portal itself
+};
+
+enum DevPortalButtons : uint8_t { // Portal's own binds, which a click on its window would have pressed
+	kDevAttack = 1u << 0,  // +attack: the blue portal
+	kDevAttack2 = 1u << 1, // +attack2: the orange portal
+	kDevUse = 1u << 2,     // +use: pick up, press
+};
+
+struct DevInput {
+	char magic[4];         // "PCK2"
+	uint8_t keys[32];      // as HostState.keys
+	uint8_t mouse;         // as HostState.mouse
+	uint8_t flags;         // DevInputFlags
+	int8_t wheel;          // mouse-wheel notches to add to HostState.wheel
+	uint8_t portalButtons; // DevPortalButtons
+	float pitch, yaw;
+	uint32_t holdMs; // let go of everything this long after the last packet (a replay that died mid-way)
+	// Which recorded tick this is, counted from 1. The host keeps it in its own recording, so a
+	// replay can be lined up against the original tick by tick.
+	uint32_t frame;
+};
+
+// "PCQ1" + a name (NUL-terminated, optional): the host writes its recording of the last 45 seconds
+// to addons\replay-<name>.txt next to its log, and answers the sender with "PCQ1" + that path.
+
 // ---- solid entities: doors, buttons, lifts, cubes, toggling walls -------------------------------
 // HostEntities is sent ~16 times a second (UDP, to kMcPort) with every solid, non-trigger entity
 // near the player. Minecraft builds collision for each from its model: "*N" is the map's brush
@@ -402,5 +434,6 @@ static_assert(sizeof(HostState) == 312, "HostState layout");
 static_assert(sizeof(McState) == 88, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
+static_assert(sizeof(DevInput) == 56, "DevInput layout");
 
 } // namespace pcproto
