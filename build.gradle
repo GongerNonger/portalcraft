@@ -2,6 +2,12 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
+// A second PortalCraft pair on this PC (hl2.exe -pcinstance N, host/portal/src/instance.h) starts
+// this build with PORTALCRAFT_INSTANCE=N. Two clients can't share a game directory (the world's
+// session lock, options.txt, logs/latest.log), so that one plays in run_N instead of run.
+def pcInstanceText = System.getenv("PORTALCRAFT_INSTANCE") ?: "0"
+def pcInstance = pcInstanceText.isInteger() && (1..9).contains(pcInstanceText as int) ? (pcInstanceText as int) : 0
+
 loom {
 	splitEnvironmentSourceSets()
 
@@ -9,6 +15,9 @@ loom {
 		client {
 			programArgs "--username", (System.getenv("PORTALCRAFT_USERNAME") ?: "Steve")
 			vmArgs "--enable-native-access=ALL-UNNAMED", "-Dportalcraft.dev=true"
+			if (pcInstance > 0) {
+				runDir "run_${pcInstance}"
+			}
 		}
 	}
 
@@ -28,6 +37,22 @@ dependencies {
 	testImplementation platform("org.junit:junit-bom:5.11.4")
 	testImplementation "org.junit.jupiter:junit-jupiter"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+// What tools\setup.ps1 does for run: the void world --quickPlaySingleplayer opens. The first
+// pair's options come along too (keys, video settings), once; they are separate files after that.
+if (pcInstance > 0) {
+	tasks.matching { it.name == "runClient" }.configureEach {
+		doFirst {
+			def dir = file("run_${pcInstance}")
+			if (!new File(dir, "saves/PortalCraft/level.dat").exists()) {
+				copy { from "worlds/PortalCraft/level.dat"; into new File(dir, "saves/PortalCraft") }
+			}
+			if (!new File(dir, "options.txt").exists() && file("run/options.txt").exists()) {
+				copy { from "run/options.txt"; into dir }
+			}
+		}
+	}
 }
 
 test {

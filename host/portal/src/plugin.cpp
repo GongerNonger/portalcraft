@@ -23,6 +23,7 @@
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
 #include "hooks.h"
+#include "instance.h"
 #include "launcher.h"
 #include "raybox.h"
 #include "overlay.h"
@@ -359,13 +360,13 @@ void linkOpen() {
 	ioctlsocket(g_sock, FIONBIO, &nonBlocking);
 	sockaddr_in addr{};
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(pcproto::kHostPort);
+	addr.sin_port = htons(instance::hostPort());
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	if (bind(g_sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {
-		logf("bind 127.0.0.1:%d failed (%d): is another Portal running?", pcproto::kHostPort, WSAGetLastError());
+		logf("bind 127.0.0.1:%d failed (%d): is another Portal running?", instance::hostPort(), WSAGetLastError());
 	}
 	g_mcAddr.sin_family = AF_INET;
-	g_mcAddr.sin_port = htons(pcproto::kMcPort);
+	g_mcAddr.sin_port = htons(instance::mcPort());
 	g_mcAddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 }
 
@@ -2477,9 +2478,12 @@ public:
 		char path[MAX_PATH];
 		GetModuleFileNameA(g_self, path, MAX_PATH);
 		if (char* slash = std::strrchr(path, '\\')) {
-			std::strcpy(slash + 1, "portalcraft.log");
+			std::strcpy(slash + 1, instance::named("portalcraft", ".log").c_str());
 		}
 		g_log = std::fopen(path, "w");
+		if (instance::number() > 0) {
+			logf("instance %d (-pcinstance): link ports %d and %d, log %s", instance::number(), instance::hostPort(), instance::mcPort(), path);
+		}
 		if (HMODULE tier0 = GetModuleHandleA("tier0.dll")) {
 			g_msg = reinterpret_cast<MsgFn>(GetProcAddress(tier0, "Msg"));
 		}

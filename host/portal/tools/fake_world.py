@@ -77,8 +77,9 @@ def main():
     ap.add_argument("--at", default="-600,-360,160")
     ap.add_argument("--clear", action="store_true")
     ap.add_argument("--entity", action="store_true", help="publish into the entity mesh (block-atlas solid range)")
+    ap.add_argument("--instance", type=int, default=0, help="which Portal (hl2.exe -pcinstance N); 0 is the usual one")
     a = ap.parse_args()
-    m = mmap.mmap(-1, TOTAL, tagname=MAPPING)
+    m = mmap.mmap(-1, TOTAL, tagname=MAPPING + (f"_{a.instance}" if a.instance > 0 else ""))
     if m[0:4] != b"PCW6":
         print(f"Portal's world mapping isn't there or isn't PCW6 (magic {bytes(m[0:4])!r}); start Portal with this plugin first")
         return

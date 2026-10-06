@@ -3,10 +3,11 @@
   python fake_mc.py            # watch what Portal sends
   python fake_mc.py --follow   # also take over the player and walk it in a slow circle
   python fake_mc.py --cmd "map testchmb_a_00"   # run a console command in Portal and exit
+  python fake_mc.py --instance 1 ...            # talk to the second pair (hl2.exe -pcinstance 1)
 """
 import argparse, math, socket, struct, time
 
-HOST = ("127.0.0.1", 27515)
+HOST_PORT, MC_PORT = 27515, 27516  # instance 0; each further instance is 10 higher
 HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I")
 MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s")
 assert HOST_STATE.size == 312 and MC_STATE.size == 88
@@ -39,7 +40,10 @@ def main():
     ap.add_argument("--hit", help="test a Minecraft hit on a Portal entity: index,x,y,z,fx,fy,fz,damage")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--seconds", type=float, default=10)
+    ap.add_argument("--instance", type=int, default=0, help="which Portal+Minecraft pair (hl2.exe -pcinstance N); 0 is the usual one")
     a = ap.parse_args()
+    HOST = ("127.0.0.1", HOST_PORT + 10 * a.instance)
+    MC = ("127.0.0.1", MC_PORT + 10 * a.instance)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if a.view:
         p, y = (float(v) for v in a.view.split(","))
@@ -47,7 +51,7 @@ def main():
         return
     if a.mc:
         for command in a.mc:
-            sock.sendto(b"PCR1" + command.encode() + b"\0", ("127.0.0.1", 27516))
+            sock.sendto(b"PCR1" + command.encode() + b"\0", MC)
         return
     if a.lights:
         e, r = (float(v) for v in a.lights.split(","))
@@ -57,11 +61,11 @@ def main():
         sock.sendto(b"PCX1" + struct.pack("<f", a.exposure), HOST)
         return
     if a.give:
-        sock.sendto(b"PCG1" + a.give.encode() + b"\0", ("127.0.0.1", 27516))
+        sock.sendto(b"PCG1" + a.give.encode() + b"\0", MC)
         return
     if a.goto:
         x, y, z = (float(v) for v in a.goto.split(","))
-        sock.sendto(b"PCD1" + struct.pack("<3f", x, y, z), ("127.0.0.1", 27516))
+        sock.sendto(b"PCD1" + struct.pack("<3f", x, y, z), MC)
         return
     if a.trace:
         sock.sendto(b"PCT1" + struct.pack("<i", a.trace), HOST)
@@ -83,7 +87,7 @@ def main():
     if a.cmd:
         sock.sendto(b"PCC1" + a.cmd.encode() + b"\0", HOST)
         return
-    sock.bind(("127.0.0.1", 27516))
+    sock.bind(MC)
     sock.settimeout(1.0)
     end, last_print, seq, ack, centre, t0 = time.time() + a.seconds, 0, 0, 0, None, time.time()
     while time.time() < end:

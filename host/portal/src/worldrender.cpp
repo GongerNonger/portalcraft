@@ -44,6 +44,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "camera.h"
+#include "instance.h"
 #include "overlay.h"
 #include "sdk.h"
 #include "worldrender.h"
@@ -916,7 +917,7 @@ void releaseDeviceObjects() {
 
 bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	g_log = log;
-	HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, pcproto::kWorldBytes, pcproto::kWorldMapping);
+	HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, pcproto::kWorldBytes, instance::named(pcproto::kWorldMapping).c_str());
 	g_shm = mapping ? static_cast<uint8_t*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, pcproto::kWorldBytes)) : nullptr;
 	if (!g_shm) {
 		log("world: can't create the world mapping (%lu)", GetLastError());
@@ -942,7 +943,7 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
 	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
 	hook(vt, 18, reinterpret_cast<void*>(&hkDrawTranslucentSurfaces), reinterpret_cast<void**>(&g_translucentOriginal));
-	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
+	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", instance::named(pcproto::kWorldMapping).c_str(), pcproto::kWorldBytes >> 20);
 	return true;
 }
 

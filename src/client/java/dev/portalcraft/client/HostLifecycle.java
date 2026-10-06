@@ -2,6 +2,7 @@ package dev.portalcraft.client;
 
 import java.util.Optional;
 
+import dev.portalcraft.host.Instance;
 import net.minecraft.client.Minecraft;
 import net.minecraft.sounds.SoundSource;
 import org.lwjgl.sdl.SDLVideo;
@@ -97,6 +98,10 @@ final class HostLifecycle {
 
 	/** Portal's hl2.exe, if it's running. */
 	private static Optional<Long> findPortal() {
+		if (Instance.NUMBER > 0) {
+			// One of two pairs: only the hl2.exe that started us counts, never the other pair's.
+			return ProcessHandle.of(Instance.hostPid()).filter(ProcessHandle::isAlive).map(ProcessHandle::pid);
+		}
 		return ProcessHandle.allProcesses()
 			.filter(p -> p.info().command().map(c -> c.toLowerCase(java.util.Locale.ROOT).endsWith("\\hl2.exe")).orElse(false))
 			.map(ProcessHandle::pid)
