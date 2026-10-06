@@ -14,6 +14,7 @@ import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 
 import dev.portalcraft.PortalCraft;
+import dev.portalcraft.host.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +24,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class OverlayLink {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
-	private static final String MAPPING = "Local\\PortalCraft_Overlay_v1";
+	private static final String MAPPING = Instance.named("Local\\PortalCraft_Overlay_v1");
 	public static final int MAX_W = 2560;
 	public static final int MAX_H = 1440;
 	private static final int SLOTS = 3;

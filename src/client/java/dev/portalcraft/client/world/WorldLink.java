@@ -15,6 +15,7 @@ import java.lang.invoke.VarHandle;
 import java.nio.charset.StandardCharsets;
 
 import dev.portalcraft.PortalCraft;
+import dev.portalcraft.host.Instance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +27,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class WorldLink {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
-	private static final String MAPPING = "Local\\PortalCraft_World_v1";
+	private static final String MAPPING = Instance.named("Local\\PortalCraft_World_v1");
 	private static final int FILE_MAP_ALL_ACCESS = 0xF001F;
 
 	// WorldHeader field offsets

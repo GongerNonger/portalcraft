@@ -15,6 +15,7 @@
 
 #include "../../../protocol/portalcraft_protocol.h"
 #include "overlay.h"
+#include "instance.h"
 #include "hooks.h"
 #include "worldrender.h"
 
@@ -475,7 +476,7 @@ bool init(LogFn log) {
 	if (g_hooked) {
 		return true;
 	}
-	g_mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, pcproto::kOverlayBytes, pcproto::kOverlayMapping);
+	g_mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, pcproto::kOverlayBytes, instance::named(pcproto::kOverlayMapping).c_str());
 	if (!g_mapping) {
 		log("overlay: CreateFileMapping failed (%lu)", GetLastError());
 		return false;
@@ -565,7 +566,7 @@ bool init(LogFn log) {
 
 	g_hooked = g_vt[0].vtable != nullptr;
 	hookEndFrame(log);
-	log("overlay: shared memory %s ready; d3d9 vtables hooked: %p %p %p", pcproto::kOverlayMapping, g_vt[0].vtable, g_vt[1].vtable, g_vt[2].vtable);
+	log("overlay: shared memory %s ready; d3d9 vtables hooked: %p %p %p", instance::named(pcproto::kOverlayMapping).c_str(), g_vt[0].vtable, g_vt[1].vtable, g_vt[2].vtable);
 	return g_hooked;
 }
 

@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 /** UDP link to the host plugin. A daemon thread keeps the newest HostState; sends are fire-and-forget. */
 public final class HostLink {
 	private static final Logger LOG = LoggerFactory.getLogger(PortalCraft.MOD_ID);
-	private static final InetSocketAddress HOST = new InetSocketAddress("127.0.0.1", Proto.HOST_PORT);
+	private static final InetSocketAddress HOST = new InetSocketAddress("127.0.0.1", Instance.HOST_PORT);
 	private static final long STALE_NANOS = 500_000_000L;
 
 	private static @Nullable DatagramChannel channel;
@@ -33,16 +33,16 @@ public final class HostLink {
 		}
 		try {
 			DatagramChannel ch = DatagramChannel.open(StandardProtocolFamily.INET);
-			ch.bind(new InetSocketAddress("127.0.0.1", Proto.MC_PORT));
+			ch.bind(new InetSocketAddress("127.0.0.1", Instance.MC_PORT));
 			channel = ch;
 		} catch (IOException e) {
-			LOG.warn("PortalCraft: can't listen on 127.0.0.1:{} ({}); host link disabled", Proto.MC_PORT, e.toString());
+			LOG.warn("PortalCraft: can't listen on 127.0.0.1:{} ({}); host link disabled", Instance.MC_PORT, e.toString());
 			return;
 		}
 		Thread t = new Thread(HostLink::receiveLoop, "PortalCraft host link");
 		t.setDaemon(true);
 		t.start();
-		LOG.info("PortalCraft: listening for a host game on 127.0.0.1:{}", Proto.MC_PORT);
+		LOG.info("PortalCraft: listening for a host game on 127.0.0.1:{}", Instance.MC_PORT);
 	}
 
 	private static void receiveLoop() {

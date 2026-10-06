@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../../protocol/portalcraft_protocol.h"
+#include "instance.h"
 #include "launcher.h"
 
 // portalcraft.ini (install.cmd writes one pointing at this repo):
@@ -23,6 +24,11 @@
 // Minecraft is started with PORTALCRAFT_STARTED_BY_HOST=1, which makes it hide its window and
 // quit again when Portal closes (HostLifecycle.java). Whether one is already running is whether
 // Minecraft's link port (127.0.0.1:27516) is taken: the PortalCraft mod holds it while it runs.
+//
+// A Portal started with -pcinstance N (instance.h) reads portalcraft_N.ini instead if there is one
+// (to start a Minecraft from another checkout, say), and starts its Minecraft with
+// PORTALCRAFT_INSTANCE=N and PORTALCRAFT_HOST_PID. With the repo's gradle.cmd that is enough: the
+// build script gives that instance its own game directory, run_N.
 namespace launcher {
 namespace {
 
@@ -50,7 +56,7 @@ bool minecraftRunning() {
 	}
 	sockaddr_in addr{};
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(pcproto::kMcPort);
+	addr.sin_port = htons(instance::mcPort());
 	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	// In use: WSAEADDRINUSE, or WSAEACCES when the holder asked for exclusive use.
 	bool taken = false;
@@ -70,7 +76,7 @@ constexpr ULONGLONG kStartingSeconds = 180;
 std::string launchStampPath() {
 	char dir[MAX_PATH];
 	DWORD n = GetTempPathA(MAX_PATH, dir);
-	return std::string(dir, n) + "portalcraft-launch.txt";
+	return std::string(dir, n) + instance::named("portalcraft-launch", ".txt");
 }
 
 ULONGLONG nowSeconds() {
@@ -109,6 +115,12 @@ bool start() {
 	std::string command = script ? "cmd.exe /c \"\"" + g_launcher + "\" " + g_arguments + "\"" : "\"" + g_launcher + "\" " + g_arguments;
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", "1");
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", g_mapsDir.c_str()); // where Minecraft reads Portal's maps for collision
+	if (instance::number() > 0) {
+		// Which pair it is, and which hl2.exe is its own: with two Portals up, the other one being
+		// alive mustn't keep this Minecraft running after its own Portal has closed.
+		SetEnvironmentVariableA("PORTALCRAFT_INSTANCE", std::to_string(instance::number()).c_str());
+		SetEnvironmentVariableA("PORTALCRAFT_HOST_PID", std::to_string(GetCurrentProcessId()).c_str());
+	}
 	STARTUPINFOA si{};
 	si.cb = sizeof si;
 	if (script) {
@@ -126,6 +138,10 @@ bool start() {
 	}
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", nullptr);
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", nullptr);
+	if (instance::number() > 0) {
+		SetEnvironmentVariableA("PORTALCRAFT_INSTANCE", nullptr);
+		SetEnvironmentVariableA("PORTALCRAFT_HOST_PID", nullptr);
+	}
 	if (!ok) {
 		g_log("launcher: couldn't start Minecraft (%lu): %s", GetLastError(), command.c_str());
 		return false;
@@ -162,6 +178,13 @@ void init(LogFn log, HMODULE self) {
 	GetModuleFileNameA(self, path, MAX_PATH);
 	if (char* slash = std::strrchr(path, '\\')) {
 		std::strcpy(slash + 1, "portalcraft.ini");
+		if (instance::number() > 0) {
+			// Its own ini if it has one; otherwise the shared one serves every instance.
+			std::string own = std::string(path, slash + 1) + instance::named("portalcraft", ".ini");
+			if (own.size() < MAX_PATH && GetFileAttributesA(own.c_str()) != INVALID_FILE_ATTRIBUTES) {
+				std::strcpy(path, own.c_str());
+			}
+		}
 	}
 	g_iniPath = path;
 	// The plugin lives in <Portal>/portal/addons; the maps are in <Portal>/portal/maps.
@@ -172,7 +195,7 @@ void init(LogFn log, HMODULE self) {
 	g_launcher = iniString("launcher", "");
 	g_arguments = iniString("arguments", "");
 	g_directory = iniString("directory", "");
-	g_logPath = iniString("log", (g_directory + "\\run\\logs\\latest.log").c_str());
+	g_logPath = iniString("log", (g_directory + "\\" + instance::named("run") + "\\logs\\latest.log").c_str());
 	g_log("launcher: %s: start_with_portal %d, launcher \"%s\"", path, g_startWithPortal ? 1 : 0, g_launcher.c_str());
 }
 
