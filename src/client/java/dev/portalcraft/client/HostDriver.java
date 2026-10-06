@@ -475,7 +475,16 @@ public final class HostDriver {
 		if (c == null) {
 			return;
 		}
-		Vec3 feet = clearOfTheFloor(player, Units.toMc(c.feet())), before = Units.toMc(c.previousFeet());
+		// The rest of the step after the portal, swept against the world from where he came out. At
+		// speed that is up to a block and a half: out of a portal facing a wall close by, Steve was
+		// put inside the wall, or beyond it.
+		Vec3 exitAt = Units.toMc(c.exitFeet()), carriedTo = Units.toMc(c.feet());
+		Vec3 rest = carriedTo.subtract(exitAt);
+		if (rest.lengthSqr() > 1.0e-6) {
+			AABB atExit = player.getBoundingBox().move(exitAt.subtract(player.position()));
+			carriedTo = exitAt.add(net.minecraft.world.entity.Entity.collideBoundingBox(player, rest, atExit, player.level(), List.of()));
+		}
+		Vec3 feet = clearOfTheFloor(player, carriedTo), before = Units.toMc(c.previousFeet());
 		Vec3 velocity = Units.velocityToMc(c.velocity());
 		player.setPos(feet);
 		// Last tick's place carried through as well, so this step reads as the same smooth move.

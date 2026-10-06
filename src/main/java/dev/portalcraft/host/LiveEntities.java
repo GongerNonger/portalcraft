@@ -172,6 +172,8 @@ public final class LiveEntities {
 			props = List.of();
 			SHAPES.clear();
 			try {
+				seenLogs = 0; // a new map: its entities are logged afresh
+				movedLogs = 0;
 				files = GameFiles.forMap(map.file);
 			} catch (Exception e) {
 				files = null;

@@ -96,8 +96,12 @@ public final class PlayerCrossings {
 		PENDING.removeIf(c -> c.index() <= matched);
 	}
 
-	/** Result of a step that went through portals: where Steve is now, how he's moving, and the portal he came out of. */
-	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings, int exit, Vec3 fit) {
+	/**
+	 * Result of a step that went through portals: where Steve is now, how he's moving, and the portal
+	 * he came out of. `exitFeet` is where he came out of it (the last one), before the rest of the
+	 * step: the stretch from there to `feet` was carried through without a look at what is in the way.
+	 */
+	public record Carried(Vec3 feet, Vec3 previousFeet, Vec3 velocity, int crossings, int exit, Vec3 fit, Vec3 exitFeet) {
 	}
 
 	/**
@@ -162,7 +166,7 @@ public final class PlayerCrossings {
 		if (made == 0) {
 			return null;
 		}
-		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip, fitted);
+		return new Carried(to.subtract(up), prev.subtract(up), v, made, skip, fitted, from.subtract(up));
 	}
 
 	/**
