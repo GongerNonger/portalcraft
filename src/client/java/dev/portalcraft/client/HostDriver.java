@@ -118,6 +118,8 @@ public final class HostDriver {
 
 	/** Where Steve stood when the host went away (blocks), while it is away; else null. */
 	private static Vec3 heldWithoutHost;
+	/** Where the world loaded Steve, while Minecraft (started by Portal) waits for the link; else null. */
+	private static Vec3 heldBeforeLink;
 
 	/** START_CLIENT_TICK: before the player moves this tick. */
 	public static void tick(Minecraft minecraft) {
@@ -138,6 +140,15 @@ public final class HostDriver {
 			// of the floor portal's hole, was saved far under the map, and died three times over at the
 			// next start (the void, then the fall he was still in).
 			LocalPlayer left = minecraft.player;
+			// Started by Portal and not linked to it yet: the same, from where the world loaded him.
+			// The map's walls only come with the link; saved low in another map's stretch of the world,
+			// he fell out of the bottom in those few seconds and died twice before the level began.
+			if (heldWithoutHost == null && left != null && HostLifecycle.STARTED_BY_HOST && !left.isDeadOrDying()) {
+				heldBeforeLink = heldBeforeLink == null ? left.position() : heldBeforeLink;
+				left.setPos(heldBeforeLink);
+				left.setDeltaMovement(Vec3.ZERO);
+				left.resetFallDistance();
+			}
 			if (heldWithoutHost != null && left != null && HostCollision.active() && !left.isDeadOrDying()) {
 				left.setPos(heldWithoutHost);
 				left.setDeltaMovement(Vec3.ZERO);
@@ -146,6 +157,7 @@ public final class HostDriver {
 			return;
 		}
 		heldWithoutHost = null;
+		heldBeforeLink = null;
 		if (!linked) {
 			LOG.info("PortalCraft: host linked ({})", s.map());
 			linked = true;
@@ -207,9 +219,18 @@ public final class HostDriver {
 		carry(player, moved);
 		pushOutOfSolids(player);
 		pushProps(player);
-		// Not in a fast fall (see there), and not on a lift: its platform rises under Steve every tick,
-		// each tick read as "feet in the floor", and riding one shook all the way up.
-		if (player.getDeltaMovement().y > -0.5 && !s.riding() && !LiveEntities.onFixture(player.getBoundingBox())) {
+		if (player.getPose() != lastPose) {
+			if (poseLogs++ < 60) {
+				LOG.info("PortalCraft: Steve's pose {} -> {} at host {} (sneak key {}, horizontal collision {})", lastPose, player.getPose(),
+					Units.toSrc(player.position()), player.isShiftKeyDown(), player.horizontalCollision);
+			}
+			lastPose = player.getPose();
+		}
+		// Not in a fast fall (see there), and not while a lift carries him: its platform rises under
+		// Steve every tick, each tick read as "feet in the floor", and riding one shook all the way up.
+		// (A lift standing still is a floor like any other: left out as well, Steve sank through the
+		// one a level starts on and fell out of the map.)
+		if (player.getDeltaMovement().y > -0.5 && !s.riding()) {
 			liftOutOfTheFloor(player);
 		}
 		for (String command; (command = HostLink.takeDevCommand()) != null;) {
@@ -294,6 +315,8 @@ public final class HostDriver {
 	}
 
 	private static int crossingsLogged;
+	private static net.minecraft.world.entity.Pose lastPose;
+	private static int poseLogs;
 
 	/** How fast a cube is shoved by a walking Steve, as the speed of the "hit" it takes each tick (blocks/tick). */
 	private static final double PROP_PUSH = 0.15;
