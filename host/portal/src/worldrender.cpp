@@ -792,45 +792,23 @@ void portalMatrix(const ViewEntry& e, float* worldToProjection) {
 using DrawTranslucentSurfacesFn = void(__thiscall*)(void* self, void* list, int sortIndex, unsigned long flags, bool shadowDepth);
 DrawTranslucentSurfacesFn g_translucentOriginal = nullptr;
 
-// Our solid triangles for the view being drawn, once per view.
-void drawSolidsOnce() {
-	if (g_viewDepth <= 0 || g_viewDepth > kMaxViews) {
-		return;
-	}
-	ViewEntry& e = g_views[g_viewDepth - 1];
-	if (e.solidDone || !(e.isMain || e.throughPortal)) {
-		return;
-	}
-	e.solidDone = true;
-	if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-		if (e.isMain) {
-			g_mainSolidDone = true;
-			draw(dev, worldToScreen(), false, kPassSolid);
-		} else if (g_renderView) {
-			float worldToProjection[16];
-			portalMatrix(e, worldToProjection);
-			draw(dev, worldToProjection, true, kPassSolid);
-		}
-	}
-}
-
-using DrawWorldListsFn = void(__thiscall*)(void* self, void* list, unsigned long flags, float waterZAdjust);
-DrawWorldListsFn g_worldListsOriginal = nullptr;
-
-// The view's opaque world is drawn: our solids go in straight after it, before anything see-through.
-// Not only glass: a moving platform's laser beams and other see-through entities are drawn from
-// the far leaves forward, some of them before the view's first translucent world surface, and a
-// block drawn after a beam covered it.
-void __fastcall hkDrawWorldLists(void* self, void* /*edx*/, void* list, unsigned long flags, float waterZAdjust) {
-	g_worldListsOriginal(self, list, flags, waterZAdjust);
-	drawSolidsOnce();
-}
-
-// The view's first translucent world surface: our solids go in now, under its glass, if the
-// opaque world's hook didn't already put them in.
+// The view's first translucent world surface: our solids go in now, under its glass.
 void __fastcall hkDrawTranslucentSurfaces(void* self, void* /*edx*/, void* list, int sortIndex, unsigned long flags, bool shadowDepth) {
-	if (!shadowDepth) {
-		drawSolidsOnce();
+	if (!shadowDepth && g_viewDepth > 0 && g_viewDepth <= kMaxViews) {
+		ViewEntry& e = g_views[g_viewDepth - 1];
+		if (!e.solidDone && (e.isMain || e.throughPortal)) {
+			e.solidDone = true;
+			if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
+				if (e.isMain) {
+					g_mainSolidDone = true;
+					draw(dev, worldToScreen(), false, kPassSolid);
+				} else if (g_renderView) {
+					float worldToProjection[16];
+					portalMatrix(e, worldToProjection);
+					draw(dev, worldToProjection, true, kPassSolid);
+				}
+			}
+		}
 	}
 	g_translucentOriginal(self, list, sortIndex, flags, shadowDepth);
 }
@@ -964,7 +942,6 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
 	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
 	hook(vt, 18, reinterpret_cast<void*>(&hkDrawTranslucentSurfaces), reinterpret_cast<void**>(&g_translucentOriginal));
-	hook(vt, 13, reinterpret_cast<void*>(&hkDrawWorldLists), reinterpret_cast<void**>(&g_worldListsOriginal));
 	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", pcproto::kWorldMapping, pcproto::kWorldBytes >> 20);
 	return true;
 }
