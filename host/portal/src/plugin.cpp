@@ -647,6 +647,16 @@ DWORD g_rideStill = 0; // when the lift last stopped moving
 // are not handed over; Minecraft carries Steve on its own copy of the platform.
 float g_rideLastX = 0.0f, g_rideLastY = 0.0f;
 DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sideways
+// When Portal's player last went through a portal with Steve (a match, or one we made). Just out
+// of a portal, close to its rim, Portal nudges its player's velocity tick after tick to work him
+// clear of the wall around the opening. Each was handed to Minecraft as an impulse, and they add
+// up there: dropped into a floor portal that opened under his feet, Steve came out of the ceiling
+// one at its edge, was pushed up at 60 to 150 units a second each tick, rose back up through the
+// ceiling portal and only then began to fall (his report, and the log: ten impulses, then a
+// crossing upwards). For half a second after a crossing a small change of velocity is Portal's
+// own business.
+DWORD g_crossedAt = 0;
+
 bool carriedLately() {
 	return g_carriedAt != 0 && GetTickCount() - g_carriedAt < 1500;
 }
@@ -1532,6 +1542,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
 			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
 		}
+		if (impulse && g_crossedAt != 0 && GetTickCount() - g_crossedAt < 500 && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 300.0f * 300.0f) {
+			impulse = false; // Portal working its player clear of a portal's rim (see g_crossedAt)
+		}
 		static int impulseLogs = 0;
 		if (impulse && impulseLogs++ < 40) {
 			logf("impulse: Portal changed the velocity by (%.0f %.0f %.0f) to (%.0f %.0f %.0f)", dv.x, dv.y, dv.z, mvVelocity.x, mvVelocity.y,
@@ -1567,6 +1580,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			matchedNow = true;
 			pendingTicks = 0;
 			lastMatchTick = tickNow;
+			g_crossedAt = GetTickCount();
 			lastMatchIn = in;
 			static int matchLogs = 0;
 			if (matchLogs++ < 60) {
@@ -1607,6 +1621,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				g_matched++;
 				g_crossings[g_crossingCount++] = {0, g_matched, x};
 				lastMatchTick = tickNow;
+			g_crossedAt = GetTickCount();
 				lastMatchIn = in;
 				static int forceLogs = 0;
 				if (forceLogs++ < 30) {
