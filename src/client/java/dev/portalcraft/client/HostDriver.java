@@ -216,6 +216,14 @@ public final class HostDriver {
 				placed ? " (already applied: staying)" : "");
 			if (!placed) {
 				teleport(minecraft, player, Units.toMc(s.origin()), Vec3.ZERO);
+				// Held there for a moment at a level's start, as after the host's own level-start move
+				// (followHostMoves): placed this way that move counts as applied and set no hold, and
+				// with the lift under him not yet arrived Steve dropped down its shaft (seen: one first
+				// load of testchmb_a_14, down 660 units).
+				if (System.currentTimeMillis() - mapLoadedAt < 20000) {
+					holdWithHostUntil = System.currentTimeMillis() + 2500;
+					holdAt = Units.toMc(s.origin());
+				}
 			}
 			respawned = false;
 			teleportAck = s.teleportSeq();
@@ -274,7 +282,11 @@ public final class HostDriver {
 			// On a moving lift Portal owns Steve's height (it carries its player exactly; our copy of the
 			// lift lags): stand at its height, keep walking about, no sag and no fall.
 			double hostY = Units.toMc(s.origin()).y;
-			if (Math.abs(player.getY() - hostY) < 2.0) {
+			// However far apart in a level's first seconds: the level-start lift is already moving and
+			// can reach Minecraft a moment after Steve does. With nothing under him yet he dropped past
+			// the two blocks, was let go, and fell down the lift shaft (seen: one start of testchmb_a_13
+			// in four, 'fell from a high place').
+			if (Math.abs(player.getY() - hostY) < 2.0 || System.currentTimeMillis() - mapLoadedAt < 8000) {
 				player.setPos(player.getX(), hostY, player.getZ());
 				Vec3 v = player.getDeltaMovement();
 				player.setDeltaMovement(v.x, 0.0, v.z);
