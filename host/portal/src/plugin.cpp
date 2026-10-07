@@ -1518,10 +1518,13 @@ Vector interpolatedMinecraft(Vector* velocity) {
 		return pa;
 	}
 	Vector pb = stepNow(*b);
-	*velocity = {(pb.x - pa.x) * 20.0f, (pb.y - pa.y) * 20.0f, (pb.z - pa.z) * 20.0f};
 	if (dist(pa, pb) > 64.0f) {
-		return pb; // a teleport between the two steps: don't smear it across the map
+		// A teleport between the two steps: don't smear it across the map, and don't read it as
+		// speed either (the velocity stays Minecraft's own, set above). As speed, a teleport beside
+		// a cube was 25,640 units a second in Portal's player for a tick.
+		return pb;
 	}
+	*velocity = {(pb.x - pa.x) * 20.0f, (pb.y - pa.y) * 20.0f, (pb.z - pa.z) * 20.0f};
 	float f = float(ticks - double(k));
 	f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
 	return {pa.x + (pb.x - pa.x) * f, pa.y + (pb.y - pa.y) * f, pa.z + (pb.z - pa.z) * f};
@@ -1737,37 +1740,15 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// env_physexplosion): an impulse, handed to Minecraft with the new velocity. We overwrite the
 	// velocity every tick, so without this every push was lost.
 	Vector& mvVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
-	bool impulse = false;
-	if (g_haveSet && !g_needSync) {
-		Vector dv{mvVelocity.x - g_lastSetVelocity.x, mvVelocity.y - g_lastSetVelocity.y, mvVelocity.z - g_lastSetVelocity.z};
-		// Only a pure velocity change: a physics shove (which also moves the player) stays a shove.
-		impulse = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z > 40.0f * 40.0f && dist(origin, g_lastSet) <= 0.5f;
-		// On a moving lift Portal's player has the lift's speed and Steve's (set from Minecraft every
-		// tick) has none: that difference, every tick, is no impulse. Handed over as one it put Steve
-		// back where he stood each tick: on the fast platform lift of testchmb_a_03 (265 u/s) he was
-		// locked in place for the whole ride (his report; 20 hand-overs in 4 s in the log).
-		if (impulse && (g_riding || (g_rideStill != 0 && GetTickCount() - g_rideStill < 500))) {
-			impulse = false;
-		}
-		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
-			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
-		}
-		// Nor what Portal's physics does to its player on a loose prop. He is set down on the cube
-		// from Minecraft every tick, the cube gives under him, and now and then the physics answers
-		// with a kick: stepping from a block onto a cube Steve was thrown 270 units into the air (431
-		// u/s straight up, handed on as an impulse) and died of the fall.
-		if (impulse && g_onLooseProp && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 700.0f * 700.0f) {
-			impulse = false;
-		}
-		if (impulse && g_crossedAt != 0 && GetTickCount() - g_crossedAt < 500 && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 300.0f * 300.0f) {
-			impulse = false; // Portal working its player clear of a portal's rim (see g_crossedAt)
-		}
-		static int impulseLogs = 0;
-		if (impulse && impulseLogs++ < 40) {
-			logf("impulse: Portal changed the velocity by (%.0f %.0f %.0f) to (%.0f %.0f %.0f)", dv.x, dv.y, dv.z, mvVelocity.x, mvVelocity.y,
-				mvVelocity.z);
-		}
-	}
+	// There are no impulses. A change of Portal's velocity for its player with no change of place
+	// used to be handed to Minecraft as one (for trigger_push air currents and explosions). But a
+	// trigger_push sets the player's base velocity, which Portal's movement adds and takes out again
+	// within the tick, so it never shows here; no explosion in the game pushes players; and what did
+	// show was noise that this then acted on: a lift's own speed (Steve locked in place for the
+	// ride), Portal working its player clear of a portal's rim (Steve rising back up through a
+	// ceiling portal), the physics' kick on a cube (thrown 270 units up), a moving platform's
+	// velocity under a jump. Each had its own exception here; the rule is gone instead.
+	const bool impulse = false;
 
 	// Portal just teleported its player through a portal Steve has already gone through in Minecraft
 	// (PlayerCrossings): that's the match, nothing to hand over. From here on we carry Minecraft's
