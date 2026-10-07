@@ -843,11 +843,16 @@ void updateRiding() {
 		// settles under his weight, a hair up and down, and each twitch handed Steve's height to
 		// Portal and back (standing on a cube flapped between the two).
 		bool loose = false;
+		// ... and what is a mover by its class: a brush entity (func_tracktrain, func_door, ...) or a
+		// prop_dynamic riding on one. Not whatever else Portal stands its player on: the collision it
+		// builds around an open portal is a ground entity too, and it "moves" whenever a portal does.
+		bool moverClass = false;
 		if (index > 1) {
 			void* e = edictAt(index);
 			void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
 			const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
 			loose = cls && (std::strncmp(cls, "prop_physics", 12) == 0 || std::strncmp(cls, "npc_", 4) == 0);
+			moverClass = cls && (std::strncmp(cls, "func_", 5) == 0 || std::strncmp(cls, "prop_dynamic", 12) == 0);
 		}
 		g_onLooseProp = loose;
 		// The lift is still the lift for a moment after Portal's player loses its footing on it:
@@ -856,11 +861,13 @@ void updateRiding() {
 		// trip up testchmb_a_03's lift, a hand-over at each).
 		static int lastIndex = -1;
 		static DWORD lastOnIt = 0;
-		if (index > 1 && !loose) {
+		bool held = false;
+		if (index > 1 && !loose && moverClass) {
 			lastIndex = index;
 			lastOnIt = GetTickCount();
-		} else if (!loose && lastIndex > 1 && GetTickCount() - lastOnIt < 400) {
+		} else if (index <= 1 && lastIndex > 1 && GetTickCount() - lastOnIt < 400) {
 			index = lastIndex;
+			held = moverClass = true;
 		}
 		if (index > 1 && !loose && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
 			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
@@ -869,7 +876,8 @@ void updateRiding() {
 			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f)) {
 				g_carriedAt = GetTickCount();
 			}
-			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f || std::fabs(o.z - g_rideLastZ) > 0.01f)) {
+			if (moverClass && !held && index == g_rideEntity &&
+				(std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f || std::fabs(o.z - g_rideLastZ) > 0.01f)) {
 				g_onMoverAt = GetTickCount();
 			}
 			g_rideEntity = index;
