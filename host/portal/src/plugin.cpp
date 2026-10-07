@@ -466,7 +466,7 @@ bool devMode() {
 	return dev == 1;
 }
 
-// ---- dev: the last 45 seconds, kept for a replay ---------------------------------------------
+// ---- dev: the last 5 minutes, kept for a replay ---------------------------------------------
 // When the player hits a bug, what he did to get there used to be a guess. In dev mode every
 // server tick's input (the keys and buttons Minecraft was sent, the view) and where it left the
 // player go into a ring: one small copy a tick, no file touched. "PCQ1" (tools/fake_mc.py
@@ -483,7 +483,7 @@ struct ReplayTick {
 	uint32_t frame; // the recorded tick a replay was feeding in here (PCK2), 0 when the input was live
 	pcproto::HostPortal portals[2];
 };
-constexpr size_t kReplayTicks = 3000; // 45 seconds at Portal's 66.7 ticks a second
+constexpr size_t kReplayTicks = 20000; // 5 minutes at Portal's 66.7 ticks a second: a whole chamber, played once and kept as its test
 std::vector<ReplayTick> g_replay; // stays empty outside dev mode
 size_t g_replayNext = 0, g_replayCount = 0;
 
