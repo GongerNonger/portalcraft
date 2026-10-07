@@ -25,7 +25,9 @@ Write-Host "JDK: $($jdk.FullName)"
 $world = Join-Path $root "run\saves\PortalCraft"
 if (-not (Test-Path (Join-Path $world "level.dat"))) {
 	New-Item -ItemType Directory -Force $world | Out-Null
-	Copy-Item (Join-Path $root "worlds\PortalCraft\level.dat") $world
+	# level.dat and data\minecraft (the world's generator settings and game rules: without them
+	# Minecraft 26.3 refuses the world, "Overworld settings missing")
+	Copy-Item (Join-Path $root "worlds\PortalCraft\*") $world -Recurse
 	Write-Host "Created the PortalCraft world (void, fall damage off)"
 }
 

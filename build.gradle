@@ -46,7 +46,7 @@ if (pcInstance > 0) {
 		doFirst {
 			def dir = file("run_${pcInstance}")
 			if (!new File(dir, "saves/PortalCraft/level.dat").exists()) {
-				copy { from "worlds/PortalCraft/level.dat"; into new File(dir, "saves/PortalCraft") }
+				copy { from "worlds/PortalCraft"; into new File(dir, "saves/PortalCraft") }
 			}
 			if (!new File(dir, "options.txt").exists() && file("run/options.txt").exists()) {
 				copy { from "run/options.txt"; into dir }
