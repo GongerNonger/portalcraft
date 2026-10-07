@@ -80,8 +80,6 @@ public final class HostDriver {
 	private static long mapLoadedAt;
 	/** For the gun's draw animation: whether it was in hand last tick, and the level start it last played for. */
 	private static boolean gunWasInHand;
-	/** Steve is in a jump he made from a moving lift (see the riding branch of tick). */
-	private static boolean rideJump;
 	private static int lastGunFizzles = -1;
 	private static long drawnForMapAt;
 	/**
@@ -297,15 +295,11 @@ public final class HostDriver {
 			// can reach Minecraft a moment after Steve does. With nothing under him yet he dropped past
 			// the two blocks, was let go, and fell down the lift shaft (seen: one start of testchmb_a_13
 			// in four, 'fell from a high place').
-			// Except through a jump of his own: held to the lift's height every tick (and his upward
-			// speed taken away), Steve couldn't jump on a lift at all. Off its floor with speed of his own
-			// he is in the air like anywhere else, until he lands on it again.
-			if (player.getDeltaMovement().y > 0.1) {
-				rideJump = true;
-			} else if (rideJump && player.onGround()) {
-				rideJump = false;
-			}
-			if (!rideJump && (Math.abs(player.getY() - hostY) < 2.0 || System.currentTimeMillis() - mapLoadedAt < 8000)) {
+			// (No jumping on a moving lift. Leaving his height to Minecraft for the length of a jump was
+			// tried: he came down on Minecraft's copy of the lift, which arrives in steps of several
+			// units, went through it, and fell down the shaft. It needs his height kept relative to
+			// the lift on both sides; until then the lift holds him, as Portal's own does a ducked player.)
+			if (Math.abs(player.getY() - hostY) < 2.0 || System.currentTimeMillis() - mapLoadedAt < 8000) {
 				player.setPos(player.getX(), hostY, player.getZ());
 				Vec3 v = player.getDeltaMovement();
 				player.setDeltaMovement(v.x, 0.0, v.z);
@@ -604,7 +598,7 @@ public final class HostDriver {
 			crossPortal[k & 3] = (byte) PlayerCrossings.portalOf(k);
 		}
 		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0) | (ready && player.isSprinting() ? Proto.MC_SPRINT : 0)
-			| (ready && player.isFallFlying() ? Proto.MC_GLIDING : 0) | (ready && rideJump ? Proto.MC_RIDE_JUMP : 0);
+			| (ready && player.isFallFlying() ? Proto.MC_GLIDING : 0);
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),

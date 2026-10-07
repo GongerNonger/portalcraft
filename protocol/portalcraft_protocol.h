@@ -105,7 +105,6 @@ enum McFlags : uint32_t {
 	kMcScreen = 1u << 1, // a Minecraft screen (inventory, chest, chat) is open: the host frees the mouse
 	kMcSprint = 1u << 2, // Steve is sprinting: the host widens its view a little, as Minecraft's own does
 	kMcGliding = 1u << 3, // Steve is gliding on an elytra: his hull is the low flying one (24 units)
-	kMcRideJump = 1u << 4, // Steve jumped off the floor of a moving lift and hasn't landed: his height is his own again
 };
 
 struct McState {

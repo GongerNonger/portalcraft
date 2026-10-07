@@ -810,6 +810,15 @@ DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sidewa
 // own business.
 DWORD g_crossedAt = 0;
 
+// When Portal's player last stood on something that isn't the world or a loose prop: a lift, a
+// platform, a door, a button's top. What such a thing does to the player (carries it, lifts it,
+// sets it down a few units away as he jumps on it) is the mover's doing and Minecraft has its own
+// copy of the mover: small moves of Portal's player on or just off one are not handed over.
+DWORD g_onMoverAt = 0;
+bool onMoverLately() {
+	return g_onMoverAt != 0 && GetTickCount() - g_onMoverAt < 500;
+}
+
 bool carriedLately() {
 	return g_carriedAt != 0 && GetTickCount() - g_carriedAt < 1500;
 }
@@ -836,6 +845,18 @@ void updateRiding() {
 			loose = cls && (std::strncmp(cls, "prop_physics", 12) == 0 || std::strncmp(cls, "npc_", 4) == 0);
 		}
 		g_onLooseProp = loose;
+		// The lift is still the lift for a moment after Portal's player loses its footing on it:
+		// set down from Minecraft a hair above its floor, the player is "in the air" every few ticks
+		// of a fast ride, and each time the ride was declared over and begun again (27 times in one
+		// trip up testchmb_a_03's lift, a hand-over at each).
+		static int lastIndex = -1;
+		DWORD& lastOnIt = g_onMoverAt;
+		if (index > 1 && !loose) {
+			lastIndex = index;
+			lastOnIt = GetTickCount();
+		} else if (!loose && lastIndex > 1 && GetTickCount() - lastOnIt < 400) {
+			index = lastIndex;
+		}
 		if (index > 1 && !loose && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
 			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
 				moving = true;
@@ -1870,6 +1891,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (carriedLately() && g_haveSet && !g_needSync && !impulse && dist(origin, g_lastSet) < 12.0f) {
 		draggedOnProp = true; // carried by a moving platform (see g_carriedAt)
 	}
+	if (onMoverLately() && g_haveSet && !g_needSync && dist(origin, g_lastSet) < 16.0f) {
+		draggedOnProp = true; // on or just off a mover (see g_onMoverAt)
+	}
 	if (!matchedNow && !bounced && !draggedOnProp && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
@@ -1936,7 +1960,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				origin = to;
 			}
 		}
-		if (g_riding && !(g_mc.flags & pcproto::kMcRideJump)) { // (not through a jump of Steve's: that height is his)
+		if (g_riding) {
 			origin.z = zPortal; // the lift carries the player; Minecraft follows (kHostRiding)
 			g_zLift = 0.0f;
 		}
@@ -1995,7 +2019,7 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 				predicted = to;
 			}
 		}
-		if (g_riding && !(g_mc.flags & pcproto::kMcRideJump)) {
+		if (g_riding) {
 			reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z = zPortal;
 		}
 	}
