@@ -32,6 +32,8 @@ public final class Proto {
 	public static final int MC_SCREEN = 1 << 1;
 	/** McFlags kMcSprint: Steve is sprinting (the host widens its view, the only sign of it there is). */
 	public static final int MC_SPRINT = 1 << 2;
+	/** McFlags kMcRideJump: Steve jumped off a moving lift's floor and is still in the air (the host leaves his height to Minecraft). */
+	public static final int MC_RIDE_JUMP = 1 << 4;
 	/** McFlags kMcGliding: Steve is gliding on an elytra, in the low hull (the host carries him through portals by its middle). */
 	public static final int MC_GLIDING = 1 << 3;
 

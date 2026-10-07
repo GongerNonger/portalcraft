@@ -1742,6 +1742,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		Vector dv{mvVelocity.x - g_lastSetVelocity.x, mvVelocity.y - g_lastSetVelocity.y, mvVelocity.z - g_lastSetVelocity.z};
 		// Only a pure velocity change: a physics shove (which also moves the player) stays a shove.
 		impulse = dv.x * dv.x + dv.y * dv.y + dv.z * dv.z > 40.0f * 40.0f && dist(origin, g_lastSet) <= 0.5f;
+		// On a moving lift Portal's player has the lift's speed and Steve's (set from Minecraft every
+		// tick) has none: that difference, every tick, is no impulse. Handed over as one it put Steve
+		// back where he stood each tick: on the fast platform lift of testchmb_a_03 (265 u/s) he was
+		// locked in place for the whole ride (his report; 20 hand-overs in 4 s in the log).
+		if (impulse && (g_riding || (g_rideStill != 0 && GetTickCount() - g_rideStill < 500))) {
+			impulse = false;
+		}
 		if (impulse && carriedLately() && dv.x * dv.x + dv.y * dv.y + dv.z * dv.z < 450.0f * 450.0f) {
 			impulse = false; // the moving platform's doing, or Portal's idea of his jump off it
 		}
@@ -1948,7 +1955,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				origin = to;
 			}
 		}
-		if (g_riding) {
+		if (g_riding && !(g_mc.flags & pcproto::kMcRideJump)) { // (not through a jump of Steve's: that height is his)
 			origin.z = zPortal; // the lift carries the player; Minecraft follows (kHostRiding)
 			g_zLift = 0.0f;
 		}
@@ -2007,7 +2014,7 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 				predicted = to;
 			}
 		}
-		if (g_riding) {
+		if (g_riding && !(g_mc.flags & pcproto::kMcRideJump)) {
 			reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z = zPortal;
 		}
 	}
