@@ -810,10 +810,13 @@ DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sidewa
 // own business.
 DWORD g_crossedAt = 0;
 
-// When Portal's player last stood on something that isn't the world or a loose prop: a lift, a
-// platform, a door, a button's top. What such a thing does to the player (carries it, lifts it,
-// sets it down a few units away as he jumps on it) is the mover's doing and Minecraft has its own
-// copy of the mover: small moves of Portal's player on or just off one are not handed over.
+// When Portal's player last stood on something that was itself moving (not the world, not a loose
+// prop): a lift, a platform, a button's top going down. What such a thing does to the player
+// (carries it, lifts it, sets it down a few units away) is the mover's doing and Minecraft has its
+// own copy of the mover: small moves of Portal's player on or just off one are not handed over.
+// Only while it moves: Portal's player has other "ground entities" that never do (the collision
+// Portal builds around an open portal is one), and with those counted every portal crossing lost
+// its hand-overs (30 bounce-backs in a suite that has none).
 DWORD g_onMoverAt = 0;
 bool onMoverLately() {
 	return g_onMoverAt != 0 && GetTickCount() - g_onMoverAt < 500;
@@ -850,7 +853,7 @@ void updateRiding() {
 		// of a fast ride, and each time the ride was declared over and begun again (27 times in one
 		// trip up testchmb_a_03's lift, a hand-over at each).
 		static int lastIndex = -1;
-		DWORD& lastOnIt = g_onMoverAt;
+		static DWORD lastOnIt = 0;
 		if (index > 1 && !loose) {
 			lastIndex = index;
 			lastOnIt = GetTickCount();
@@ -863,6 +866,9 @@ void updateRiding() {
 			}
 			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f)) {
 				g_carriedAt = GetTickCount();
+			}
+			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f || std::fabs(o.z - g_rideLastZ) > 0.01f)) {
+				g_onMoverAt = GetTickCount();
 			}
 			g_rideEntity = index;
 			g_rideLastZ = o.z;
