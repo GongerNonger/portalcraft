@@ -2457,7 +2457,13 @@ public:
 		}
 		return false;
 	}
-	virtual int GetTraceType() { return 0; }
+	// Entities only (TRACE_ENTITIES_ONLY). As TRACE_EVERYTHING this swept against the world too,
+	// which no filter keeps out: wherever a loose prop existed in the level the player was "stopped
+	// by a prop" at the floor under him and at the wall a portal was in (walking into a portal he
+	// was held 10 units short of it, Minecraft went through alone, and the crossing was forced).
+	// It went unnoticed while the list was cubes only, and showed in every chamber with an office
+	// chair once the list was by class.
+	virtual int GetTraceType() { return 2; }
 };
 
 // One sweep of the player's standing hull (feet `from` to `to`) against the loose props. False if
