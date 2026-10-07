@@ -1,408 +1,467 @@
-# PortalCraft: audit and plan to "done"
+# PortalCraft: audit and plan to "beatable as Steve"
 
-Date: 2026-10-02. Read-only audit of the repo at commit `32a9f7c` (main). Nothing was run; Portal and
-Minecraft were not launched. Evidence is cited as `file:line`. Confidence tags: **H** read directly
-in code or logs, **M** inferred, **L** educated guess.
+Date: 2026-10-06 (evening). Read-only audit of the repo at `a86d784` (main, tag `stable-8`). Nothing
+was run or built; Portal and Minecraft were not launched. Evidence is cited as `file:line`.
+Confidence tags: **H** read directly in code, logs or map data; **M** inferred from them; **L** educated
+guess. This supersedes the 10-02 audit (commit `32a9f7c`); what became of its items is in Appendix A.
 
-Scope of what was read: `README.md`, `THIRD-PARTY-NOTICES.md`, `docs/*.md`, `protocol/portalcraft_protocol.h`,
-all of `host/portal/src`, all of `src/`, the tests, `tools/`, `host/portal/tools/`, the last Minecraft
-run log (`run/logs/latest.log`), the last plugin log (`Portal/portal/addons/portalcraft.log`), the git
-history, and the SkyCraft clone for comparison.
+The bar, in the owner's words: "a creative player should be able to solve all the puzzles as Steve as
+soon as portals and movement work correctly." So: the whole game beatable, no game-breakers, no
+jitter while moving. Not: blocks through portals, lighting, co-op, RTX.
+
+What was read: all of `host/portal/src`, `src/main/java/dev/portalcraft/host`, `src/main/java/dev/portalcraft/mixin`,
+`src/client/java/dev/portalcraft/client/HostDriver.java` and `HostHealth.java`, `protocol/portalcraft_protocol.h`,
+`run/devtests/suite.sh`, the plugin log (`portal/addons/portalcraft.log`, 8248 lines, last write 23:22)
+and `run/logs/latest.log`, `git log --stat stable-1..HEAD`, the notes file
+(`project_minecraft_crossover.md`, treated as a witness, not as truth), the entity lump (lump 0) of all
+18 campaign BSPs, Portal's own code in `host/portal/ref/portal-base/sp/src/game/{server,shared}/portal`
+plus `server/triggers.cpp` and `shared/gamemovement.cpp`, and SkyCraft 0.1.2.
+
+**SkyCraft:** it is not under `C:\tmp` or `C:\Users\Administrator`; the clone the 10-02 audit used is
+still in this session's scratchpad (`%TEMP%\claude\C--Users-Administrator\ad80120e-...\scratchpad\SkyCraft`,
+one squashed commit `bfcaf17`). I read it there rather than cloning again. It will vanish with the
+scratchpad; if it is wanted on disk, `git clone --depth 1 https://github.com/chasmlol/SkyCraft host/portal/ref/skycraft`
+(the folder is git-ignored, `.gitignore:12`).
 
 ---
 
 ## 0. Summary
 
-The project is in better shape than its age (two days of commits) suggests. The hard problems are
-solved and verified live: Minecraft physics on Portal brushes, static props and live entities;
-portal teleports with momentum; the hand/HUD overlay; the in-scene block pass with correct depth.
-The code is small (about 7.7k lines including tests), consistently written, and the dangerous parts
-(engine vtable patches, raw offsets) are guarded by runtime self-checks that log `layout OK` /
-`LAYOUT MISMATCH`.
+**Judgements I am most confident of (H unless marked):**
 
-What is not done, in order of how much it blocks the goal (viral let's plays with friends):
+1. **The portal-crossing core is sound and is the best-tested thing in the repo.** Minecraft carries
+   Steve through a linked pair inside its own physics step (`PlayerCrossings.java:118-170`), sends
+   positions "unfolded" so Portal's own teleport fires where Steve went (`HostDriver.java:343-344, 587-590`),
+   and the plugin matches that teleport instead of handing it back (`plugin.cpp:1774-1801`). The carry
+   is the same rigid move Portal makes (`prop_portal.cpp:1062-1063` carries the hull centre; ours does,
+   `PlayerCrossings.java:249-252`), the exit rules match Portal's constants exactly (300 up out of a
+   floor, 1000 cap: `prop_portal.cpp:43-45, 1141-1142, 1160-1162` vs `PlayerCrossings.java:212-230`),
+   and the air physics match `sv_gravity 600` / no drag / 3500 cap (`PortalAir.java:22-25`). The suite
+   passes 16/16 on a clean world. Leave this alone.
 
-| Gap | Why it matters for video | Milestone |
+2. **The reconciliation classifier in `serverProcessMovement` is the wrong model, and most of the
+   last three days' plugin commits are patches on it.** Every tick Portal's movement runs from a
+   stale position (last tick's write), the result is diffed against what was written, and the
+   difference is sorted by *magnitude* into teleport (>24 u), impulse (velocity jump >40 u/s with no
+   move), or shove (>0.5 u), with eight suppression rules layered on top (`plugin.cpp:1741-1763,
+   1854-1912`: `carriedLately`, `g_onLooseProp`, `g_crossedAt`, `bounced`, `draggedOnProp` x3,
+   `g_riding`). SkyCraft never does this: it overwrites the host player every frame, zeroes its
+   velocity, and ignores any host-side displacement under 300 units (`Game.cpp:19, 582-585, 788-793`).
+   PortalCraft cannot ignore everything (portals, lifts, moving platforms are real), but it should
+   hand over only what it can *name*, and ignore the rest by default. Details and the smallest change
+   in section 7.
+
+3. **The impulse path hands over noise, not game pushes.** It was built for `trigger_push` and
+   `env_physexplosion` (`docs/PORTAL_MECHANICS.md:12-13`). In Portal's code a `trigger_push` on a player
+   sets *base velocity* (`triggers.cpp:2270-2290`), which the movement adds before the move and
+   subtracts after (`gamemovement.cpp:1467, 1490-1509`), so the plugin never sees it as a velocity
+   change; it sees a per-tick position delta, i.e. a shove. And no `env_physexplosion` in the campaign
+   has the "push players" flag (a_11 flags 13, a_15 flags 1; lump data). The eight `impulse:` lines in
+   today's log are all noise: Portal's velocity jumping from 0 to -846 u/s mid infinite-fall
+   (`portalcraft.log:1944-1946, 4078-4083`) and a 25,640 u/s velocity beside a cube (`:7074-7075`).
+
+4. **A concrete plugin bug feeds that noise:** `interpolatedMinecraft` computes the velocity as
+   `(pb - pa) * 20` *before* checking whether the two steps are 64+ units apart (a teleport) and
+   returns `pb` without resetting it (`plugin.cpp:1521-1524`). After any `--goto`, level start or map
+   change Portal's player is written with a velocity of thousands of u/s for one tick; the log shows
+   25,640 u/s (`:7074`). The 10-05 "never faster than Portal's speed limit" fix (`HostDriver.java:1091-1092`)
+   caps the symptom on the Minecraft side. One line fixes the cause.
+
+5. **Chamber-by-chamber, two things are likely game-breakers and neither is in the suite:**
+   (a) riding a *sideways-moving* platform over a death pit, needed from chamber 08 (`testchmb_a_04`,
+   `rail_cart_lvl5` speed 50) and again in 12, 13, 15, 18, 19; nothing scripted has ever started one.
+   (b) the GLaDOS cores: `prop_glados_core` uses `models/props_bts/glados_ball_reference.mdl`, which
+   is not in `LiveEntities.movableProp` (`LiveEntities.java:144-146`), so a carried core stays solid in
+   Minecraft (`:190-191` only un-solidifies movable props) and Steve will be blocked by the thing in
+   his own hands, the exact bug that `carrying()` fixed for cubes (`:37-44`). (M on the consequence,
+   H on the code and the model name.)
+
+**Least sure of:** whether the "took its player back" bounce-backs (`plugin.cpp:1854-1867`) go away
+once Portal's forced duck is mirrored (section 3.2; I could not trace the geometry of the one case the
+notes describe); whether `func_breakable_surf` glass in `escape_01` stops being solid in our copy
+once a rocket shatters it (L); whether the ending of `escape_02` (upward `trigger_push` at 21 u/s plus
+`trigger_gravity` 0.00001) happens inside the scripted hand-over or just before it (M: both
+`point_viewcontrol`s carry spawnflag 4, "take control", which sets `FL_FROZEN`, `triggers.cpp:2761,
+3067-3069, 1670`, and the plugin keys on that flag, `plugin.cpp:761-769`).
+
+---
+
+## 1. Architecture as built (what matters for movement)
+
+| Piece | Where | Owner |
 |---|---|---|
-| Block rendering and placement not yet verified live; blocks never show through portals; blocks are unlit (full-bright with AO only) | The signature shot is "Minecraft blocks inside a test chamber, seen through a portal" | M0, M2 |
-| Only placed blocks exist in Portal. Items, mobs, other players, particles, break cracks, the block outline are invisible | No creepers, no TNT, no friends on screen | M3 |
-| Input is incomplete: no mouse wheel, no text input, no `/` key, Esc never reaches Minecraft, no cursor for inventories | Can't open a chest, type a command, or scroll the hotbar on camera | M1 |
-| Minecraft blocks are air to Portal's physics | A cube falls through your bridge; turrets shoot through your wall | M4 |
-| Every Portal map shares one Minecraft coordinate space | Blocks from chamber 00 float in chamber 01 | M5 |
-| Nothing is multiplayer-aware in host mode | "With friends" | M6 |
-| Runs only from a Gradle dev client with hardcoded paths | Friends can't install it | M7 |
-
-Three things should change **before** more is built on them (details in section 7): the keyboard
-polling input model, the D3D device discovery scan, and per-frame `DrawPrimitiveUP` of the whole
-world mesh. Two safety holes should be closed now: the plugin does not force `mat_queue_mode 0` and
-will race D3D9 from two threads if the launch flag is dropped, and the plugin never unhooks on
-`Unload`.
+| Steve's position and velocity, every tick | Minecraft (`HostDriver.tick`/`tickEnd`, `HostDriver.java:130-346`) | Minecraft |
+| Portal's player written to Steve's interpolated position after Portal's own movement ran | `plugin.cpp:1914-1973` (`applyMinecraft` `:1530-1550`) | plugin |
+| Portal-side moves classified and handed back (teleport / shove offset / impulse) | `plugin.cpp:1733-1912`; applied `HostDriver.java:1019-1086` | plugin decides |
+| Portal crossings | Minecraft makes them (`PlayerCrossings`); plugin matches Portal's teleport or forces one (`plugin.cpp:1774-1848`) | both, reconciled by `crossCount`/`crossMatched` |
+| Collision: BSP brushes, static props, live entities (16 Hz), holes behind linked portals | `HostCollision`, `LiveEntities`, `BspMap`, `StaticProps` | Minecraft copy of Portal |
+| Riding a lift (vertical) | plugin keeps Portal's z, Minecraft follows (`plugin.cpp:821-864, 1951-1954`; `HostDriver.java:290-304`) | Portal |
+| Carried sideways by a mover | Minecraft's `carry()` applies the entity's 16 Hz delta (`HostDriver.java:746-765`); plugin suppresses hand-overs for 1.5 s (`:813-815, 1882-1884`) | Minecraft, approximately |
+| Scripted scenes | `FL_FROZEN`/`FL_ATCONTROLS` -> Portal drives, Minecraft follows with no input (`plugin.cpp:764-783`; `HostDriver.java:305-317`). `m_hViewEntity` is not networked so that branch is dead (`:745`, lookup returns -1 per the notes) | Portal |
+| Health, death, checkpoint reload | Minecraft owns health; plugin refunds Portal's damage and forwards it; death either way kills the other; `reload` after 4 s (`plugin.cpp:900-966`; `HostHealth.java`) | Minecraft |
+| Air physics after portals / in falls | `PortalAir` + `LivingEntityAirMixin` | Minecraft, with Portal's numbers |
+| Steve's blocks in Portal | static vphysics boxes + `TraceRay` hook (`plugin.cpp:968-1140, 2030-2128`) | plugin |
+| Camera | Portal's mouse look; plugin only sets eye height, smooths small steps, F5 (`camera.cpp:265-308`) | Portal |
 
 ---
 
-## 1. Architecture as built
+## 2. Audit of what has been done
 
-| Channel | Direction | Rate | Code |
+Severity for the goal: **Breaker** (can stop a chamber), **Jitter** (visible shake/snap), **Debt**
+(works, will bite), **OK**.
+
+### 2.1 Reconciliation (plugin `serverProcessMovement`)
+
+| # | Sev | Finding | Evidence | Verdict |
+|---|---|---|---|---|
+| R1 | Jitter/Breaker | Magnitude-based classification of every Portal-side delta, with suppression windows in milliseconds (`carriedLately` 1500 ms, `g_crossedAt` 500 ms, `g_rideStill` 300 ms) and units (0.5 / 3 / 8 / 12 / 24 / 64) and u/s (40 / 300 / 450 / 700). Each threshold was tuned from one trace (commit messages `5dfa751`, `03cdec3`, `853af24`). | `plugin.cpp:1741-1763, 1873-1912, 813-815` | Wrong model. Section 7 says what to replace it with. Not urgent *if* the chamber sweep (section 6) shows no jitter; urgent the moment it does, because the next bug will get a ninth rule. |
+| R2 | Breaker | Velocity spike after a teleport between tick samples (see Summary 4). | `plugin.cpp:1521-1524`; log `:7073-7075` | Bug. Fix first. |
+| R3 | Jitter | Impulse path (see Summary 3). With R2 fixed and the `trigger_push` reality, nothing legitimate reaches it. | `plugin.cpp:1741-1763`; `triggers.cpp:2270-2290` | Remove, or gate on "player overlaps a `trigger_push` with `SF_TRIG_PUSH_ONCE`" (the only case that is an impulse, `triggers.cpp:2223-2227`; none in the campaign lumps). |
+| R4 | OK | Hard teleports (>24 u) handed with ack; level start, `trigger_teleport`, portal matches. Sound; the `following()` gate stops driving until the ack (`:1436-1438`). | `plugin.cpp:1885-1912` | Keep. |
+| R5 | Debt | Shoves summed as offsets relative to Minecraft's ack (`pendingShoves`, `moveBase` check) is correct; but shoves are also what a `trigger_push` on the player becomes (base velocity = per-tick displacement). So a 40 u/s nudge in a_15's fire pit is 0.6 u/tick, just over the 0.5 hand-over floor, and will be handed as a stream of 0.6-unit offsets with 1-2 ticks' latency. Works as a conveyor, has never been tried. | `plugin.cpp:1411-1419, 1878-1881`; lumps (a_14, a_15, escape_02 `trigger_push` speed 40/120/300/350/500 flags 1) | Test in a_15 and escape_02. If it stutters, the fix is cause-based: the plugin can see the player's `FL_BASEVELOCITY` flag (`m_fFlags` is read already, `:744`) and `m_vecBaseVelocity` by name, and hand *that* as a velocity to Minecraft instead of offsets. |
+| R6 | Jitter | `zLift` heuristic still present (learned up to 4 u, dropped by floor height / distance). | `plugin.cpp:1444-1451, 1720-1731, 1537-1545` | Works; invisible state. Leave until R1 is replaced (it becomes a named cause: "Portal rests its hull higher than ours"). |
+| R7 | OK | `clampToProps`: a server-side hull sweep against cubes/radio before placing the player, slide along the face, hand a shove only if >8 u apart, off while holding. The one piece that is cause-based (it *predicts* Portal's push). | `plugin.cpp:2449-2483, 1929-1950` | Keep; extend its prop list (P2). |
+| R8 | Debt | `g_onLooseProp` from `m_hGroundEntity` class prefix; `g_riding` only from vertical motion of the ground entity; sideways carry is a 1.5 s timer. | `plugin.cpp:821-864` | Replace the timer with "subtract the ground entity's own delta this tick before classifying" (section 7). |
+
+### 2.2 Portal crossings
+
+| # | Sev | Finding | Evidence | Verdict |
+|---|---|---|---|---|
+| C1 | OK | Minecraft-side carry, fit inside the exit opening, rest of the step swept against the world, previous-tick position carried too (no interpolation smear), server teleport removed in favour of the "moved wrongly" grace and `isEntityCollidingWithAnythingNew` off in host maps. | `PlayerCrossings.java:118-170, 177-203`; `HostDriver.java:498-548`; `LivingEntityAirMixin.java:36-42`; `ServerMoveCheckMixin.java` | Sound. Verified by the suite (wall, fling, crouched, two 30 s infinite falls). |
+| C2 | Jitter | **Centre mismatch.** Portal tests its player's centre, `origin + half hull` (36 standing, 18 ducked: `portal_player.cpp:535`), against the plane and the hole (`prop_portal.cpp:895-898`). It force-ducks the player on any crossing whose *entry* portal has a vertical component and the pair is not both floor/ceiling (`prop_portal.cpp:1016-1046`; a wall entry never ducks), and shifts the centre 16 u. Un-ducking then takes Portal's own duck timer. Steve's centre is at +36 (or +30 sneaking, `plugin.cpp:328-333`). For those ticks every floor/ceiling plane test differs by 12-18 u between the two sides. The `bounced` rule (`plugin.cpp:1854-1867`), `justBehindTicks >= 6` and `FIT_FRONT 2` (`PlayerCrossings.java:177-182`) are all symptoms of this. | as cited | Mirror Portal's duck: `m_bDucked` is a networked `DT_Local` field, so `findProp` finds it like `m_fFlags`. Send it in `HostState`; use 18 as the half height in `PlayerCrossings.step` and `geometricCrossing` while it is set. Then try removing `bounced` and watch the "not handed over" count in the suite. (M that this removes them all.) |
+| C3 | OK | Forced crossing when Portal refuses (two ticks well behind, six just behind, eight pending, or just-opened portal). Matches Portal's ownership rule: it only teleports what the simulator owns, taken on `StartTouch` (`prop_portal.cpp:806, 1530`). | `plugin.cpp:1805-1848` | Keep; the "just opened" case is the right reading of ownership. |
+| C4 | Debt | The hole is a 64x108 box, 12 u in front, 72 u (walls) / 640 u (floor, ceiling) behind, cut from the cell shapes. Portal's hole is 62.7x105.8, from 0.5 in front to 500 behind (`PortalSimulation.cpp:257-299`) and contains the exit side's world geometry; ours is void. | `HostCollision.java:25-48, 200-220` | No failing case in hand. Leave until the chamber sweep produces one (a wall portal placed low on a wall opposite a shallow floor is where it would show). |
+| C5 | Debt | Any portal change clears the whole fixed cache (`CACHE.clear()`), not just cells the holes touch. Sloped cells cost ms each (comment `:123`). Possibly the "worst frame 212 ms" in the perf lines. | `HostCollision.java:179-192` | Invalidate the union of old and new hole boxes, as `setDynamic` does. Low priority. |
+| C6 | OK | Heading turns with the crossing until Portal's view catches up. | `HostDriver.java:982-1017` | Sound. |
+
+### 2.3 Collision copy and live entities
+
+| # | Sev | Finding | Evidence | Verdict |
+|---|---|---|---|---|
+| E1 | OK | Brushes, static props, 1/16-block column cutting for slopes, live entities as BSP models / .phy hulls / boxes, per-cell cache with dirty-box invalidation. | `HostCollision.java`, `LiveEntities.java:294-383` | Sound. Same approach as SkyCraft's 1/8-block micro-steps (`SkyCraft docs/DESIGN.md` 5.1), finer. |
+| E2 | Breaker | Movable props are an allowlist by model substring: `metal_box`, `turret`, `radio` (`LiveEntities.java:144-146`), and the plugin's sweep list is `metal_box`, `radio` only (`plugin.cpp:2393`). Everything else that is `prop_physics` (28 chairs in a_15, oil drums, PC cases, cinder blocks in `escape_01`; the four GLaDOS cores) is a solid, immovable wall to Steve, and a carried core stays solid (Summary 5b). | lumps; `LiveEntities.java:190-191` | Send the entity's class and whether its physics is motion-enabled in `HostEntity` (there is room: `flags`), and make "movable" = `prop_physics*` or `prop_glados_core` with motion on. Keep the button-innards exclusion the plugin learned (`:2386-2389`) by class, not model. "Carried" = any VPHYSICS prop within reach while `gunEffect == 2`. |
+| E3 | OK | Excluded on purpose: security cameras, energy balls, Portal's shadow clones, `physicsshadowclone`, triggers. All justified from Portal's code (clones: `physicsshadowclone.cpp`; balls kill on touch themselves: `prop_energy_ball.cpp:376-379`, DMG_DISSOLVE 1500). | `LiveEntities.java:296-315`; `plugin.cpp:2272-2276` | Keep. |
+| E4 | Debt | `func_physbox` (a_15 broken stairs, 22 in `escape_01`, 3 in `escape_00`) is VPHYSICS with a `*N` model; `place()` has no branch for that and falls to the bounds box. | `LiveEntities.java:318-341, 373-381` | Approximate but solid; fine unless a stair is unclimbable. |
+| E5 | Jitter | Steve's own block boxes are static vphysics in Portal. Portal's player, written a hair inside one, is pushed out by Portal's physics and that push is handed back. The two 8.03 u "push:" lines at the a_10 fling start spot are exactly where the owner's builds sit (notes, "a_10 near (-1400,-2908)"). | `portalcraft.log:858, 1286`; `plugin.cpp:1022-1038` | Cause-based fix: a delta that starts inside one of our own `g_blockBoxes` is ours to ignore (Minecraft already put Steve legally against the block). |
+
+### 2.4 Movers (lifts, platforms, doors, buttons)
+
+| # | Sev | Finding | Evidence | Verdict |
+|---|---|---|---|---|
+| M1 | OK | Vertical lifts: Portal owns z while the ground entity moves; level-start hold (2.5 s) and riding snap in the first 8 s. Soaked over every map via `map X`. | `plugin.cpp:821-864`; `HostDriver.java:85-93, 232-236, 290-304` | Sound for `map`. Real `trigger_changelevel` elevators never driven in sequence (notes 10-06 18:00). |
+| M2 | Breaker (unknown) | Sideways platforms: carried by `carry()` from 16 Hz entity deltas (`HostDriver.java:746-765`), hand-overs suppressed 1.5 s (`carriedLately`). Never confirmed on a moving platform. Needed in chambers 08, 12, 13, 15, 18, 19 (lumps: `rail_cart_lvl5` 50 u/s, `rail_cart_rm6`, `func_tracktrain_lvl7`, `tractrain_brush_1/2` 30, `func_tracktrain_b00`, `rail_cart_lab2` 40). | lumps; code cited | Highest-value untested mechanic. Section 6 step 3. |
+| M3 | OK | Floor buttons: walks over them pass in four directions (suite); slope step-up (`EntityStepMixin`), camera step smoothing (`camera.cpp:276-289`). | suite; mixins | Sound. |
+| M4 | OK | Doors: streamed BSP brushes; `func_door_rotating` likewise. | `LiveEntities.java:318-330` | Sound. |
+
+### 2.5 Props (cubes)
+
+A four-layer stack: Minecraft's copy as an upright box with 0.5 u skin (`LiveEntities.java:141, 342-372`),
+the plugin's hull sweep (`clampToProps`), Minecraft's per-tick "hit" to shove it (`pushProps`,
+`HostDriver.java:362-400`), and the `draggedOnProp` / `g_onLooseProp` suppressions. Push and stand
+pass the suite on a clean world; carry passes `cubetest`. It works, and every layer has a reason in
+its comment. The honest judgement: it is as good as "Portal's player stands where Steve is" can get
+without Portal's own contact resolution, and I would not touch it before the chamber sweep. What I
+would change is only E2 (which props count) and, with R1, stop handing anything back while
+`g_onLooseProp` is set (today only impulses under 700 u/s are suppressed there, `plugin.cpp:1752-1754`).
+
+### 2.6 Health, death, scripted scenes, hazards
+
+Sound and verified live for toxic water, falls and the energy ball (notes 10-02 night, 10-05 commit
+`1224c39`). Turret bullets, rocket explosions, death-field `trigger_hurt`s (type 0/generic in a_14 and
+escape_02, DMG_BURN type 8 incinerators in a_13, a_15, escape_02) and the neurotoxin all go through
+the same refund path (`plugin.cpp:950-965`) and have not been tried (M that they work: it is the same
+code). One gap: Portal's own `FindClosestPassableSpace` failure deals 1 crush damage per frame
+(`portal_player.cpp:748-759`); refunded and forwarded as x0.2, Steve would bleed slowly in a place
+Portal cannot free its player. Worth a log line when `health < 100` arrives with no obvious source.
+
+### 2.7 Camera and input
+
+Sound. Eye height, step smoothing, sprint FOV, F5 with hull trace, Chell hidden by `DrawModel`
+hooks (`camera.cpp`). Keys polled, wheel and text via a window subclass, cursor while a screen is
+open (`plugin.cpp:2545-2711`). None of it is on the critical path for "beatable".
+
+### 2.8 Rendering
+
+Blocks over the platform lasers (`-pcearlysolid`, `worldrender.cpp:817-830, 975-977`) and the rim it
+gives: not on the path to beatable. Park both.
+
+### 2.9 Test rig
+
+Good and more than SkyCraft has (two JUnit tests, no rig). Gaps: the suite covers two maps and never
+a mover, a turret, a hazard, a carried prop through a portal, or a level change; the replay ring is
+45 s (`plugin.cpp:486`), shorter than any chamber; `restart.sh` can `+load` a save. Section 6 builds on
+exactly these.
+
+### 2.10 Repo hygiene for a release
+
+`tools/setup.ps1:26-28` seeds only `worlds/PortalCraft/level.dat`; `worlds/PortalCraft/` holds only
+that file (H). Minecraft 26.3 needs `data/minecraft/world_gen_settings.dat` too (notes 10-06). Commit
+the `data/` folder from a fresh `run/saves/PortalCraft` and copy it.
+
+---
+
+## 3. The references, point by point
+
+### 3.1 Portal's own code (`host/portal/ref/portal-base`, MIT mod base; constants may differ from retail)
+
+| Question | What the code says | Ours | Gap |
 |---|---|---|---|
-| `HostState` (228 B UDP, 127.0.0.1:27516) | Portal -> MC | every server frame (66 Hz) | `plugin.cpp:661-699`, `Proto.java:52-83` |
-| `McState` (44 B UDP, :27515) | MC -> Portal | every render frame (<=144 fps) | `HostDriver.java:144-159`, `plugin.cpp:174-180` |
-| `HostEntities` (<=13.8 KB UDP) | Portal -> MC | ~16 Hz | `plugin.cpp:564-631`, `HostLink.java:60-66` |
-| Dev packets `PCC1` `PCK1` `PCT1` (to Portal), `PCD1` (to MC) | anyone local | ad hoc | `plugin.cpp:181-198`, `HostLink.java:55-59` |
-| Overlay mapping `Local\PortalCraft_Overlay_v1` (42.2 MB) | MC -> Portal | every MC frame | `OverlayLink.java`, `overlay.cpp:103-233` |
-| World mapping `Local\PortalCraft_World_v1` (25.0 MB) | MC -> Portal | on change (<=4/s in bulk) | `WorldLink.java`, `worldrender.cpp:94-206` |
+| When does Portal teleport the player? | Simulator owns the entity (ownership on `StartTouch`), it is linked, the *centre* is behind the plane, and the entity is in the hole shape. `prop_portal.cpp:804-927, 1530` | Minecraft: centre behind plane and inside the oval (`PlayerCrossings.java:136-141`); plugin forces after 2/6/8 ticks or at once for a just-opened portal (`plugin.cpp:1833-1834`) | Ownership is modelled by the "just opened" rule; the hole test uses an oval where Portal uses the 98 % rectangle (`PortalSimulation.cpp:274-292`). Minor. |
+| Where is the centre? | `origin + half hull`: 36 standing, 18 ducked. `portal_player.cpp:535` | 36 / 30 sneaking / 12 gliding (`plugin.cpp:328-333`) | C2. |
+| Forced duck | Entry portal with any vertical component, pair not both floor/ceiling: duck, centre shifted 16. `prop_portal.cpp:1016-1046`; `ForceDuckThisFrame` only sets `m_bDucked` (`portal_player.cpp:1159-1166`) | Not modelled | C2. |
+| Position carry | `M * centre + (origin - centre)` (`:1062-1063`), then `FindClosestPassableSpace` fix-ups elsewhere | Same carry; our own `fit` (`PlayerCrossings.java:197-203`) | Equivalent by design; plugin discards Portal's fix-up for matched crossings (`plugin.cpp:1777-1786`). Fine. |
+| Exit velocity | Floor exit: z at least 300 for players; cap 1000. `prop_portal.cpp:43-45, 1141-1142, 1160-1162` | Same (`PlayerCrossings.java:212-230`) | None. The notes said "from memory, unverified"; now verified. |
+| Hole shape | 0.5 in front to 500 behind, 98 % of 64x108; holds remote geometry. `PortalSimulation.cpp:257-299` | 12 front, 72/640 behind, 100 %, void | C4. |
+| Funnel | Only with no sideways input, falling, near the portal. `portal_gamemovement.cpp:177-230, 314-343` | Looser conditions, capped blend (`PortalAir.java:82-109`) | Acceptable. |
+| `trigger_push` on a player | Base velocity, not an impulse (`triggers.cpp:2270-2290`); `SF_TRIG_PUSH_ONCE` is the only impulse (`:2223-2227`) | Handed as impulses in theory, as shoves in practice | R3, R5. |
+| `env_physexplosion` on players | Only with flag 2; none in the campaign lumps | n/a | Remove the assumption from `PORTAL_MECHANICS.md:13`. |
+| Energy ball vs player | 1500 DMG_DISSOLVE on touch (`prop_energy_ball.cpp:376-379`) | Refund + kill flag | Verified live. |
+| Scripted cameras | `point_viewcontrol` flag 4 -> `EnableControl(false)` -> `FL_FROZEN` (`triggers.cpp:2761, 3067-3069, 1670`). Both campaign cameras have flags 28. | `FL_FROZEN` -> `kHostScripted` | Covered. |
+| Cube/turret pickup | `PlayerUse` is Portal's own (`portal_player.cpp:866-905`) | E is Portal's use; Tab is Minecraft's E (`HostDriver.java:1113-1133`) | Covered. |
+| Standing on a prop | Portal's player rides vphysics ground (`VPhysicsShadowUpdate`, `portal_player.cpp:624-654`) and gets velocity kicks from it (`:684-713`) | The kicks are what `g_onLooseProp` suppresses | R1. |
 
-Hooks inside Portal (all vtable patches, no byte patterns):
+### 3.2 SkyCraft (chasmlol, 0.1.2)
 
-| Hook | Where | Runtime check |
+| Topic | SkyCraft | PortalCraft | Lesson |
+|---|---|---|---|
+| Who owns position | Minecraft; Skyrim's player set every frame, its velocity zeroed. `Game.cpp:788-793` | Same, but Portal's movement runs first and its velocity is written from Minecraft's | Same model. |
+| Host-side pushes | Ignored under 300 units; over that, a full resync by `teleportSeq`. `Game.cpp:19, 576-591` | Classified from 0.5 units up | Default-ignore is the proven model; Portal needs named exceptions (portals, movers), not a lower threshold. |
+| Hand-over to the host | Furniture, mount, kill move, AI-driven, certain camera states; hand-back is a resync. `Game.cpp:380-410, 610-622` | `FL_FROZEN`/`FL_ATCONTROLS` | Same idea; ours is narrower because Portal is simpler. |
+| Waiting for collision after a teleport | Minecraft holds still and reports `ack - 1` until released; Skyrim re-teleports if the hold is far from its player. `SkyClient.java:385`; `Game.cpp:624-633` | `holdWithHostUntil` 2.5 s in level starts (`HostDriver.java:278-283`) | Equivalent. |
+| Moving platforms, standing on physics objects | Nothing. Skyrim has no player-carrying movers; NPCs are pushed out of blocks (`NpcBlocks.cpp`). | Needed | Nothing to borrow. PortalCraft is past SkyCraft here. |
+| Level transitions | World id change -> collision epoch reset + teleport. `Game.cpp:565-574` | `LevelInit` -> `g_needSync`; `MapRegions` x-offset per map | Equivalent. |
+| Slopes | 1/8-block micro-steps (DESIGN 5.1) | 1/16 columns + `EntityStepMixin` | Ours is finer. |
+| Camera | Skyrim's camera overwritten from Minecraft's eye and bob (`Game.cpp:800-905`) | Portal keeps its own look; plugin adjusts height | Different, both fine. |
+| Health | Minecraft authoritative, host damage forwarded, death kills the host player (DESIGN 8.3) | Same | Same. |
+| Testing | Two unit tests, no rig | 16-check scripted suite, two pairs, replay tool | Nothing to borrow. |
+
+---
+
+## 4. Chamber-by-chamber inventory
+
+Entity counts are from lump 0 of each BSP in `D:\SteamLibrary\steamapps\common\Portal\portal\maps`
+(H). Chamber numbers per map are from memory of the game (M). Status: **H**andled (code + verified),
+**h** handled in code but unverified in that chamber, **U**nknown/untested, **X** unhandled.
+"Native" means Portal does it to its own player/props and nothing of ours is in the way.
+
+| Map | Chambers | Needs | Status, per mechanic |
+|---|---|---|---|
+| `testchmb_a_00` | 00-01 | Wake-up camera (`point_viewcontrol` flags 28), `trigger_teleport` blackout, 8 fixed `prop_portal`, 1 cube on a button, 2 fizzlers, elevator | Scripted **H** (verified 10-02), teleport **H** (opaque hard move), fixed portals **H**, cube/button **H** (suite on a_02), lift **H** |
+| `testchmb_a_01` | 02-03 | Get the gun (`weapon_portalgun`), first shots, `func_portal_bumper`/`noportal` placement, 3 elevators, 1 rotating door | Gun pickup native **H** (3D gun verified), placement native **H**, doors **H** |
+| `testchmb_a_02` | 04-05 | Cubes (2) through portals onto buttons, fizzlers, elevators | **H** (suite: push, stand, carry); cube *through a portal* while held: native, **h** |
+| `testchmb_a_03` | 06-07 | Energy balls (2 launchers, life 12) into catchers, ball-trap doors, elevators, `func_tracktrain_b00` platform | Ball kill **H** (verified), catcher native **h**, platform ride **U** (M2) |
+| `testchmb_a_04` | 08 | Energy ball starts `rail_cart_lvl5` (50 u/s) over a death field (`trigger_hurt` 100 generic at 62,62,-192); ride it | **Platform ride U** (first hard dependency on M2); death field **h** (same path as toxic water) |
+| `testchmb_a_05` | 09 | Cube, buttons, elevators | **H** |
+| `testchmb_a_06` | 10 | First momentum fling, cube | Fling **H** (suite "fling", numbers verified vs source) |
+| `testchmb_a_07` | 11-12 | Second portal colour (2 `weapon_portalgun`), rotating doors (4), `rail_cart_rm6`, energy ball, toxic water (`hurt_player_goo_`), `trigger_push` 400 flags 9 | Gun upgrade native **h**, goo **H**, platform **U**, push **U** (R5) |
+| `testchmb_a_08` | 13 | Energy ball, `func_tracktrain_lvl7`, 2 cubes, `trigger_vphysics_motion` (props only) | Platform **U**, rest **H** |
+| `testchmb_a_09` | 14 | Flings over a death field (500,1768,-288), energy ball, cube | Fling **H**, field **h** |
+| `testchmb_a_10` | 15 | Three launchers, two `tractrain_brush` platforms (30 u/s) over goo, spawned cart, 4 `trigger_push` 400, 5 fizzlers, 5 security cameras | Portals **H** (suite lives here), platforms **U** (jump on a moving one: `carriedLately`, unconfirmed), push **U**, cameras non-solid **H** |
+| `testchmb_a_11` | 16 | 12 floor turrets, 10 cubes as shields, 5 `npc_bullseye`, 2 `env_physexplosion` (flags 13: props only) | Turret bullets vs Steve **h** (refund path), turrets vs Steve's blocks **H** (TraceRay hook verified for portal shots), knocking a turret over by walking into it **U** (`pushProps` hit; Portal's player would push by contact), picking one up native **h** |
+| `testchmb_a_13` | 17 | Companion cube, incinerator (`trigger_hurt` 100 DMG_BURN at 1356,-192,-208), 3 launchers, `box_pusher` push 450 (props), 4 camera props | Cube **H**, incinerator native + burn kill **h**, balls **H** |
+| `testchmb_a_14` | 18 | Long chamber: 4 turrets, 14 bullseyes, 2 launchers, water hazards (3 `trigger_hurt`), `func_tracktrain_b00`, 8 rotating doors, 2 `trigger_push` 40 flags 1, generic death field | Turrets **h**, platform **U**, pushes **U**, doors **H** |
+| `testchmb_a_15` | 19 | `rail_cart_lab2` (40 u/s) into fire; 11 `trigger_hurt` (fire 1/tick DMG_BURN, 200 burn, water); escape begins: 5 `func_physbox` broken stairs, 12 `func_rotating`, 4 ragdolls, 28 chairs + junk `prop_physics`, pushes 40/350/500, `physexplosion` lids (props) | Platform **U**, fire **h**, physbox stairs **h** (E4, bounds boxes), junk props **immovable to Steve** (E2: jump or punch), `func_rotating` fans streamed as BSP **h** |
+| `escape_00` | — | Box tubes (10 `func_tracktrain` 600 u/s, props only), 1 death field, 3 physboxes, 34 doors, 18 portal detectors, cans/bottles | Mostly native **h**; junk props E2 |
+| `escape_01` | — | Rocket turret (`laser_1`) whose rocket must be redirected through portals into 3 `func_breakable_surf` panes; 10 turrets; 22 physboxes; 7 oil drums, chairs, cinder blocks | Rocket native **h**, explosion damage **h**, glass becoming passable after shattering **U** (L), turrets **h**, physbox stacks **h**, junk E2 |
+| `escape_02` | GLaDOS | 4 `prop_glados_core` (`glados_ball_reference.mdl`) to carry into the incinerator (`trigger_hurt` DMG_BURN at 10384,1216,176), `rocket_1`, neurotoxin countdown (4 `vgui`), `logic_playerproxy`, ending: `trigger_push` up 21 + `trigger_gravity` 0.00001 + 9 pushes at 300 + `point_viewcontrol` flags 28 + credits | **Cores: X** (E2, carried core stays solid), rocket **h**, neurotoxin **h**, ending **U** (scripted if the camera takes control before the pull-up; M) |
+
+Mechanics across the game, rolled up:
+
+| Mechanic | Status | What decides it |
 |---|---|---|
-| `IGameMovement::ProcessMovement` slot 1, server and client | `plugin.cpp:740-743`, `:414-423` | `CMoveData` origin vs `IPlayerInfo` origin, `plugin.cpp:309-317` (H, log line 16 "layout OK") |
-| `IDirect3DDevice9::Present/PresentEx/Reset/ResetEx` on the shared d3d9 vtable | `overlay.cpp:274-297` | first-draw log only |
-| `IVRenderView::SceneEnd` slot 9 | `worldrender.cpp:260-266` | "N SceneEnd calls this frame" log, `worldrender.cpp:222-228` |
-| `ICollideable` slots 3/4/9/10/11/13/14/16 (reads, not hooks) | `plugin.cpp:494` | player's origin + solid type, `plugin.cpp:513-533` (H, log line 14) |
-| `prop_portal` fields by SendTable name | `plugin.cpp:115-128` | offset-free by design |
-
-Minecraft side: `HostDriver.tick` (20 Hz client tick) applies the host camera, keys, teleports and
-entities; `HostDriver.frame` (every render frame) reports position and runs `WorldExporter`.
-`HostCollision` injects the map as `VoxelShape`s through `BlockCollisionsMixin` and `ClipContextMixin`.
-Everything client-side runs on the render thread (Minecraft's client tick is on it); only
-`HostCollision` is touched from the integrated-server thread and it uses `ConcurrentHashMap`s and
-volatiles (`HostCollision.java:43-53`).
-
----
-
-## 2. Audit: correctness and robustness
-
-Severity: **Crash** (takes Portal down), **Bug** (wrong behaviour), **Perf**, **Debt**.
-
-### 2.1 Plugin hooks
-
-| # | Sev | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| P1 | **Crash** (latent) | The plugin issues D3D9 calls from `SceneEnd` and `Present` and assumes they run on the thread that owns the device. That holds only because `play-portal.cmd` passes `+mat_queue_mode 0`. With queued rendering (Portal's default is -1 = auto, which picks 2 on multicore), `SceneEnd` runs on the main thread while the material system issues D3D from a worker: two threads on a non-`D3DCREATE_MULTITHREADED` device, and the block draw would also land before the queued scene (wrong depth). Nothing in the plugin checks or forces the cvar. | `play-portal.cmd:11`, `worldrender.cpp:208-218`, `overlay.cpp:235-245` | At `Load`/first `GameFrame`, force `mat_queue_mode 0` through `ServerCommand` (or `ICvar`), and read it back; if it isn't 0, disable both render hooks and log. (M that Portal's queue mode behaves as SDK 2013.) |
-| P2 | **Crash** (on unload/exit) | `Unload` only logs. The four d3d9 vtable slots, the `SceneEnd` slot and both `ProcessMovement` slots keep pointing into the DLL after it is unmapped. `plugin_unload`, or engine teardown order at exit, then calls freed code. | `plugin.cpp:747-749`, `overlay.cpp:260-272`, `worldrender.cpp:260-266` | Restore every patched slot in `Unload` (keep the originals you already store), and additionally pin the module (`GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_PIN, ...)`) so an unload can never unmap it. |
-| P3 | **Crash** (on Portal update) | `WorldToScreenMatrix` is read as `const float*` from VEngineClient013 slot 36 and 16 floats are dereferenced with no validation. If a Portal update shifts the slot, the returned value is whatever that function returns, and `m[c*4+r]` faults inside the render path. Same class of risk for slots 11/19/84 (`Con_IsVisible`, `GetViewAngles`, `IsPaused`) and `IVRenderView` slot 9, none of which has a self-check like the two that exist. | `worldrender.cpp:42-44`, `:105`, `:140-144`; `sdk.h:100-104` | (a) SEH-guard the matrix read and sanity-check it (finite, row 3 looks like a perspective row); (b) add a build fingerprint gate: at `Load`, read `steam.inf` `PatchVersion` (currently 1745010 per `docs/PORTAL_RTX_RESEARCH.md:15`) and the PE `TimeDateStamp`/`SizeOfImage` of `engine.dll`, `client.dll`, `server.dll`; on an unknown build run in "link-only" mode with no hooks and a clear log line. This is the pattern the head-tracking mod uses (`docs/PORTAL_RTX_RESEARCH.md:99-106`). |
-| P4 | **Bug** (M) | The block pass draws only in the first `SceneEnd` of a frame and assumes that is the main view. In Source, portal views are rendered recursively inside the main view's draw, so with two portals open the first `SceneEnd` may be a portal view (whose camera `WorldToScreenMatrix` does not describe). The live verification ("test cube hidden by the floor") was done with `fake_world.py` and, from the log, with "1 SceneEnd calls this frame" i.e. no portals open. | `worldrender.cpp:208-218`; plugin log lines 20-22, 38-39 | Verify with both portals open and the cube in view. The real fix is per-view camera capture (section 7, item 2): hook `IVRenderView::ViewSetup3D` (interface slot, pattern-free) to record each view's `CViewSetup`, then draw in every view with its own matrix. That is also what makes blocks visible *through* portals. |
-| P5 | **Debt/Crash-adjacent** | `findGameDevice` scans every writable section of `shaderapidx9.dll`, and one level of heap objects behind it, calling `QueryInterface` on any pointer whose first word lies inside `d3d9.dll`. The SEH guard catches access violations but not a real d3d9 function entered with a wrong `this` that writes before it faults. It worked here, but it is unnecessary: `hkPresent` receives Portal's real device as its first argument. | `overlay.cpp:363-406`, `:235-239` | Capture `g_gameDevice` from the first `Present` whose back buffer is larger than the 64x64 probe (`overlay.cpp:107-112` already fetches the back buffer). Delete the scan. `worldrender` then has a device one frame later, which is fine. |
-| P6 | **Perf** | `DrawPrimitiveUP` with up to 196,608 vertices x 24 B = 4.7 MB per call, twice (solid + translucent), every frame. UP draws copy through the runtime's internal buffer each call; across the Remix bridge (M9) that becomes 4.7 MB of IPC per frame. | `worldrender.cpp:187-198` | Keep a `D3DPOOL_DEFAULT` dynamic vertex buffer per slot, upload only when `meshSeq` changes, draw with `DrawPrimitive`. Recreate on `Reset` (the hook exists, `overlay.cpp:247-255`). |
-| P7 | **Perf** | Two full `D3DSBT_ALL` state blocks captured and applied every frame (overlay + world). | `overlay.cpp:159-163, 231`, `worldrender.cpp:130-134, 200` | Acceptable now; switch to `D3DSBT_PIXELSTATE`/explicit saves later. |
-| P8 | **Bug** (M) | Keys are polled with `GetAsyncKeyState` once per server frame. A tap shorter than one frame can be missed, key repeat for typing doesn't exist, and the mouse wheel cannot be read this way at all. The map has no `/`, backspace, escape, arrows or punctuation, so chat and commands can't be typed. | `plugin.cpp:209-217`, `:232-241` | Section 7, item 1: subclass Portal's window procedure. |
-| P9 | **Bug** (M-H) | Characters never reach Minecraft. `HostDriver.press` sends `keyPress` events; chat, the anvil, signs and command input need `charTyped` (SDL text input). T opens chat; letters probably don't appear. | `HostDriver.java:332-336` | Forward `WM_CHAR` (from the WndProc subclass) as a new `HostState` text field; call `keyboardHandler.charTyped`. |
-| P10 | **Bug** (M) | Both guns are probably on screen when Steve holds the Minecraft portal gun: Minecraft draws its hand holding the `portal_gun` item into the overlay, and nothing turns Portal's own viewmodel off or on (`r_drawviewmodel` never appears in the plugin). The research doc already proposed the policy (hide the MC hand while holding the gun, show Portal's gun; otherwise the reverse). | `HostDriver.java:159`, `plugin.cpp:289-292`, `docs/PORTAL_RTX_RESEARCH.md:132` | Add `screen`/`hand` policy to M2. |
-| P11 | **Debt** | The `zLift` heuristic (`g_zLift`, up to 4 units, dropped when the player walks 24 units away) papers over Portal resting the player a hair above Minecraft's floor. It works, but it is invisible state that will confuse the next person debugging bob. | `plugin.cpp:261-279`, `:332-339` | Keep, but log when it changes (dev mode) and add it to `HostState` so MC can see it. |
-| P12 | **Debt** | `sendEntities` filters triggers by classname prefix and by `FSOLID_TRIGGER/NOT_SOLID`, caps at 128 entities within 2048 units, and `g_entityEdicts` is rescanned every 30 frames. Large maps (escape_02) could exceed 128 solids in range; the overflow is silently dropped (nearest-first is not applied). | `plugin.cpp:580-581`, `:598` | Sort by distance before truncating, or raise `kMaxHostEntities` (the datagram has room up to ~64 KB on loopback). |
-| P13 | **Bug** (L) | `fillPortals` keeps, per colour, the nearest *active* portal. Portal 1 maps have multiple linkage groups (e.g. the fixed portals in the relaxation vault). If a map-placed portal of the same colour is nearer than the player's, Minecraft carves the wrong hole. Mitigated by `-1e6` bias for active ones only. | `plugin.cpp:473-478` | Prefer the player's own gun's portals (`m_iLinkageGroupID` == the player's, readable by SendTable name like the other fields). |
-
-### 2.2 Protocol and threading
-
-| # | Sev | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| T1 | **Bug** (L) | `HostState.seq` and `HostEntities.seq` are never used for ordering on the Minecraft side; the newest *received* packet wins. Loopback UDP preserves order in practice, so this is theoretical. | `HostLink.java:67-71`, `LiveEntities.java:50-53` | Drop packets with `seq <= last`. |
-| T2 | **Bug** (M) | `HostLink.receiveLoop` returns on the first `IOException`, and nothing restarts the thread; the link is dead for the rest of the session. On Windows, sends to a closed port can surface as a receive error on an unconnected UDP socket (WSAECONNRESET); the JDK normally absorbs it, but any other error is fatal here. | `HostLink.java:72-75` | Log and `continue`; only exit when the channel is closed. |
-| T3 | **OK** | Overlay triple buffer and world double buffer are correct: MC never writes `front` or `reading`; the host re-checks `front` after claiming (`worldrender.cpp:112-122`); MC backs off when both slots are held (`WorldExporter.java:282-285`). Release fences on the Java side and `MemoryBarrier` on the host side are right for x86. | `OverlayLink.java:115-132`, `WorldLink.java:147-177` | None. |
-| T4 | **OK** | Header values from shared memory are validated before use (slot index, sizes, vertex counts), so a hostile or stale writer can only produce garbage pixels, never an out-of-bounds read. | `overlay.cpp:128-137`, `worldrender.cpp:47-49, 123-127` | None. |
-| T5 | **Bug** (M) | The `HostCollision` fixed cache is **fully cleared on every portal shot** (`setPortals` -> `CACHE.clear()` and `DYNAMIC_CACHE.clear()`). Sloped cells cost milliseconds each to rebuild (the comment in `setDynamic` says so), so the frames after a shot on a slope-heavy map will hitch as the player moves. | `HostCollision.java:154-158`, `:102-103` | Invalidate only cells intersecting the old and new holes (same pattern as `setDynamic`'s dirty boxes). |
-| T6 | **OK** | `setDynamic` from the client thread vs `shapeAt` on the server thread: `computeIfAbsent` holds the bin lock during `build`, and `remove` waits for it, so a stale value cannot survive an invalidation. The volatile `dynamic` is read inside the lambda. | `HostCollision.java:94-120`, `:189-190` | None. Worth a comment. |
-| T7 | **Debt** | Protocol version is only the trailing digit in each magic. There is no capability or version handshake, no `gameDir`, no FOV, no view offset, no roll, no health, no "MC screen open", no cursor, no wheel, no text. Several of these are needed by M1/M2/M7. | `portalcraft_protocol.h:45-77` | Bump to `PCH2`/`PCM2` with the new fields in one go (section 7, item 4). |
-| T8 | **Debt** | `HostEntity.flags` (`kEntityStatic`) and `HostState.velocity` are sent but never read; `kHostDriving` likewise; `Proto.PORTAL_EXISTS/ACTIVE` unused. | `plugin.cpp:612-614`, `Proto.java:16-22` | Remove or use. |
-| T9 | **Perf** | Minecraft reads back and copies its full frame at up to 144 fps (`FramerateLimitTrackerMixin`), 3.7 MB at 720p, 14.7 MB at 1440p, while Portal presents at its own rate. | `FramerateLimitTrackerMixin.java:16`, `FrameExporter.java:89-101` | Cap Minecraft at the host's present rate (send it in `HostState`), or 72. |
-
-### 2.3 Minecraft side
-
-| # | Sev | Finding | Evidence | Fix |
-|---|---|---|---|---|
-| J1 | **Bug** (M) | `HostDriver.tick` applies the host camera at 20 Hz, and clicks are replayed from the same tick. Block placement aims where the mouse was up to 50 ms ago. For video it is "close enough", but fast flicks will place blocks a cell off. | `HostDriver.java:123-126`, `:135-138` | Apply yaw/pitch per frame in `frame()` (and to `Camera` via a mixin, as `BLOCK_RENDER_RESEARCH.md` §2.2 specifies) before processing clicks. |
-| J2 | **Bug** (L-M) | `teleport()` sets the client position and queues a server teleport. The server's `ClientboundPlayerPositionPacket` then snaps the client a tick or two later, after the client has already moved on with its velocity. Possible small stutter after each portal. The live tests say it feels fine; keep an eye on it in recordings. | `HostDriver.java:233-252` | If it shows, apply the server teleport first and let the client follow from the position packet. |
-| J3 | **Bug** (M) | `HostCollision` is a process-wide singleton: one map, no player context. Fine in single-player, wrong as soon as two players on the same server are in different Portal maps (M6). | `HostCollision.java:43-51` | Key maps by player (section 7, item 6). |
-| J4 | **Bug** (M) | All Portal maps share Source coordinates, and `Units` maps them to the same Minecraft coordinates. A map change (`LevelInit` -> `HostState.map`) swaps the collision but leaves the previous chamber's blocks in place. | `Units.java:17-23`, `HostDriver.java:213-231` | Per-map offset or dimension (M5). |
-| J5 | **Bug** (M) | Displacements (`LUMP_DISPINFO`) are not read. Portal 1 uses few, but the escape maps have some rubble/terrain displacements; those surfaces will be air to Steve. (M on which maps.) | `BspMap.java:41-48` | Add displacement triangles as sloped brushes, or as `kColTris`-style triangles in a later collision layer. Check `escape_01/02` first. |
-| J6 | **OK** | `WorldExporter` is on the render thread; `markDirty` is synchronized; section reads are the same unlocked reads vanilla's chunk builder does. `MESH_NANOS_PER_FRAME` = 3 ms keeps it from stalling frames. | `WorldExporter.java:50`, `:88-97`, `:207-222` | None. |
-| J7 | **Bug** (M) | The block atlas is copied from each sprite's **first** animation frame; water, lava, fire, portal blocks stand still in Portal. The host-side comment claims "animated sprites" are handled; they are not. | `WorldAtlas.java:14-16` | Re-upload the atlas on a timer with the current frame (SkyCraft's `SkyAtlas` does this), or skip until M2. |
-| J8 | **Bug** (M) | Block light (`lightCoords`) is dropped in `MeshBuilder.put`; only tint x AO x face shade survive. Blocks are full-bright and will not match Portal's lit chambers, and won't react to Portal's auto-exposure (HDR tonemap scale). | `WorldExporter.java:363-374`, `worldrender.cpp:153-158` | M2 lighting. |
-| J9 | **Debt** | `giveGun` runs on every resync and `PauseScreen` is closed every tick while linked, so Minecraft's own menu and options are unreachable in host mode. | `HostDriver.java:90-92`, `:112` | Intentional for now; M1 gives Esc semantics. |
-| J10 | **Debt** | Unused import `java.nio.file.Files` in `HostDriver`; `sdk::clientSetViewAngles` unused; `vcallVector` only used once. | `HostDriver.java:3`, `sdk.h:103` | Tidy. |
-| J11 | **OK** | BSP/VPK/PHY parsers bounds-check offsets and throw `IOException` rather than reading out of range (`Phy.check`, `StaticProps.props` size checks, `Vpk.read`). A corrupt map can only fail a load, which `loadMap` catches and records in `failedMap`. | `Phy.java:107-111`, `StaticProps.java:107-109`, `HostDriver.java:226-230` | None. |
-| J12 | **Perf** | `CACHE` grows without bound as the player explores and raycasts (128-block clips touch many cells). Fine for a chamber, worth a soft cap for long sessions. | `HostCollision.java:52` | Evict cells far from the player on map change / every N minutes. |
-
-### 2.4 Memory and perf in a 32-bit process
-
-Mapped views inside `hl2.exe`: overlay 44,240,896 B (42.2 MB) + world 26,218,496 B (25.0 MB) = **67 MB of
-address space**, plus a dynamic overlay texture (up to 14.7 MB at 1440p), the atlas texture (up to
-16 MB) and the D3D runtime's UP scratch buffer (~4.7 MB). About 100 MB on top of Portal's own
-footprint (H on the sizes, from `portalcraft_protocol.h:118-123, 147-154`). That is fine if `hl2.exe`
-is `/LARGEADDRESSAWARE` (4 GB VA on 64-bit Windows) and tight but survivable if not (2 GB). **Check
-the flag** (`dumpbin /headers hl2.exe | findstr "large"`) before raising the overlay to 4K; at
-3840x2160 three slots would be 100 MB. Prefer recording at 1080p/1440p and keep `kOverlayMaxW/H`.
-
-Per-frame CPU on the host: one 1280x720 RGBA->BGRA SSSE3 swizzle into a locked texture (fast), two
-state-block captures, and the two UP draws (P6). Nothing else is per frame.
+| Portals: walk, fall, fling, crouch, infinite fall, re-placed mid-fall | **H** | suite 16/16 |
+| Momentum flings | **H** | `PortalAir`; constants verified |
+| Cubes: push, stand, carry, button | **H** (clean world) | suite + cubetest |
+| Floor buttons, doors, fizzlers, placement rules | **H** | suite + native |
+| Elevators (vertical), level start | **H** via `map`; **U** via real `changelevel` in sequence | notes 10-06 |
+| Sideways platforms (6 maps) | **U** | never started by a script |
+| Energy balls, catchers | **H** / native | verified kill |
+| Toxic water, death fields, incinerators | **H** / **h** | one path |
+| Turrets (3 maps), rocket turret (2) | **h** | untested; same damage path |
+| `trigger_push` on the player (4 maps) | **U** | shove stream, R5 |
+| Scripted scenes (a_00, escape_02) | **H** / **U** | `FL_FROZEN` |
+| GLaDOS cores | **X** | E2 |
+| Junk `prop_physics` in corridors (a_15, escape_*) | immovable to Steve | E2; punch/jump as a workaround |
+| Breakable glass (escape_01) | **U** | |
+| Saves/loads mid-chamber | **H** | `+load pcrestart` used daily |
 
 ---
 
-## 3. Hardcoded assumptions that will break elsewhere
+## 5. What is actually left
 
-| Assumption | Where | Breaks on | Fix |
-|---|---|---|---|
-| Portal maps at `D:/SteamLibrary/steamapps/common/Portal/portal/maps` unless `PORTALCRAFT_MAPS`/`-Dportalcraft.mapsDir` | `HostDriver.java:39-40` | the laptop, any friend | Send Portal's game directory in `HostState` (new field); no config at all |
-| Same path in `install.cmd` default and all four map-reading tests | `install.cmd:5`, `BspMapTest.java:19`, `FloorAccuracyTest.java:38`, `HostAimTest.java:23`, `StaticPropsTest.java:20` | laptop (tests skip, silently) | Tests: use `find-portal.ps1`'s result via a system property, or a committed fixture map (section 4) |
-| VS 2022 Build Tools at `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools` | `build.cmd:4`, `setup.ps1:41` | any other VS edition/path | `vswhere.exe` |
-| Window `-w 1600 -h 900` windowed | `play-portal.cmd:11` | 1366x768 laptop screen; 4K monitors (overlay cap 2560x1440 silently disables the HUD, `FrameExporter.java:69`) | Pick from the desktop size; log loudly when the overlay is skipped |
-| Portal hull 32 units -> Steve 0.8 blocks wide | `AvatarDimensionsMixin.java:19` | Portal with RTX (same engine, same hull: fine), other hosts | Send hull size in `HostState` |
-| Portal oval 64x108 units, hole depth 72 | `HostCollision.java:25-29` | nothing in Portal 1 | Fine |
-| 1 block = 32 units (Steve scaled 1.25, `HostScale`), yaw = -src - 90 | `Units.java:10, 34-36` | nothing | Fine (verified live) |
-| Interface names `VEngineServer021`, `VEngineClient013`, `VEngineRenderView014`, `VModelInfoServer004/003`, `PlayerInfoManager002`, `GameMovement001` | `plugin.cpp:728-734`, `worldrender.cpp:254-255` | a Portal update that bumps versions (Valve has been updating Portal in 2024-25) | Fingerprint gate (P3); log every requested interface that comes back null |
-| vtable slots listed in section 1 and `sdk.h:48-104`, `plugin.cpp:494`, `overlay.cpp:258`, `worldrender.cpp:260` | | Portal update, Portal RTX (older engine fork: `VEngineClient014` exists in both, slot order may differ) | Same |
-| `CMoveData` offsets 36/44/48/52/64/152, `edict_t` size 20, SendProp size 80 | `sdk.h:37-39, 70-73, 77-82` | Portal RTX (M), Portal update (L) | The existing runtime check covers origin; add velocity (compare with `IPlayerInfo` velocity) |
-| `SDL` scancodes for Minecraft input, modifier bit values | `plugin.cpp:209-217`, `HostDriver.java:322-330` | a Minecraft version that changes input backends | Fine for 26.3 |
-| Minecraft 26.3, Fabric Loader 0.19.5, Loom `1.18-SNAPSHOT` | `gradle.properties` | Loom snapshot drift breaks the build without any code change | Pin a released Loom |
-| FOV: nothing is assumed yet because Minecraft doesn't render the level. The moment anything on the MC side must match the host camera (cursor hit-testing is fine; the research doc's occluder path is not), `fov_desired` 75..90 and hor+ scaling matter | `docs/BLOCK_RENDER_RESEARCH.md:134-153` | | Send the server's `GetFOV()` in `HostState` when needed |
-| Spawn coordinates of `testchmb_a_00` in tests | `BspMapTest.java:21`, `HostAimTest.java:24` | a different Portal build's map (unlikely) | Fine |
+In the order I would do them. Each item is tied to a chamber in section 4.
 
----
+1. **Plugin bugs that corrupt movement everywhere:** R2 (velocity spike) and R3 (impulse path). Half a day.
+2. **Props that must be movable or carriable:** E2 (cores, junk; send class + motion flag). Half a day.
+   Without it `escape_02` is not beatable (M).
+3. **Sideways platforms, M2:** confirm riding and jumping on/off in a_04 (chamber 08), then a_10 and a_15.
+   Unknown effort: one day if `carry()` holds, three if the mover delta has to be modelled in the plugin.
+4. **Duck mirroring, C2:** one protocol field, two uses. One day including the suite's bounce count.
+5. **The real walkthrough**, chamber 00 to credits via the real elevators, with the ledger below,
+   fixing only what breaks. This is where turrets, `trigger_push`, the glass, the cores and the ending
+   get their first real test. Two to four days of play and fixes.
+6. **Release blocker:** `setup.ps1` seed world (2.10). An hour.
+7. **Only if the walkthrough shows jitter at movers or props:** replace the magnitude classifier
+   with the cause-based one (section 7). Two days.
 
-## 4. Code quality
-
-**Good:** one idea per file, short comments that say *why*, protocol in one header with
-`static_assert`s mirrored by `WorldFormatTest.layoutMatchesProtocol`, runtime layout self-checks,
-bounded parsers, and no byte patterns anywhere in the plugin.
-
-**Dead or stale:**
-- `README.md` "Known gaps" (lines 87-90) still says dynamic models aren't solid and blocks aren't drawn: both shipped on 10-01/10-02. Update it with every milestone.
-- `kEntityStatic`, `HostState.velocity`, `kHostDriving` unused (T8). `sdk::clientSetViewAngles` unused. `Files` import (J10).
-- `host/portal/ref/` is git-ignored but exists on disk with Valve headers; `THIRD-PARTY-NOTICES.md` describes this correctly.
-- `host/portal/prebuilt/portalcraft.dll` is committed (147 KB) and refreshed per change; the repo will grow ~150 KB per refresh. Acceptable while private; move to GitHub Releases when packaging (M7).
-
-**Tests:** `WorldFormatTest` is the only portable test. The other four need Portal at `D:/...` and
-skip otherwise, so the laptop and CI run almost nothing. `FloorAccuracyTest` is a 741-line analysis
-harness more than a test. Missing entirely: `Proto` round-trips against the C layout sizes (228/44/108
-are asserted in the header, never in Java), `HostCollision.setPortals` hole carving, `LiveEntities.place`
-for each solid type, `Units` round-trips. A tiny **fixture map** compiled by Kaydn in Hammer (his own
-output, not Valve's) committed under `src/test/resources` would make the BSP/prop tests portable.
-
-**Dev-only tools that ship in the release build today:** `PCK1` fake keys, `PCT1` tick trace, `PCC1`
-console command (`plugin.cpp:181-198`), the once-a-second `trace:` log line (`plugin.cpp:701-710`),
-`PCD1` dev go-to (`HostLink.java:55-59`, `HostDriver.java:118-121`), plus `fake_mc.py`, `fake_world.py`,
-`capture-window.ps1`, `vtslots.py`. **Gate them**: in the plugin behind a launch option
-(`-portalcraft_dev` in `GetCommandLineA()`), in the mod behind `-Dportalcraft.dev=true`; log once
-"dev channel enabled" when on. Keep the scripts in `host/portal/tools/`, they are good.
-
-**Conventions:** consistent (tabs, `portalcraft$` mixin prefix, `g_` globals in C++). One oddity:
-`PortalCraftClient` and `PortalCraft` register the standalone gun and the host bridge in the same
-mod; a `portalcraft.host` flag or two Fabric entrypoints would make "plain mod" vs "host mode" explicit.
+Not left, despite being open in the notes: the laser/rim rendering, the hole's exit geometry, the
+funnel conditions, elytra level flight, the standalone-mod portal shader. None stops a chamber.
 
 ---
 
-## 5. Security and permissions
+## 6. Plan to finish
 
-What any local process can do today, unauthenticated, over loopback UDP:
+### Step 1: fix the two plugin bugs (R2, R3)
 
-| Packet | To | Effect | Evidence |
-|---|---|---|---|
-| `PCC1 <text>` | Portal :27515 | runs an arbitrary **server console command** in Portal (`map`, `quit`, `exec`, `con_logfile` to write a file, `sv_cheats 1` + anything) | `plugin.cpp:189-198` |
-| `PCK1` | Portal :27515 | injects held keys for N ms, forwarded to Minecraft | `plugin.cpp:184-188` |
-| `PCH1` (a spoofed `HostState`) | Minecraft :27516 | drives Minecraft's keyboard and mouse (any scancode, including `T` + letters once text input exists), moves the player, changes the loaded map name | `HostLink.java:67-71`, `HostDriver.java:135-138` |
-| `PCM1` (spoofed `McState`) | Portal :27515 | moves Portal's player anywhere | `plugin.cpp:174-180`, `:268-279` |
-| `PCD1` | Minecraft :27516 | teleports the Minecraft player | `HostLink.java:55-59` |
-| writes to `Local\PortalCraft_*` | both | garbage pixels / garbage mesh (validated, no memory safety issue) | T4 |
+Build: in `interpolatedMinecraft`, when `dist(pa, pb) > 64` return `pb` with `*velocity` set from
+`g_mc.velocity` (carried), not from the step (`plugin.cpp:1521-1524`). Remove the impulse branch, or
+reduce it to `SF_TRIG_PUSH_ONCE` overlap (none in the campaign, so removing is the same thing).
+Prove: run `suite.sh` on both pairs; `grep -c "impulse:" portalcraft.log` is 0 over a suite run;
+`grep "to (" portalcraft.log` never shows a velocity above 3500. Don't: touch the shove path yet.
 
-Is that acceptable? For a solo dev box, mostly yes: the sockets bind `127.0.0.1` only
-(`plugin.cpp:147`, `HostLink.java:36`), so nothing on the LAN can reach them, Portal runs with
-`-insecure` (no VAC), and a local attacker already owns the session. It is **not** acceptable for a
-build friends install, because (a) it is a persistent unauthenticated command channel into a game
-process, (b) browsers cannot send raw UDP but any other app can, and (c) it will show up in a
-Discord/Steam screenshot as "runs console commands from anyone".
+### Step 2: props by class, not model name (E2)
 
-Constrain it cheaply:
-1. **Gate the dev packets** (`PCC1`, `PCK1`, `PCT1`, `PCD1`) behind the dev flag (section 4). In release builds, don't even parse them.
-2. **Pair the two processes.** The shared-memory mappings already have the right scope (same user, same session). Put a 16-byte random session token in `OverlayHeader` (the host writes it at creation) and require it in every `HostState`/`McState`; drop packets without it. A process that can open the mapping could still read the token, but the mapping's default DACL limits that to the same user and integrity level, which is the same boundary as everything else on the box.
-3. Alternatively move state exchange into the mappings entirely (SkyCraft's model, `SkyCraft/skse/src/Link.cpp`) and keep UDP only for dev. SkyCraft also sets an explicit SDDL on the mapping so an elevated Minecraft can still open it (`Link.cpp:33-81`); PortalCraft uses the default descriptor. If Portal is ever run elevated and Minecraft isn't, Minecraft's `OpenFileMappingW` will fail silently (`OverlayLink.java:71-74`): log the `GetLastError` value there.
+Build: `HostEntity.flags` gains `kEntityLoose` (class `prop_physics*` / `prop_glados_core` /
+`npc_portal_turret_floor`, `MOVETYPE_VPHYSICS`, motion enabled, no move parent; `plugin.cpp:2340-2352`
+has the entity in hand). `LiveEntities.movableProp` and the plugin's `refreshLooseProps` read the
+flag; "carried" = any loose prop within `CARRY_REACH` while `gunEffect == 2`. Keep the button-innard
+exclusion by checking the parent, not the model. Prove: a_02 cube checks still pass; in `escape_02`
+(`map escape_02`, walk to a core, `+use`) the log shows the core's entity go `carried`, and Steve can
+walk forward holding it; in a_15's office, walking into a chair moves it (`pushProps` hit lands).
+Don't: make every prop sweep-stop Steve in `clampToProps` (that was the "can't climb the button" bug).
 
-Portal itself: the plugin runs inside the game process with the user's rights; it opens one log file
-next to itself (`plugin.cpp:718-723`) and nothing else. `-insecure` is required for plugins and keeps
-VAC out of the picture (documented at `docs/PORTAL_RTX_RESEARCH.md:53`).
+### Step 3: sideways platforms (M2), chamber 08 first
+
+Build nothing yet. Prove by hand once: play a_04 to the pellet, start the cart, `save pc_a04_cart`
+while standing on it (saves are not cheats; `restart.sh save` already loads one). From then on the rig
+can `+load pc_a04_cart` and trace 300 ticks with W/S and a jump: assert no z reversal over 0.3 u
+(the suite's `rev` statistic), no "handing teleport", Steve's x/y tracks the platform's entity origin
+within 8 u, and a jump lands back on it. Repeat for a_10 (`tractrain_brush_1`) and a_15 (`rail_cart_lab2`).
+If it fails, the fix is in the plugin: read the ground entity's origin delta this tick and subtract it
+from the observed delta before classifying (section 7), and in Minecraft apply the same delta from
+`HostState` instead of the 16 Hz entity stream. Don't: tune `carriedLately`'s 1500 ms.
+
+### Step 4: mirror Portal's duck (C2)
+
+Build: `findProp(table, "m_bDucked")` on the player (same as `m_fFlags`, `plugin.cpp:744`); `HostState`
+flag `kHostDucked`; `steveHalfHeight()` returns 18 while set and Steve is not sneaking;
+`PlayerCrossings.step` takes the same half height from `HostState`. Prove: suite's "no bounce-backs"
+count (`suite.sh:57`) at 0 over three runs with `bounced` logging left in; then delete the `bounced`
+rule and re-run; if the count stays 0, it was the cause. Don't: change `FIT_END`/`FIT_FRONT` at the same time.
+
+### Step 5: the chamber ledger and the walkthrough
+
+Build the ledger first, it is cheap:
+- Raise the replay ring from 45 s to 5 min (`kReplayTicks`, `plugin.cpp:486`; the tick struct is ~130 B,
+  so 20,000 ticks is under 3 MB). A replay cannot cross a level (`plugin.cpp:2973`), which fits one
+  chamber per file.
+- For each map, during the walkthrough: at the start lift, `save pc_<map>`; play the chamber; at the
+  exit lift, `fake_mc --dump-replay <map>`. That gives `addons/replay-<map>.txt` plus a save: a human
+  solve, recorded once.
+- Regression = `restart.sh save pc_<map>` on pair 1, `fake_mc --instance 1 --replay replay-<map>.txt --replay-check`,
+  then assert: 0 "Steve died" in the Minecraft log, 0 "handing teleport" other than level start,
+  the final `trace:` position inside the exit elevator (take its origin from the lump:
+  `*_elevator_body` tracktrains), and the drift the checker prints under a chosen bound. Portal's
+  demo system is not useful here (it records the client's usercmds, and the mover is Minecraft); the
+  replay tool is the right instrument and this is its first real use.
+- Walk the game in order through the real elevators (`trigger_changelevel`), not `map X`, so the
+  level-change path (`LevelInit`, `g_needSync`, `MapRegions`, the moving lift at the start) is tested
+  18 times. Record with `rec.sh` so a hitch can be looked at.
+
+Prove: every chamber's replay passes on a clean world (pair 1) before `stable-9`. Fix only what breaks,
+and add the fix's chamber to the suite if it is scriptable (a_04 cart, a_11 turret room, escape_02 core).
+Don't: hand-script each puzzle in `suite.sh`; the replays are the suite now.
+
+### Step 6: release hygiene
+
+`setup.ps1` copies `worlds/PortalCraft/data/` too; commit that folder. Update `PORTAL_MECHANICS.md:12-13`
+(trigger_push is a shove stream; physexplosion never pushes players). Tag `stable-9`.
+
+### Step 7 (conditional): cause-based classifier
+
+Only if steps 3 and 5 show jitter at movers or props. Section 7.
+
+### What I would deliberately not do
+
+- Rewrite `PlayerCrossings` or move crossings back to Portal-only teleports (the pre-`4d8377f`
+  design, which failed at speed, notes 10-02 21:39).
+- Let Portal's player fly (option B in `PORTAL_MECHANICS.md`).
+- Fill the hole with exit geometry (C4) without a failing chamber.
+- Any rendering work (lasers, rim, blocks through portals, lighting) before the walkthrough passes.
+- Co-op, RTX, the standalone-mod shader, elytra level flight.
+- More timing windows in the plugin.
 
 ---
 
-## 6. Legal and redistribution
+## 7. The one architectural change worth making
 
-| Item | Status | Must never be committed or shipped |
+**What is wrong:** `serverProcessMovement` cannot tell *why* Portal's player ended up somewhere else,
+so it guesses from how far. Every guess that was wrong became a rule. The rules now reference each
+other (`impulse` feeds `draggedOnProp`, `bounced` depends on `lastMatchIn`, `g_riding` gates the
+forced crossing), and a new mechanic (a sideways platform, a core, a `trigger_push`) lands in whichever
+bucket its magnitude happens to fall in.
+
+**Smallest change that fixes the model (two days, plugin only, no protocol change):**
+
+1. **Default-ignore.** A delta under 24 units that nothing below explains is Portal's business and is
+   overwritten next tick, as SkyCraft does. Hard teleports (>24 u) stay as they are.
+2. **Name the causes Portal exposes, and hand over only those:**
+   - *Portal crossing:* already cause-based (`portalCrossing` match, forced crossing).
+   - *Mover under the player:* `m_hGroundEntity` is a `func_tracktrain`/`func_door`/`func_movelinear`
+     (class is readable, `plugin.cpp:835`); subtract that entity's origin delta this tick
+     (`collideableOrigin`, `:2221-2226`) from the observed delta. What is left is noise. This replaces
+     `g_riding`'s z-only rule, `g_rideStill`, and `carriedLately`. Minecraft keeps `carry()` for the
+     entity-stream case, or better, `HostState` carries the mover delta so Minecraft's copy does not
+     lag two ticks.
+   - *Base velocity (`trigger_push`):* `m_fFlags & FL_BASEVELOCITY` (`:744`) and `m_vecBaseVelocity`
+     by name; send it as a velocity (a new `teleportKind`, or reuse `kMoveImpulse` with the base
+     velocity, which is exactly what it was meant for). Steve then has the conveyor's momentum.
+   - *Our own block boxes:* a delta that starts inside `g_blockBoxes` is ours (E5): ignore.
+   - *Loose prop contact:* `clampToProps` already predicts it; anything else while `g_onLooseProp`
+     or `g_gunEffect == 2`: ignore.
+3. **Delete** `carriedLately`, `g_crossedAt`, the `bounced` rule (after step 4 of the plan), the
+   three `draggedOnProp` conditions and the impulse magnitude test. Keep `zLift` as a named cause
+   ("Portal's hull rests higher") until it, too, is measured away.
+
+What this does not change: Minecraft owns position; Portal's player is overwritten every tick;
+Portal teleports its own player and the plugin matches it. The architecture stays; only the
+classifier becomes explicit.
+
+---
+
+## 8. Things I looked for and could not settle
+
+| Question | Why it matters | How to settle it |
 |---|---|---|
-| Valve engine headers | Hand-written mirrors only (`sdk.h`); real SDK headers live in git-ignored `host/portal/ref/` (`.gitignore`, `THIRD-PARTY-NOTICES.md:36-40`). H | Don't commit `ref/` even though the SDK 2013 licence would allow non-commercial use; keeping it out keeps the question simple |
-| Portal maps, models, textures (`.bsp`, `.vpk`, `.phy`, `.mdl`) | Read from the user's own install at runtime (`GameFiles.java:32-49`) H | Never commit a `.bsp` (tests reference by path only); never ship maps with the installer; never embed Portal textures in Minecraft resources |
-| Portal with RTX assets (NVIDIA remaster) | Not touched yet | Same rule; also don't redistribute the Remix runtime/bridge binaries from Portal RTX. dxvk-remix (zlib) and bridge-remix (MIT) from GitHub are fine to ship *if* needed (`docs/PORTAL_RTX_RESEARCH.md:91`) |
-| Minecraft | Loom pulls the client from Mojang into the Gradle cache; `runClient` runs offline as "Steve" (`build.gradle:9`) | Never bundle the Minecraft jar, assets or a cracked launcher. The current dev-client flow is fine for development but is not how friends should play: ship a Prism instance and let each friend sign in with their own account (SkyCraft's approach, `SkyCraft/README.md` "Installing") |
-| Block atlas copied into shared memory at runtime (`WorldAtlas`) | Runtime only, never written to disk | Keep it that way; under RTX the Remix API wants a file path for textures (`docs/PORTAL_RTX_RESEARCH.md:92`): write it to `%TEMP%` at runtime and delete it, don't ship it |
-| SkyCraft (MIT, chasmlol 2026) | Attribution present with the full MIT text and a list of borrowed patterns (`THIRD-PARTY-NOTICES.md:3-28`); adapted files carry one-line credits | Keep the notice in any installer/zip; add it to the mod's `fabric.mod.json` `contact`/license metadata too |
-| Fabric Loader/API, Mixin, MixinExtras | Apache 2.0 / MIT | Fine to redistribute in an instance |
-| Temurin JDK | GPLv2+CE, redistributable; currently downloaded by `setup.ps1:14-21` rather than bundled | Fine either way |
-| Trademarks | "Portal", "Source", "Minecraft" are used descriptively with the disclaimer in `THIRD-PARTY-NOTICES.md:42-43` | Keep the disclaimer on the README, the installer and the channel description |
-| Videos | Valve's video policy and Mojang's content guidelines both allow monetised gameplay videos of modded play (M: policy pages, not re-read for this audit) | |
-| **The repo has no `LICENSE`** while `fabric.mod.json:11` declares `"license": "MIT"` | H | Add `LICENSE` (MIT, Kaydn 2026) now; it is required for the SkyCraft-derived code's terms to be coherent and for friends to legally receive the build |
+| Does `escape_02`'s camera take control before the upward push and zero gravity? | If not, Steve stays on the floor at the ending (Portal's base velocity would come through as a shove stream, 21 u/s = 0.3 u/tick, under the 0.5 floor: dropped) | Play it once (step 5); if it fails, the base-velocity cause in section 7 covers it |
+| Does `func_breakable_surf` drop its collision in our copy when shattered? | `escape_01` progression | Shatter it; `LiveEntities` logs "entity #N ... moved"/gone; walk through |
+| Is "took its player back" fully explained by the duck mismatch? | Whether `bounced` can be deleted | Step 4's count |
+| Do the 8-unit pushes at the owner's a_10 builds come from Steve's block boxes? | E5 | `logSolidNear` already prints the pusher; the next occurrence tells |
+| Real `changelevel` elevators in sequence | 18 transitions | Step 5 |
+| Portal's `FindClosestPassableSpace` 1-damage-per-frame bleed | Slow unexplained damage | A log line in `bridgeHealth` when health drops by 1 repeatedly |
+| Whether `trigger_hurt` type 0 death fields and DMG_BURN incinerators kill the same way as DMG_RADIATION water | a_04, a_09, a_13, a_14, a_15, escape_02 | Same refund code; verify once each in step 5 |
 
 ---
 
-## 7. Change these before building more on them
+## Appendix A: the 10-02 audit's items, where they stand (H unless marked)
 
-1. **Input model: subclass Portal's window procedure instead of polling `GetAsyncKeyState`.**
-   `SetWindowLongPtrA(hwnd, GWLP_WNDPROC, ...)` on the `hl2` window (found by `GetForegroundWindow`/process id, which `gameHasFocus` already does, `plugin.cpp:219-230`). It yields `WM_KEYDOWN/UP` with repeat, `WM_CHAR` for text, `WM_MOUSEWHEEL`, `WM_MOUSEMOVE` and lets the plugin *swallow* a key from Portal (return 0) when a Minecraft screen is open. Everything in M1 depends on this; the current polling can't deliver wheel or text at all (P8, P9).
-2. **Per-view camera capture instead of "first SceneEnd + WorldToScreenMatrix".** Hook `IVRenderView::ViewSetup3D` (interface slot, same technique as `SceneEnd`) to record the current `CViewSetup`, build the projection from it, and draw in every `SceneEnd` with the view's own matrix. This fixes P4 and is the only way to get blocks visible through portals in plain Portal. Unknown: whether the engine leaves the portal clip plane enabled at `SceneEnd` (if yes, our FFP draw is clipped correctly for free; if not, add it with `SetClipPlane`). M.
-3. **Device capture from `Present`, not a memory scan** (P5). Delete `findGameDevice`.
-4. **Protocol v2 in one bump**, with: `gameDir[260]`, `fov`, `viewOffsetZ` (ducked), `roll`, `health`, `presentHz`, `cursorX/Y`, `wheelDelta`, `text[16]` (UTF-16 chars this frame), `hullWidth`, `mapIndex`; and in `McState`: `screenOpen`, `wantsCursor`, `hudScale`. Plus the session token (section 5). Keep the Java mirror and the `static_assert`s in step; add a `ProtoTest` asserting the Java sizes.
-5. **Vertex buffers for the world mesh** (P6), and while there, a second mesh channel with a **texture table** (texture id per draw range) so entities (M3) can use it. The atlas becomes texture 0.
-6. **`HostCollision` keyed by player and map.** `BlockCollisionsMixin` receives the `CollisionContext`, which carries the entity; look up that entity's map. Store maps in a `Map<String, Loaded>` (a map is ~1 MB of brushes; loading all of Portal's 19 is fine). This is a prerequisite for M6 and makes M5 (per-map offsets) natural: the offset lives with the loaded map.
-7. **Gate dev tools and add the fingerprint gate** (section 4, P3). Small, and it stops the "mystery crash after a Steam update" class before friends hit it.
-
----
-
-## 8. Roadmap
-
-Effort is in focused days for one developer plus Claude sessions. Risk: L/M/H.
-
-### M0: Stabilise and verify the current build (2-4 days, risk L-M)
-
-Done when: a fresh `play-portal.cmd` on this PC shows placed blocks world-locked in `testchmb_a_00`, hidden by Portal geometry, placed in front of walls; `mat_queue_mode` is enforced; `Unload` unhooks; dev packets are gated; `LICENSE` exists; README "Known gaps" is current.
-
-First-launch checklist for block rendering and placement (what to look for, in order):
-
-| Step | Expect in `run/logs/latest.log` | Expect in `portal/addons/portalcraft.log` | If not |
-|---|---|---|---|
-| Start both, click into Portal | `host linked (testchmb_a_00)`, `loaded ... (N solid brushes)`, `overlay mapping open (42 MB)`, `matching the host's WxH` | `Minecraft linked`, `ICollideable check ... layout OK`, `CMoveData check ... layout OK`, `overlay: drawing Minecraft WxH onto WxH` | Already verified on 10-01 (log lines 102-107 / 13-19) |
-| World mapping | `world mapping open (32 MB)` | `world: mapping Local\PortalCraft_World_v1 ready (32 MB), SceneEnd hooked` | `can't map 33558528 bytes of the world mapping` or `the Portal plugin speaks PCW1` means an old plugin DLL; rerun setup with Portal closed (`setup.ps1:50-53` refuses to overwrite a running Portal's DLL) |
-| Atlas | `block atlas is WxH (built in N ms)`, `sent the WxH block atlas to the host` | `world: block atlas WxH uploaded` | `block atlas WxH is bigger than the mapping's 2048x2048` -> a resource pack or mod inflated the atlas; vanilla fits |
-| Dropped items (PCW2) | `item atlas is 1024x512`, `sent the 1024x512 item atlas to the host`; after throwing an item, `entity mesh #1: 1 items, ...` | `world: item atlas 1024x512 uploaded`, `world: drawing entities: ...` | `entity export failed (logged once)` with a stack; `item atlas WxH is bigger than the mapping's 1048576 pixels` -> mods grew it past one doubling (block items still draw) |
-| Reset | `world export reset: N non-empty sections to mesh` (N is small: the void world has only what you placed) | | `world export failed (logged once)` with a stack: the merged mesher hit a 26.3 API edge (fluid renderer or `tesselateBlock` signature); the exception tells which |
-| Place a block (right click, not holding the gun) | `world mesh #1: S solid + T translucent vertices from K sections (slot 0, ms)` | `world: drawing S solid + T translucent vertices` | plugin says `not drawing: Minecraft isn't sending frames` -> overlay stale gate (`worldrender.cpp:98-100`); `no WorldToScreenMatrix` -> slot 36 wrong (P3); `bad slot` -> header corruption |
-| Walk around it | block stays put against walls and floor; walking behind a wall hides it | | if it slides with the mouse, the matrix is from the wrong view (P4) |
-| Place against a wall | block sits in front of the wall, sunk at most half a block (`HostAim.placeInNeighbour`, `HostAimTest.aimFromTheSpawn` documents the expected cells) | | |
-| Place on the spawn floor | block top at y=5 while the floor is at 4.05 (2 units sunk) | | expected, not a bug |
-| Open both portals, look at a block through one | **it will not be visible through the portal** | `world: 3 SceneEnd calls this frame` | expected until M2; note whether the block in the *main* view still draws correctly when portals are open (P4) |
-| Break a block (left click) | mesh republishes with fewer vertices | | no crack animation and no selection outline are expected gaps (M2) |
-| Switch hotbar with 1-9, hold the portal gun, click | Portal fires; Minecraft does nothing | | mouse wheel does nothing: expected (M1) |
-
-Also in M0: P1, P2, P3 (SEH on the matrix), P5, dev gating, `HostLink` receive loop (T2), tests' map
-path from a property, pin Loom, delete dead fields (T8/J10), `README` refresh.
-
-### M1: Input completeness and Minecraft screens (3-5 days, risk M)
-
-Done when: you can open the inventory, drag items with the mouse, type `/give @s tnt 64` in chat, scroll
-the hotbar, press Esc to close a Minecraft screen (and Esc reaches Portal's menu when none is open), all
-on camera, with a visible cursor.
-
-- WndProc subclass (section 7.1). Keys, repeats, `WM_CHAR`, wheel, raw mouse deltas.
-- `McState.screenOpen`: while set, the plugin swallows keys/clicks from Portal, releases Portal's mouse look (`m_rawinput`/`cl_mouseenable 0` via `IVEngineClient::ClientCmd`, or simply stop forwarding deltas by swallowing `WM_INPUT`/`WM_MOUSEMOVE`), accumulates an absolute cursor from mouse deltas clamped to the back buffer, sends `cursorX/Y`.
-- Minecraft: `mouseHandler.onMove`, `onScroll`, `charTyped` from the new fields; draw a cursor sprite in a GUI layer (Minecraft relies on the OS cursor, which Portal hides); keep `InputConstantsMixin` as is.
-- Esc policy: screen open -> Minecraft; no screen -> Portal. Pause menu stays suppressed (J9) unless a `-portalcraft_dev` flag.
-- Minecraft screens that are not `AbstractContainerScreen`/`ChatScreen`/`PauseScreen` are currently filtered out of the overlay (`FrameExporter.java:52-58`); widen to any screen once the cursor exists.
-
-### M2: Rendering fidelity in Portal (5-8 days, risk M-H)
-
-Done when: blocks are visible through portals, lit like the chamber, the viewmodel is sane, and breaking blocks shows cracks and the outline.
-
-- Per-view draw (section 7.2). Verify the clip plane and stencil behaviour with both portals open. If Portal renders portal views with stencil, keep `D3DRS_STENCILENABLE` as the engine left it instead of forcing it off (`worldrender.cpp:174`).
-- Lighting: two options, pick after a one-day spike. (a) **Host-side**: `IVEngineClient::ComputeLighting(pos, normal, clamp, out)` per *block* (cached by block position; a few thousand calls per mesh change, not per vertex), multiplied into the vertex colour when the vertex buffer is built (P6 makes this natural). Matches lightmaps and ambient exactly. Slot needs verification; guard it. (b) **MC-side**: parse `LUMP_LEAF_AMBIENT_LIGHTING_HDR` (lump 56) and sample the ambient cube per block in `WorldExporter` (MC already has the BSP). Offset-free, less exact. Either way also multiply by the current tonemap scale under HDR (`mat_hdr_tonemapscale` through `ICvar`), or the blocks will pulse against Portal's auto-exposure. Emissive blocks (glowstone, lava, torches): keep them full-bright and tag them in the colour's alpha for a later additive pass.
-- Animated atlas frames (J7): republish the atlas at ~10 Hz with the current frame of each animated sprite.
-- Viewmodel policy (P10): holding the MC gun -> hide MC's hand (`HideHandMixin`/`renderHand` cancel) and `r_drawviewmodel 1`; otherwise `r_drawviewmodel 0`.
-- Block outline and crack overlay: export as a tiny extra mesh (texture table from 7.5: outline untextured, cracks from the `destroy_stage_N` sprites).
-- Cap MC's frame rate to the host's present rate (T9).
-
-### M3: Minecraft entities, items, mobs and particles drawn in Portal (6-10 days, risk M)
-
-Done when: a creeper walks into the chamber, a dropped item spins on a button, TNT flashes and explodes, and a friend's Steve stands next to you (M6 uses this).
-
-- Generic capture: each frame, run the entity render dispatch (and the particle engine) with a capturing `MultiBufferSource` whose `VertexConsumer`s record position/colour/UV per `RenderType` texture. SkyCraft exports items, arrows and the avatar explicitly (`SkyCraft/.../render/AvatarExporter.java`); a generic consumer covers all mobs at once.
-- Texture table channel (7.5): send each distinct entity texture once (sprite sheets are small), reference by id. Mob textures are Mojang assets and stay in shared memory only (section 6).
-- Camera: entity meshes are camera-independent except billboards (particles, name tags); compute billboards in the plugin from the view it draws in, or accept the 20 Hz MC camera for them.
-- Lighting: same per-block sampler as M2, sampled at the entity's feet.
-- Shadows: skip (Portal has its own shadow system; a blob under each entity drawn with a decal texture is a cheap later win).
-
-### M4: Placed blocks as Portal physics; hazards and health (6-10 days, risk H)
-
-Done when: a companion cube rests on your bridge, a turret can't see you behind your wall, goo/turrets/pellets hurt Steve, and dying in Portal and dying in Minecraft agree.
-
-- Static vphysics per 16x16x16 section: `VPhysics031` -> `IPhysicsCollision::ConvertConvexToCollide` from one convex box per solid block (merged into slabs where possible) -> `IPhysicsEnvironment::CreatePolyObjectStatic`. Interface-only, no patterns. Cubes, turrets, pellets and ragdolls collide with it. Rebuild a section's object when its mesh changes. Risk: interface slots again (fingerprint-gated), and vphysics objects are not seen by engine *traces*, so turret line of sight, portal placement on blocks and bullets still pass through. For traces you need an entity with a collideable; a `func_brush`-style entity per section with a custom `CPhysCollide` is the known route (Garry's Mod does this) but needs `CreateEntityByName` + `VPhysicsInitStatic` through datamaps. Do the vphysics tier first and measure how much the trace tier matters on camera.
-- Health bridge: read the player's `m_iHealth` by SendTable name (same technique as `prop_portal`), send it; Minecraft applies deltas as damage; Minecraft damage (mobs, TNT) is sent back and applied with `SetHealth` through the entity's datamap input or `ent_setname` + `hurtme` (cheat). Death: whichever dies first triggers the other's respawn/reload. Portal's death reloads the last save; `g_needSync`/`teleportSeq` already resync position (`plugin.cpp:344-353`).
-- Hazards without health: fizzlers already fizzle portals natively; `trigger_hurt` (goo) only via health.
-
-### M5: Level flow and saves (3-5 days, risk M)
-
-Done when: blocks from chamber 00 never appear in chamber 01, loading a Portal quicksave puts Steve in the right place, and each chamber's builds persist in the Minecraft world.
-
-- Per-map offset: `mapIndex` in `HostState` (the plugin assigns indices from a fixed table of Portal's maps, falling back to a hash) and a 4096-block XZ offset per index applied in `Units` and `WorldExporter`. Simpler and save-compatible compared with one dimension per map; revisit dimensions if offsets ever collide with the void world's border.
-- Map change: on `HostState.map` change, Minecraft swaps the collision (already), teleports to the new spawn (already via `g_needSync`), and the exporter resets (`WorldExporter.reset` already keys on level/generation; add the map).
-- Portal saves: on load, the player jump is handled by the `>0.5 unit` rule; entity states resync from the next `HostEntities`. Verify cubes you had stacked on blocks (M4) fall correctly after a load.
-- Minecraft saves: the void world autosaves; nothing to do. Consider `/gamerule keepInventory true` and no fall damage (already in `level.dat`) as the let's-play defaults.
-
-### M6: Multiplayer with friends (5-8 days, risk M-H)
-
-What syncs today: nothing Portal-related. The standalone portal gun (`PortalEntity`) is fully server-synced and works in ordinary Minecraft multiplayer; host mode is single-player only (`HostCollision` singleton, J3; `giveGun`/`teleport` assume the integrated server, `HostDriver.java:187, 238`).
-
-Model (SkyCraft's, the only practical one because Portal 1 and Portal with RTX have no co-op): **the Minecraft world is shared; each friend runs their own Portal.** Blocks, items, mobs, chat and each other's Steves are shared through Minecraft. Puzzle state (portals, cubes, doors, lifts) is per player, like each Skyrim is per player in SkyCraft (`SkyCraft/README.md` "Playing with friends"). Two players standing in "the same" chamber see each other's Steves (M3 avatars) but each sees their own cubes.
-
-Done when: two PCs each running Portal + PortalCraft join one Minecraft world (host "Open to LAN" + an e4mc-style tunnel, as SkyCraft bundles), both see each other's Steve in Portal, both build in the same chamber, and blocks placed by one appear in the other's Portal within a second.
-
-- Server: `HostCollision` per player (7.6); the server needs each player's map, so it must run on a PC with Portal installed, which the host's integrated server satisfies. A dedicated server would need the BSPs copied, which stays within "you own Portal" if it runs on the host's machine.
-- Client: other players are ordinary remote players; M3's capture draws them.
-- Different maps at once: per-map offsets (M5) keep them apart in Minecraft space; the host's collision table loads whatever maps players report.
-- Optional later: sync *portal pairs* only (each player's two portals placed in the other players' Portals through `prop_portal`'s `NewLocation` input with a distinct linkage group). Everything else (cubes, doors) stays local; keep expectations there.
-
-### M7: Packaging for friends (3-5 days, risk M)
-
-Done when: a friend with Steam Portal and a Microsoft account runs one installer, signs in once, and `PortalCraft.cmd` starts both games linked. No Gradle, no VS, no JDK download, no env vars.
-
-- Release jar from `gradle build`; verify the mixins work in a production Fabric instance (Loom remaps; the `renderFrame`/`runTick`/`setSectionDirty` targets are vanilla names, fine).
-- Portable Prism Launcher instance (`%LOCALAPPDATA%\PortalCraft`) with Fabric 26.3 + Fabric API + the jar + a JVM arg for hidden start; this is exactly SkyCraft's layout (`SkyCraft/tools/minecraft-bundle/Prism/instances/SkyCraft/mmc-pack.json`).
-- Plugin install from the installer (the `setup.ps1` logic, minus the build step); `gameDir` in the protocol removes `PORTALCRAFT_MAPS`.
-- Launch: `hl2.exe -game portal -insecure -novid +cl_updaterate 66 ... +mat_queue_mode 0`, window size from the desktop; the plugin forces what it needs anyway (P1).
-- Fingerprint gate so a Steam update produces "PortalCraft: unsupported Portal build 1745011, link only" instead of a crash.
-- Test on the laptop: the first run without `D:\SteamLibrary` is the real test of section 3.
-
-### M8: Video and content readiness (2-3 days, risk L)
-
-Done when: a 10-minute test recording of chamber 04-06 with a friend looks like a finished video.
-
-- Record only the Portal window (the Minecraft window is hidden behind it); OBS game capture on `hl2.exe` already includes the overlay since it is drawn before `Present`.
-- 1080p60 or 1440p60; HUD scale 2 or 3 at 1080p (`options.txt` `guiScale`, or send `hudScale` from the plugin).
-- Quiet logs: no `trace:` lines, no `entity #N moved` spam (`LiveEntities.java:87-90` logs 40 of them), no `Can't keep up` from the integrated server (seen at `run/logs/latest.log:191`; likely the 2.3 s hitch from a cache clear, T5).
-- Set pieces that make clips: building a staircase to skip a puzzle; a cube landing on a block bridge (M4); water poured into goo; a creeper in the turret room; TNT on the exit door; friends' Steves falling through portals; infinite-fall loops with blocks.
-- Death and failure states must be funny, not broken: health bridge (M4), respawn (M5).
-
-### M9: Portal with RTX (8-15 days, risk H)
-
-Done when: the same session runs in Portal with RTX, blocks are path-traced and seen through ray portals, and the HUD overlay is on top.
-
-- Preconditions from `docs/PORTAL_RTX_RESEARCH.md` §3 and the checklist at `:180-190`: bitness, `addons/` loading (unknown; ASI loader fallback), interface versions in the RTX `engine.dll`, whether `bin\d3d9.dll` exports `remixapi_*`.
-- Hooks: fingerprint profile for the RTX binaries; the interface-based hooks (`ProcessMovement`, `SceneEnd`, `ViewSetup3D`, `ICollideable`) should carry over; expect slot differences and re-derive with `vtslots.py`.
-- Rendering through the bridge: our fixed-function draws go through the Remix bridge `d3d9.dll` and are captured as geometry (this is the path Remix is built for). Requirements: vertex buffers not UP (P6), stable texture hash for the atlas so it can be classified in `rtx.conf` (world-space, not UI), emissive blocks as a separate draw with a texture tagged emissive. Lighting then comes for free, and so do blocks through portals.
-- Overlay cost: 8 MB/frame across the 32->64-bit bridge for a 1080p HUD. Options: only ship the overlay when a screen or HUD change happened (dirty flag), or draw the HUD as a 3D quad with the hand as 3D geometry (M3's capture can render the hand too). Measure first.
-- Remix API (optional M10): `CreateLight` for torches/glowstone, `CreateMaterial` with PBR for the atlas. Only if the shipped bridge exports it; otherwise swap in the GitHub bridge+runtime pair (zlib/MIT).
-
-### Dev tooling (continuous)
-
-- Keep `fake_mc.py`/`fake_world.py`; add `fake_entities.py` for M3 and a `--replay` of a recorded `HostState` stream for regression without Portal running.
-- A `portalcraft_status` console command (plugin) printing hook state, link state, mesh counts and fingerprint.
-- Capture-window script already exists; add a one-key "screenshot both logs + window" for bug reports.
-- Fixture map for portable tests (section 4).
-
----
-
-## 9. Open questions (verify before relying on them)
-
-| # | Question | Where it matters | How to check |
-|---|---|---|---|
-| Q1 | Is `hl2.exe` `/LARGEADDRESSAWARE`? | 2.4, overlay size | `dumpbin /headers` |
-| Q2 | With two portals open, which `SceneEnd` is the main view, and is the portal clip plane still enabled at that point? | P4, M2 | Log the render target/viewport per `SceneEnd`; try a block straddling the portal plane |
-| Q3 | Does Portal render portal views with stencil or render-to-texture on this build? | M2 depth inside the portal oval | `r_portal_use_stencils` value at runtime |
-| Q4 | Does Portal's viewmodel currently draw under Minecraft's hand? | P10 | One screenshot while holding the MC gun |
-| Q5 | Which `ComputeLighting` slot does VEngineClient013 have on build 19017868? | M2 lighting | `vtslots.py` on `cdll_int.h` from the SDK branch Portal matches, then a guarded call at the spawn (expect a sane RGB) |
-| Q6 | Does `charTyped` already work by accident through SDL? | P9 | Open chat, type |
-| Q7 | Does `escape_01/02` have displacements? | J5 | Count `LUMP_DISPINFO` entries |
-| Q8 | Portal RTX: addons loading, interface versions, bridge exports | M9 | Research doc checklist |
-
----
-
-## 10. Top five next steps
-
-1. **M0 first-launch verification** with the checklist above, plus the P1 (`mat_queue_mode`) and P2 (`Unload`) fixes, because both are crash classes that would hit mid-recording.
-2. **Protocol v2 and the input rewrite** (7.1, 7.4): they unblock inventories, chat and commands, which every video needs.
-3. **Per-view camera capture + lighting** (M2): the "blocks through a portal, lit like the room" shot is the thumbnail.
-4. **Entity capture** (M3): creepers, items, TNT and friends on screen.
-5. **Packaging** (M7) as soon as M1-M2 are in, so friends can start playing while M4-M6 land; add `LICENSE` and gate the dev channel in the same pass.
+| Item | Status |
+|---|---|
+| P1 `mat_queue_mode` enforced | Done: plugin sets it (`plugin.cpp:3002-3004`) |
+| P2 `Unload` unhooks | Done (`:2943-2951`, `hooks::unpatchAll`) |
+| P3 fingerprint gate | Done as `kCheckedBuilds` (`:625-663`) for the slot-calling features |
+| P4 first-SceneEnd / per-view draw | Done (notes 10-02 late: draw on pop of each view) |
+| P8/P9 input model, text, wheel | Done (`:2640-2711`) |
+| P10 viewmodel policy | Done (`camera::setViewModel`, `:2737`) |
+| P11 `zLift` | Still present (R6) |
+| P12 entity cap 128, nearest-first | Still as it was (`:2311-2331`); escape maps have the most props (a_15: 88 `prop_physics`), worth watching the perf line's entity count there (L) |
+| P13 nearest active portal per colour | Still as it was (`:2189-2194`); a_00 has 8 `prop_portal`s and works |
+| T2 receive loop dies on IOException | Not re-checked |
+| T5 cache cleared on every portal shot | Still (C5) |
+| J4 shared coordinate space | Done (`MapRegions`) |
+| J5 displacements | Not needed: all 18 campaign maps have 0 `dispinfo` bytes (lump 26, H) |
+| Dev packets gated | Done (`-portalcraftdev`, `:460-467`) |
+| LICENSE | Done (MIT) |
+| M7 packaging | Done (`tools/package.ps1`, Prism instance); seed-world bug remains (2.10) |
+| M0 "blocks placed, world-locked, depth-tested" | Done |
+| M1 input, M2 per-view, M3 entities/mobs/particles, M4 blocks as physics + health, M5 regions, M7 | Done in substance; M2 lighting partial (dlights from blocks), M6 co-op and M9 RTX not started |
