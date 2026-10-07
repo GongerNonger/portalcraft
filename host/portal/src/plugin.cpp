@@ -466,7 +466,7 @@ bool devMode() {
 	return dev == 1;
 }
 
-// ---- dev: the last 5 minutes, kept for a replay ---------------------------------------------
+// ---- dev: the last 15 minutes, kept for a replay ---------------------------------------------
 // When the player hits a bug, what he did to get there used to be a guess. In dev mode every
 // server tick's input (the keys and buttons Minecraft was sent, the view) and where it left the
 // player go into a ring: one small copy a tick, no file touched. "PCQ1" (tools/fake_mc.py
@@ -483,7 +483,7 @@ struct ReplayTick {
 	uint32_t frame; // the recorded tick a replay was feeding in here (PCK2), 0 when the input was live
 	pcproto::HostPortal portals[2];
 };
-constexpr size_t kReplayTicks = 20000; // 5 minutes at Portal's 66.7 ticks a second: a whole chamber, played once and kept as its test
+constexpr size_t kReplayTicks = 60000; // 15 minutes at Portal's 66.7 ticks a second: a whole chamber, played once and kept as its test
 std::vector<ReplayTick> g_replay; // stays empty outside dev mode
 size_t g_replayNext = 0, g_replayCount = 0;
 
@@ -613,7 +613,9 @@ void dumpReplay(const char* name, const sockaddr_in& from) {
 	char reply[4 + sizeof path];
 	std::memcpy(reply, "PCQ1", 4);
 	std::strcpy(reply + 4, path);
-	sendto(g_sock, reply, int(4 + std::strlen(path) + 1), 0, reinterpret_cast<const sockaddr*>(&from), sizeof from);
+	if (from.sin_port != 0) { // (nobody asked when a level's end writes it)
+		sendto(g_sock, reply, int(4 + std::strlen(path) + 1), 0, reinterpret_cast<const sockaddr*>(&from), sizeof from);
+	}
 }
 
 // ---- builds whose interface slots were checked --------------------------------------------
@@ -3067,6 +3069,16 @@ public:
 		}
 	}
 	virtual void LevelShutdown() {
+		// Dev: every level played leaves its recording behind (addonseplay-auto-<map>-<time>.txt):
+		// the chamber as it was solved, or the attempt that ended in a death. Played back from a
+		// fresh load of the map (fake_mc.py --replay), it is that chamber's test.
+		if (devMode() && g_replayCount > 600) {
+			SYSTEMTIME now;
+			GetLocalTime(&now);
+			char name[96];
+			snprintf(name, sizeof name, "auto-%s-%02d%02d%02d", g_map, now.wHour, now.wMinute, now.wSecond);
+			dumpReplay(name, sockaddr_in{});
+		}
 		g_inLevel = false;
 		forgetBlockBoxes();
 		g_edicts = nullptr;

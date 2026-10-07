@@ -5,7 +5,7 @@
   python fake_mc.py --cmd "map testchmb_a_00"   # run a console command in Portal and exit
   python fake_mc.py --instance 1 ...            # talk to the second pair (hl2.exe -pcinstance 1)
 
-Reproducing what the player did (Portal started with -portalcraftdev; it keeps the last 5 minutes):
+Reproducing what the player did (Portal started with -portalcraftdev; it keeps the last 15 minutes):
   python fake_mc.py --dump-replay bug1          # write them to portal\\addons\\replay-bug1.txt
   python fake_mc.py --replay <that file> --replay-check   # play them back, then say how far it parted
 """
@@ -31,7 +31,7 @@ def parse(data):
     return s
 
 
-# ---- replays: the plugin's recording of the last 5 minutes, dumped as text and fed back ----------
+# ---- replays: the plugin's recording of the last 15 minutes, dumped as text and fed back ----------
 
 INT_COLUMNS = ("tick", "mouse", "wheel", "hostflags", "shots", "mcbits", "frame")
 
@@ -248,7 +248,7 @@ def main():
     ap.add_argument("--hit", help="test a Minecraft hit on a Portal entity: index,x,y,z,fx,fy,fz,damage")
     ap.add_argument("--trace", type=int, help="dev: log N server ticks of movement in the plugin log")
     ap.add_argument("--dump-replay", nargs="?", const="", metavar="NAME",
-                    help="dev: write the plugin's recording of the last 5 minutes to portal\\addons\\replay-NAME.txt")
+                    help="dev: write the plugin's recording of the last 15 minutes to portal\\addons\\replay-NAME.txt")
     ap.add_argument("--replay", metavar="FILE", help="dev: play a --dump-replay file back: Steve to its start, then its keys, buttons and view tick by tick")
     ap.add_argument("--replay-check", nargs="?", const="", metavar="DUMP",
                     help="with --replay: afterwards, dump the replay's own recording and print how far it parted from FILE. "
