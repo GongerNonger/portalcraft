@@ -140,9 +140,17 @@ public final class LiveEntities {
 	 */
 	private static final double PROP_SKIN = 0.5;
 
-	/** Portal 1's movable props by model: cubes (metal_box), turrets, the radio. Floor buttons and the rest stay put. */
+	/**
+	 * The models the host has shown loose (HostEntity flag kEntityLoose: a physics prop, a turret, a
+	 * GLaDOS core, by class and with no parent). A model seen loose once is loose: this was a list
+	 * of names (metal_box, turret, radio), and a core or an office chair, missing from it, was a
+	 * wall to Steve even in his own hands.
+	 */
+	private static final java.util.Set<String> LOOSE_MODELS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+	/** A movable prop by model: one the host has flagged loose, or Portal 1's cubes, turrets and radio by name. */
 	private static boolean movableProp(String model) {
-		return model.endsWith(".mdl") && (model.contains("metal_box") || model.contains("turret") || model.contains("radio"));
+		return model.endsWith(".mdl") && (LOOSE_MODELS.contains(model) || model.contains("metal_box") || model.contains("turret") || model.contains("radio"));
 	}
 	private static final Map<String, StaticProps.@Nullable Shape> SHAPES = new HashMap<>();
 	private static @Nullable BspMap shapesFor;
@@ -187,6 +195,9 @@ public final class LiveEntities {
 		boolean changed = false;
 		for (Proto.HostEntity e : packet.entities()) {
 			Placed old = PLACED.get(e.index());
+			if ((e.flags() & Proto.ENTITY_LOOSE) != 0 && e.model().endsWith(".mdl") && LOOSE_MODELS.add(e.model())) {
+				LOG.info("PortalCraft: {} is a loose prop (the host says so)", e.model());
+			}
 			Vec3 holder = carrying;
 			boolean carried = holder != null && movableProp(e.model()) && e.origin().distanceTo(holder.add(0.0, 0.0, 36.0)) < CARRY_REACH;
 			if (old != null && old.carried() == carried && samePlace(old.pose(), e)) {

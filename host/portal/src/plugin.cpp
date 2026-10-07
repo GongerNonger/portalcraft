@@ -2257,6 +2257,28 @@ pcproto::Vec3 g_lastEntityOrigin[2048];
 // pair, usually in or behind the other portal's wall, and lets it collide only with what is in
 // that portal's hole. Streamed to Minecraft a cube's clone was a second cube, standing in the
 // mouth of the exit; the player's stopped Steve coming out of it.
+// A loose physics thing the player can shove or carry: by class, not by model (the companion
+// cube, the radio, a turret, GLaDOS's cores, the office chairs are all different models), and not
+// one fixed to something else (a floor button has a physics prop inside it, parented to the button).
+bool looseEntity(void* networkable, const char* cls) {
+	if (!cls || (std::strncmp(cls, "prop_physics", 12) != 0 && std::strcmp(cls, "prop_glados_core") != 0 &&
+		std::strcmp(cls, "npc_portal_turret_floor") != 0)) {
+		return false;
+	}
+	auto* sc = static_cast<sdk::ServerClass*>(sdk::networkableServerClass(networkable));
+	auto* entity = static_cast<uint8_t*>(sdk::networkableBaseEntity(networkable));
+	if (!sc || !sc->table || !entity) {
+		return false;
+	}
+	static void* table = nullptr;
+	static int moveParent = -1;
+	if (sc->table != table) {
+		table = sc->table;
+		moveParent = findProp(sc->table, "moveparent", 0);
+	}
+	return moveParent < 0 || *reinterpret_cast<uint32_t*>(entity + moveParent) == 0xFFFFFFFFu;
+}
+
 bool interestingClass(const char* cls) {
 	return cls && std::strcmp(cls, "player") != 0 && std::strcmp(cls, "prop_portal") != 0 && std::strcmp(cls, "worldspawn") != 0 &&
 		std::strcmp(cls, "physicsshadowclone") != 0 && std::strcmp(cls, "portalsimulator_collisionentity") != 0 &&
@@ -2330,6 +2352,10 @@ void sendEntities() {
 		out.solid = uint8_t(solid);
 		pcproto::Vec3& last = g_lastEntityOrigin[index];
 		out.flags = (last.x == o.x && last.y == o.y && last.z == o.z) ? pcproto::kEntityStatic : 0;
+		void* net = sdk::edictNetworkable(e);
+		if (net && looseEntity(net, sdk::networkableClassName(net))) {
+			out.flags |= pcproto::kEntityLoose;
+		}
 		last = {o.x, o.y, o.z};
 		out.origin = {o.x, o.y, o.z};
 		out.angles = {a.x, a.y, a.z};
@@ -2370,17 +2396,10 @@ void refreshLooseProps() {
 		void* e = edictAt(i);
 		void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
 		const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
-		if (cls && std::strncmp(cls, "prop_physics", 12) == 0) {
-			// Only the ones a player moves: cubes and the radio, by model, as Minecraft picks them
-			// (LiveEntities.movableProp). Portal's floor buttons have a physics prop in them too; with
-			// every prop_physics in the list the sweep stopped Steve at a button's lip, and he couldn't
-			// walk up onto it.
-			void* col = g_colState == 1 ? collideableOf(e) : nullptr;
-			void* model = col && g_modelInfo ? sdk::vcall<void*>(col, kColModel) : nullptr;
-			const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : nullptr;
-			if (!name || (!std::strstr(name, "metal_box") && !std::strstr(name, "radio"))) {
-				continue;
-			}
+		// The ones a player moves, as Minecraft is told them (kEntityLoose). Not the physics prop
+		// inside a floor button: with that in the list the sweep stopped Steve at a button's lip, and
+		// he couldn't walk up onto it.
+		if (looseEntity(networkable, cls)) {
 			if (void* entity = sdk::networkableBaseEntity(networkable)) {
 				g_looseProps[g_loosePropCount++] = entity;
 			}

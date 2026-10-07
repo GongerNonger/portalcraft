@@ -137,6 +137,9 @@ public final class Proto {
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */
+	/** HostEntity flag kEntityLoose: a loose physics thing a player can shove or carry. */
+	public static final int ENTITY_LOOSE = 1 << 1;
+
 	public record HostEntity(int index, int solid, int flags, Vec3 origin, Vec3 angles, Vec3 mins, Vec3 maxs, String model) {
 	}
 

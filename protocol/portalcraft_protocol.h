@@ -181,6 +181,7 @@ struct DevInput {
 // model N (positioned by origin/angles); a .mdl is a physics model (solid == 6) or its box.
 enum EntityFlags : uint8_t {
 	kEntityStatic = 1u << 0, // hasn't moved since the last packet
+	kEntityLoose = 1u << 1,  // a loose physics thing a player can shove or carry (a cube, a turret, a GLaDOS core, a chair): by class, with no move parent
 };
 
 struct HostEntity {
