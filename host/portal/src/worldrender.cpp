@@ -294,8 +294,13 @@ void uploadAtlas(IDirect3DDevice9* dev, IDirect3DTexture9** tex, const uint8_t* 
 // cells of the atlas in the mapping and lists them (kWorldPatchOffset); just those are copied
 // into the texture. The whole atlas again each time is 16 MB.
 uint32_t g_patchSeq = 0;
+// The same picture in system memory. The cells are written into this one and Direct3D moves just
+// those across (UpdateTexture takes the dirty rectangles): locking part of the texture the scene
+// is drawn with made the graphics card finish everything queued first, 5 ms of every frame and a
+// hitch of a fifth of a second now and then, which Steve's movement showed as jumps.
+IDirect3DTexture9* g_atlasStaging = nullptr;
 
-void patchAtlas() {
+void patchAtlas(IDirect3DDevice9* dev) {
 	const uint8_t* list = g_shm + pcproto::kWorldPatchOffset;
 	uint32_t seq, count;
 	std::memcpy(&seq, list, 4);
@@ -306,6 +311,10 @@ void patchAtlas() {
 	std::memcpy(&count, list + 4, 4);
 	uint32_t w = g_header->atlasWidth, h = g_header->atlasHeight;
 	if (count > pcproto::kWorldPatchMax || w == 0 || h == 0 || w > pcproto::kWorldAtlasMaxW || h > pcproto::kWorldAtlasMaxH) {
+		return;
+	}
+	if (!g_atlasStaging && FAILED(dev->CreateTexture(w, h, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &g_atlasStaging, nullptr))) {
+		g_atlasStaging = nullptr;
 		return;
 	}
 	const uint8_t* src = g_shm + pcproto::kWorldAtlasOffset;
@@ -319,7 +328,7 @@ void patchAtlas() {
 		}
 		RECT r{LONG(x), LONG(y), LONG(x + rw), LONG(y + rh)};
 		D3DLOCKED_RECT lr;
-		if (FAILED(g_atlas->LockRect(0, &lr, &r, 0))) {
+		if (FAILED(g_atlasStaging->LockRect(0, &lr, &r, 0))) { // (marks the rectangle dirty)
 			return;
 		}
 		for (uint32_t row = 0; row < rh; row++) {
@@ -332,8 +341,9 @@ void patchAtlas() {
 				out[col * 4 + 3] = in[col * 4 + 3];
 			}
 		}
-		g_atlas->UnlockRect(0);
+		g_atlasStaging->UnlockRect(0);
 	}
+	dev->UpdateTexture(g_atlasStaging, g_atlas);
 }
 
 void uploadAtlases(IDirect3DDevice9* dev) {
@@ -342,9 +352,13 @@ void uploadAtlases(IDirect3DDevice9* dev) {
 		uint32_t w = g_header->atlasWidth, h = g_header->atlasHeight;
 		if (w != 0 && h != 0 && w <= pcproto::kWorldAtlasMaxW && h <= pcproto::kWorldAtlasMaxH) {
 			uploadAtlas(dev, &g_atlas, g_shm + pcproto::kWorldAtlasOffset, w, h, "block");
+			if (g_atlasStaging) { // another size, maybe: made again at the next patch
+				g_atlasStaging->Release();
+				g_atlasStaging = nullptr;
+			}
 		}
 	}
-	patchAtlas();
+	patchAtlas(dev);
 	if (g_header->itemAtlasSeq != g_itemAtlasSeq) {
 		g_itemAtlasSeq = g_header->itemAtlasSeq;
 		uint32_t w = g_header->itemAtlasWidth, h = g_header->itemAtlasHeight;
@@ -969,6 +983,10 @@ void releaseDeviceObjects() {
 	if (g_state) {
 		g_state->Release();
 		g_state = nullptr;
+	}
+	if (g_atlasStaging) {
+		g_atlasStaging->Release();
+		g_atlasStaging = nullptr;
 	}
 	if (g_atlas) {
 		g_atlas->Release();
