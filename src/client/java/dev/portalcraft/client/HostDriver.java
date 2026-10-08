@@ -281,6 +281,7 @@ public final class HostDriver {
 			player.setDeltaMovement(Vec3.ZERO);
 			player.resetFallDistance();
 		}
+		followHostPush(player, s);
 		PortalAir.tick(player);
 		PortalAir.funnel(player, s.portals());
 		HostEvents.drainHits();
@@ -403,6 +404,49 @@ public final class HostDriver {
 		}
 	}
 	private static int liftLogs;
+
+	/** The host's push on Steve last tick (host units/s), while there is one; else null. */
+	private static Vec3 hostPush;
+	private static int hostPushLogs;
+
+	/**
+	 * The host map's push on its player (HostState.baseVelocity: a trigger_push, Portal's air
+	 * currents and conveyors), applied as Portal's own movement applies it. The host can't: it sets
+	 * its player where Steve is every tick. Sideways the push carries him along at its speed for as
+	 * long as it lasts, through whatever he is doing and without becoming his own speed; upwards it
+	 * is an acceleration; and when it ends, what it was sideways is his momentum to keep or lose.
+	 * Once per client tick, before he moves.
+	 */
+	private static void followHostPush(LocalPlayer player, Proto.HostState s) {
+		Vec3 push = s.baseVelocity();
+		if (s.scripted() || s.riding() || !HostCollision.active() || push.lengthSqr() < 1.0e-6) {
+			// Over (not just the host's game paused, which stops its pushes being read at all): thrown
+			// on at the speed he was carried. In the air that is a fling, to fly by Portal's rules.
+			if (hostPush != null && s.foreground() && !s.scripted() && !s.riding()) {
+				Vec3 thrown = Units.velocityToMc(new Vec3(hostPush.x, hostPush.y, 0.0));
+				player.setDeltaMovement(player.getDeltaMovement().add(thrown));
+				if (!player.onGround() && thrown.lengthSqr() > 0.1 * 0.1) {
+					PortalAir.startFling();
+				}
+			}
+			hostPush = null;
+			return;
+		}
+		if (hostPush == null && hostPushLogs++ < 40) {
+			LOG.info("PortalCraft: the host's map pushes Steve at {} units/s (at host {})", push, Units.toSrc(player.position()));
+		}
+		hostPush = push;
+		// One tick of being carried, stopped by whatever is in the way (blocks: units/s over 20 ticks).
+		Vec3 along = Units.velocityToMc(new Vec3(push.x, push.y, 0.0));
+		if (along.lengthSqr() > 0.0) {
+			Vec3 went = net.minecraft.world.entity.Entity.collideBoundingBox(player, along, player.getBoundingBox(), player.level(), List.of());
+			player.setPos(player.position().add(went));
+		}
+		// Upwards, a twentieth of a second of it (blocks/tick gained per tick).
+		if (push.z != 0.0) {
+			player.setDeltaMovement(player.getDeltaMovement().add(0.0, push.z / Units.VELOCITY / 20.0, 0.0));
+		}
+	}
 
 	/**
 	 * Steve with his feet in a floor (a shove from the host put them there, or a prop did): up onto it. Minecraft doesn't stop a body that starts its step inside a shape,
