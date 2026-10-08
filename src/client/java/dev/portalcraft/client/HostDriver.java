@@ -358,6 +358,7 @@ public final class HostDriver {
 			}
 		}
 		settleRide(player);
+		keepHeldStop(player, s);
 		tickSeq++;
 		tickPrevious = PlayerCrossings.unfold(Units.toSrc(new Vec3(player.xo, player.yo, player.zo)));
 		tickCurrent = PlayerCrossings.unfold(Units.toSrc(player.position()));
@@ -925,6 +926,67 @@ public final class HostDriver {
 	 * jump comes down where it went up (see carry), until he has plainly gone: three seconds, or
 	 * flying, gliding or swimming.
 	 */
+	/** Where the host stopped its player behind the prop its gun holds, the way back from there, and how far the prop was (blocks). */
+	private static Vec3 heldStopAt, heldStopBack;
+	private static double heldStopReach;
+
+	/**
+	 * The host has pushed its player back from the prop its gun holds: the prop is against a wall
+	 * and Portal doesn't let its player walk into what he carries. Minecraft does (the carried prop
+	 * isn't solid to Steve: its copy is a tick behind and stopped him dead as he walked), so Steve
+	 * walked on, was shoved back, and walked on again: 24 units to and fro, twenty times a second,
+	 * for as long as he leant on the wall. From this shove on he is stopped where the host stopped
+	 * its player (keepHeldStop), and it has nothing more to push back.
+	 */
+	private static void armHeldStop(LocalPlayer player, Proto.HostState s, Vec3 by) {
+		Vec3 prop = s.gunEffect() == 2 ? LiveEntities.carriedOrigin() : null;
+		Vec3 back = new Vec3(by.x / Units.PER_BLOCK, 0.0, -by.y / Units.PER_BLOCK);
+		double length = back.length();
+		if (prop == null || length < 1.0 / Units.PER_BLOCK || length > 24.0 / Units.PER_BLOCK) {
+			return;
+		}
+		Vec3 toProp = Units.toMc(prop).subtract(player.position());
+		if (toProp.x * back.x + toProp.z * back.z >= 0.0) {
+			return; // not away from what he carries: some other shove
+		}
+		if (heldStopAt == null) {
+			LOG.info("PortalCraft: the prop Steve carries is against something; he is stopped behind it at host {}", Units.toSrc(player.position()));
+		}
+		heldStopAt = player.position();
+		heldStopBack = back.scale(1.0 / length);
+		heldStopReach = Math.hypot(toProp.x, toProp.z);
+	}
+
+	/**
+	 * After Steve's own movement, while that stop holds: no further than it, sliding along it. It
+	 * ends when the gun lets go, when he steps back from it, or when the prop has room again (it
+	 * goes back out to arm's length in front of him, which is further than it was when stopped).
+	 */
+	private static void keepHeldStop(LocalPlayer player, Proto.HostState s) {
+		if (heldStopAt == null) {
+			return;
+		}
+		Vec3 prop = s != null && s.inGame() && s.gunEffect() == 2 ? LiveEntities.carriedOrigin() : null;
+		if (prop == null) {
+			heldStopAt = null;
+			return;
+		}
+		Vec3 toProp = Units.toMc(prop).subtract(player.position());
+		double past = heldStopAt.subtract(player.position()).dot(heldStopBack); // over the line by this much
+		if (Math.hypot(toProp.x, toProp.z) > heldStopReach + 8.0 / Units.PER_BLOCK || past < -6.0 / Units.PER_BLOCK) {
+			heldStopAt = null;
+			return;
+		}
+		if (past > 0.0) {
+			player.setPos(player.position().add(heldStopBack.scale(past)));
+			Vec3 v = player.getDeltaMovement();
+			double into = v.dot(heldStopBack);
+			if (into < 0.0) {
+				player.setDeltaMovement(v.subtract(heldStopBack.scale(into)));
+			}
+		}
+	}
+
 	private static void settleRide(LocalPlayer player) {
 		if (heldOnMoverAt != null) {
 			// Held on the lift a level starts on (holdAtLevelStart): back to his place on it. The step
@@ -1295,6 +1357,7 @@ public final class HostDriver {
 				if (by.lengthSqr() < 64.0 * 64.0) {
 					player.setPos(player.position().add(by.x / Units.PER_BLOCK, by.z / Units.PER_BLOCK, -by.y / Units.PER_BLOCK));
 					liftOutOfTheFloor(player); // a shove can leave his feet in the floor
+					armHeldStop(player, s, by);
 				}
 			} else if (s.crossing() != null && s.teleportKind() == Proto.MOVE_TELEPORT) {
 				// Portal crossings: carry where Steve is now (and how fast) through them. Jumping to

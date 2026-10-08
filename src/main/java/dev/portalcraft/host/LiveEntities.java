@@ -362,6 +362,20 @@ public final class LiveEntities {
 		return p == null ? null : p.pose().origin();
 	}
 
+	/** Where the prop the host's gun holds is (host units): the nearest of those counted as carried, or null. */
+	public static @Nullable Vec3 carriedOrigin() {
+		Vec3 player = carrying, best = null;
+		if (player == null) {
+			return null;
+		}
+		for (Placed p : PLACED.values()) {
+			if (p.carried() && (best == null || p.pose().origin().distanceToSqr(player) < best.distanceToSqr(player))) {
+				best = p.pose().origin();
+			}
+		}
+		return best;
+	}
+
 	/** True if host entity `index` is a movable prop (a cube, a turret, the radio). */
 	public static boolean movable(int index) {
 		Placed p = PLACED.get(index);
