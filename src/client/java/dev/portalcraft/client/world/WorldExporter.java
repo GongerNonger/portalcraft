@@ -6,6 +6,7 @@ import java.util.List;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.portalcraft.PortalCraft;
+import dev.portalcraft.host.HostFluids;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -20,6 +21,7 @@ import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.data.AtlasIds;
 import net.minecraft.world.level.block.RenderShape;
@@ -260,7 +262,9 @@ public final class WorldExporter {
 					MESH.glow = emission >= WorldFormat.GLOW_EMISSION;
 					FluidState fluid = state.getFluidState();
 					if (!fluid.isEmpty()) {
-						fluidRenderer.tesselate(level, pos.immutable(), MESH, state, fluid);
+						BlockPos at = pos.immutable();
+						MESH.fluidAt = at;
+						fluidRenderer.tesselate(level, at, MESH, state, fluid);
 					}
 					if (state.getRenderShape() == RenderShape.MODEL) {
 						BlockPos at = pos.immutable();
@@ -365,6 +369,8 @@ public final class WorldExporter {
 		private final int[] fc = new int[4];
 		private int fqCount;
 		private boolean fluidTranslucent;
+		/** The cell whose fluid is being meshed. */
+		BlockPos fluidAt = BlockPos.ZERO;
 		/** The block being meshed gives off light: its faces go out unshaded and marked unlit (WorldFormat.GLOW_COLOR). */
 		boolean glow;
 
@@ -429,8 +435,23 @@ public final class WorldExporter {
 			}
 			System.arraycopy(this.fq, 0, this.fqPrevious, 0, this.fq.length);
 			this.fluidHavePrevious = true;
+			// Faces against the host's geometry, which is air to Minecraft, so FluidRenderer makes them
+			// all. The host lights a triangle from a point a few units out along its normal (the way
+			// it is wound) and draws it two-sided, after the surface when it is this cell's.
+			// The underside, on Portal's floor: nothing can see it from below, and from above Minecraft
+			// culls it. Drawn, it was lit from inside the floor (black, or whatever Portal's light
+			// cache had for the cell) and blended over the water's surface: the dark squares in water
+			// lying on a floor, which is nearly all flowing water.
+			// A side against a wall: kept, since glass is a wall too, but wound the other way, so its
+			// light is taken from the water's side instead of from inside the wall.
+			Direction face = Direction.from3DDataValue(
+				WorldFormat.fluidFace(this.fq, this.fluidAt.getX() & 15, this.fluidAt.getY() & 15, this.fluidAt.getZ() & 15));
+			boolean walled = face != Direction.UP && HostFluids.blocks(this.fluidAt, this.fluidAt.relative(face), face);
+			if (walled && face == Direction.DOWN) {
+				return;
+			}
 			WorldFormat.Vertices out = this.fluidTranslucent ? this.translucent : this.solid;
-			for (int k : WorldFormat.QUAD_TRIANGLES) {
+			for (int k : walled ? WorldFormat.QUAD_TRIANGLES_REVERSED : WorldFormat.QUAD_TRIANGLES) {
 				int b = k * 5;
 				out.add(this.ox + (double) this.fq[b], this.oy + (double) this.fq[b + 1], this.oz + (double) this.fq[b + 2],
 					this.glow && !this.fluidTranslucent ? WorldFormat.GLOW_COLOR : WorldFormat.d3dColor(this.fc[k], this.fluidTranslucent), this.fq[b + 3],

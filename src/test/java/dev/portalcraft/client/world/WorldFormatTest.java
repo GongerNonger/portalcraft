@@ -204,6 +204,33 @@ class WorldFormatTest {
 		assertEquals("[0, 1, 2, 0, 2, 3]", java.util.Arrays.toString(WorldFormat.QUAD_TRIANGLES));
 	}
 
+	/** A fluid quad's corners (x, y, z each) with the u, v slots left empty. */
+	private static float[] fluidQuad(float... xyz) {
+		float[] quad = new float[20];
+		for (int k = 0; k < 4; k++) {
+			System.arraycopy(xyz, k * 3, quad, k * 5, 3);
+		}
+		return quad;
+	}
+
+	@Test
+	void fluidFacesAreToldApart() {
+		// The cell at (3, 5, 7) of its section, corners as FluidRenderer.tesselate makes them.
+		float x = 3, y = 5, z = 7, h = 8 / 9.0F - 0.001F;
+		assertEquals(1, WorldFormat.fluidFace(fluidQuad(x, y + h, z, x, y + h, z + 1, x + 1, y + h, z + 1, x + 1, y + h, z), 3, 5, 7)); // still surface
+		// flowing: a lone level-1 cell's surface, as low as one gets, and a sloped one
+		float low = 1 / 9.0F / 4 - 0.001F;
+		assertEquals(1, WorldFormat.fluidFace(fluidQuad(x, y + low, z, x, y + low, z + 1, x + 1, y + low, z + 1, x + 1, y + low, z), 3, 5, 7));
+		assertEquals(1, WorldFormat.fluidFace(fluidQuad(x, y + h, z, x, y + low, z + 1, x + 1, y + low, z + 1, x + 1, y + h, z), 3, 5, 7));
+		float b = 0.001F;
+		assertEquals(0, WorldFormat.fluidFace(fluidQuad(x, y + b, z, x + 1, y + b, z, x + 1, y + b, z + 1, x, y + b, z + 1), 3, 5, 7)); // underside
+		assertEquals(2, WorldFormat.fluidFace(fluidQuad(x, y + h, z + b, x + 1, y + low, z + b, x + 1, y + b, z + b, x, y + b, z + b), 3, 5, 7)); // north
+		assertEquals(3, WorldFormat.fluidFace(fluidQuad(x + 1, y + h, z + 1 - b, x, y + h, z + 1 - b, x, y, z + 1 - b, x + 1, y, z + 1 - b), 3, 5, 7)); // south
+		assertEquals(4, WorldFormat.fluidFace(fluidQuad(x + b, y + h, z + 1, x + b, y + h, z, x + b, y, z, x + b, y, z + 1), 3, 5, 7)); // west
+		assertEquals(5, WorldFormat.fluidFace(fluidQuad(x + 1 - b, y + h, z, x + 1 - b, y + h, z + 1, x + 1 - b, y, z + 1, x + 1 - b, y, z), 3, 5, 7)); // east
+		assertEquals("[0, 2, 1, 0, 3, 2]", java.util.Arrays.toString(WorldFormat.QUAD_TRIANGLES_REVERSED));
+	}
+
 	@Test
 	void budgetTakesNearestPrefix() {
 		int[] counts = {100, 200, 300, 50};

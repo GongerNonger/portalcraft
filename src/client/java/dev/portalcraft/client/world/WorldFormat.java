@@ -77,6 +77,32 @@ public final class WorldFormat {
 
 	/** A Minecraft quad's corners as two triangles. */
 	public static final int[] QUAD_TRIANGLES = {0, 1, 2, 0, 2, 3};
+	/** The same two triangles wound the other way: the host takes a triangle's light from the side its winding faces. */
+	public static final int[] QUAD_TRIANGLES_REVERSED = {0, 2, 1, 0, 3, 2};
+
+	/**
+	 * Which face of its cell a quad from Minecraft's FluidRenderer is, as Direction's 3D data value
+	 * (0 down, 1 up, 2 north, 3 south, 4 west, 5 east). {@code quad} holds four corners of x, y, z,
+	 * u, v, in the section's coordinates like the cell. The sides are vertical planes 0.001 inside
+	 * the cell; the underside is flat, 0.001 over the cell's bottom; the surface is whatever is left:
+	 * sloped in flowing water, and never under 0.026 (a lone level-1 cell's corner, 1/9 averaged
+	 * with three empty neighbours).
+	 */
+	public static int fluidFace(float[] quad, int cellX, int cellY, int cellZ) {
+		boolean sameX = true, sameY = true, sameZ = true;
+		for (int k = 1; k < 4; k++) {
+			sameX &= quad[k * 5] == quad[0];
+			sameY &= quad[k * 5 + 1] == quad[1];
+			sameZ &= quad[k * 5 + 2] == quad[2];
+		}
+		if (sameX) {
+			return quad[0] - cellX < 0.5F ? 4 : 5;
+		}
+		if (sameZ) {
+			return quad[2] - cellZ < 0.5F ? 2 : 3;
+		}
+		return sameY && quad[1] - cellY < 0.005F ? 0 : 1;
+	}
 
 	/** Source units per block, as in {@code dev.portalcraft.host.Units}. */
 	private static final double PER_BLOCK = dev.portalcraft.host.Units.PER_BLOCK;
