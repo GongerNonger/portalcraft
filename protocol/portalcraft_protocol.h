@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH6"
+	char magic[4]; // "PCH7"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -98,6 +98,11 @@ struct HostState {
 	// object), or 0xFFFFFFFF when unknown. Minecraft's gun plays Portal's pickup and release
 	// animations as it starts and stops holding.
 	uint32_t gunEffect; // low byte: the gun's m_EffectState (2: holding an object; 0xFF unknown); second byte: a count of its fizzles
+	// PCH7: how far above its feet the centre of the host's player is, as the host's portals see it
+	// this tick (Portal: 36 standing, 18 ducked), or 0 when the host can't tell. A portal takes the
+	// player when this point is behind its plane, so it is the point Minecraft carries Steve
+	// through by (PlayerCrossings), whatever his own hull is: then both cross at the same place.
+	float playerCentre;
 };
 
 enum McFlags : uint32_t {
@@ -108,7 +113,7 @@ enum McFlags : uint32_t {
 };
 
 struct McState {
-	char magic[4]; // "PCM4"
+	char magic[4]; // "PCM5"
 	uint32_t seq;
 	uint32_t flags;       // McFlags
 	uint32_t teleportAck; // last HostState.teleportSeq Minecraft has applied
@@ -135,6 +140,10 @@ struct McState {
 	uint32_t crossCount;
 	uint32_t crossMatchedEcho;
 	uint8_t crossPortal[4]; // the portal (0 blue, 1 orange) crossing k went in through, at [k % 4]; 0xFF unknown
+	// PCM5: the point crossing k carried Steve through by, as its height above his feet, at [k % 4]
+	// (the HostState.playerCentre Minecraft had then, or half his own hull); 0 unknown. The host
+	// makes the same carry with it, so what it plays back after the match is where Steve is.
+	float crossCentre[4];
 };
 
 struct Command {
@@ -433,8 +442,8 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 312, "HostState layout");
-static_assert(sizeof(McState) == 88, "McState layout");
+static_assert(sizeof(HostState) == 316, "HostState layout");
+static_assert(sizeof(McState) == 104, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
 static_assert(sizeof(DevInput) == 56, "DevInput layout");

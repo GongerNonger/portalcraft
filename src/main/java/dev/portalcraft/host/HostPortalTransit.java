@@ -22,7 +22,7 @@ import org.jspecify.annotations.Nullable;
  * Minecraft's things go through Portal's portals: items, TNT, mobs, falling blocks, arrows,
  * snowballs. Steve goes through natively (Portal teleports its player); everything else would only
  * fall into the hole HostCollision cuts behind a linked portal. Each server tick, whatever crossed a
- * portal's plane inside its oval this tick comes out of the other portal, its position, momentum
+ * portal's plane inside its opening this tick comes out of the other portal, its position, momentum
  * and facing carried the way Portal carries its own (in along -forward, out along the exit's
  * +forward, up kept, right flipped: a rotation, not a mirror).
  *
@@ -70,7 +70,7 @@ public final class HostPortalTransit {
 		for (int i = 0; i < 2; i++) {
 			Frame f = new Frame(portals[i]);
 			double depth = f.forward(point);
-			if (depth <= 2.0 && depth >= -HostCollision.holeDepth(portals[i]) - 2.0 && f.inOval(point)) {
+			if (depth <= 2.0 && depth >= -HostCollision.holeDepth(portals[i]) - 2.0 && f.inOpening(point)) {
 				synchronized (PENDING) {
 					PENDING.put(projectile, new Pending(i, point, projectile.getDeltaMovement()));
 				}
@@ -116,7 +116,7 @@ public final class HostPortalTransit {
 					continue; // didn't go in through the front this tick
 				}
 				Vec3 crossing = before.add(now.subtract(before).scale(d0 / (d0 - d1)));
-				if (!in.inOval(crossing)) {
+				if (!in.inOpening(crossing)) {
 					continue;
 				}
 				// The hole's back wall may have stopped it: then how far it went is its speed.
@@ -202,10 +202,21 @@ public final class HostPortalTransit {
 			return point.subtract(this.origin).dot(this.forward);
 		}
 
-		boolean inOval(Vec3 point) {
+		/**
+		 * Whether a point on the portal's plane is in its opening: the 64 x 108 rectangle, not the
+		 * oval drawn in it. Portal's portals are rectangles to everything but the eye: what it
+		 * teleports is whatever overlaps the rectangle behind the plane (the hole shape built in
+		 * CPortalSimulator::MoveTo, PortalSimulation.cpp, from PORTAL_HALF_WIDTH and _HEIGHT scaled
+		 * by 0.98), and the hole it opens in the wall is the rectangle too, as is the one
+		 * HostCollision cuts for Minecraft. With the oval here, whatever went in through a corner
+		 * (an item dropped by the rim, an arrow shot low) was in the hole but never came out of
+		 * the other portal. The whole rectangle rather than Portal's 0.98 of it: that test is on
+		 * the thing's box, this one on its middle, and a box whose middle is inside the whole
+		 * rectangle overlaps the smaller one unless it is under 1.3 units wide.
+		 */
+		boolean inOpening(Vec3 point) {
 			Vec3 rel = point.subtract(this.origin);
-			double a = rel.dot(this.right) / HostCollision.PORTAL_HALF_WIDTH, b = rel.dot(this.up) / HostCollision.PORTAL_HALF_HEIGHT;
-			return a * a + b * b <= 1.0;
+			return Math.abs(rel.dot(this.right)) <= HostCollision.PORTAL_HALF_WIDTH && Math.abs(rel.dot(this.up)) <= HostCollision.PORTAL_HALF_HEIGHT;
 		}
 
 		/** (right, up, forward) coordinates of a point. */

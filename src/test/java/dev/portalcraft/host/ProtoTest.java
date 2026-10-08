@@ -9,11 +9,11 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
-/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH6, 312 bytes). */
+/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH7, 316 bytes). */
 class ProtoTest {
 	private static ByteBuffer hostState() {
 		ByteBuffer b = ByteBuffer.allocate(Proto.HOST_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '6');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '7');
 		b.putInt(7).putInt(1); // seq, flags (in game)
 		b.put(new byte[64]); // map
 		b.putFloat(90.0F).putFloat(-10.0F); // yaw, pitch
@@ -41,6 +41,7 @@ class ProtoTest {
 		b.putInt(5); // crossMatched
 		b.putFloat(0.25F).putFloat(0.5F).putFloat(0.125F); // handLight
 		b.putInt(2); // gunEffect: holding
+		b.putFloat(18.0F); // playerCentre: ducked
 		return b.flip();
 	}
 
@@ -65,8 +66,26 @@ class ProtoTest {
 		assertEquals(0x83, s.shots());
 		assertEquals(0.5, s.handLight().y, 1e-6);
 		assertEquals(2, s.gunEffect());
+		assertEquals(18.0F, s.playerCentre(), 1e-6);
 		assertEquals(90.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).x, 1e-6);
 		assertEquals(5.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).z, 1e-6);
+	}
+
+	@Test
+	void writesMcStateWithEachCrossingsCentre() {
+		// McState (PCM5, 104 bytes): the four crossCentre floats follow crossPortal at the end.
+		net.minecraft.world.phys.Vec3 at = new net.minecraft.world.phys.Vec3(1, 2, 3);
+		ByteBuffer b = Proto.writeMcState(9, Proto.MC_READY, 4, at, at, true, true, false, 0, at, at, 12, 0.0F, 6, 5,
+			new byte[] {0, 1, (byte) 0xFF, 1}, new float[] {36.0F, 18.0F, 0.0F, 36.0F});
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		assertEquals(Proto.MC_STATE_SIZE, b.remaining());
+		assertEquals(104, b.remaining());
+		assertEquals('5', b.get(3));
+		assertEquals(6, b.getInt(76)); // crossCount
+		assertEquals(1, b.get(85)); // crossPortal[1]
+		assertEquals(36.0F, b.getFloat(88), 1e-6);
+		assertEquals(18.0F, b.getFloat(92), 1e-6);
+		assertEquals(36.0F, b.getFloat(100), 1e-6);
 	}
 
 	@Test

@@ -35,6 +35,18 @@ class HostPortalTransitTest {
 	}
 
 	@Test
+	void thingsGoThroughTheWholeRectangle() {
+		// A wall portal facing +x at z 64: 32 either way across (y), 54 up and down. Portal takes
+		// what is in the rectangle, corners and all; the oval is only what is drawn.
+		HostPortalTransit.Frame f = new HostPortalTransit.Frame(wall(new Vec3(0, 0, 64), 0));
+		assertEquals(true, f.inOpening(new Vec3(0, 0, 64)));
+		assertEquals(true, f.inOpening(new Vec3(0, 30, 64 - 50))); // a bottom corner, outside the oval
+		assertEquals(true, f.inOpening(new Vec3(0, -30, 64 + 50)));
+		assertEquals(false, f.inOpening(new Vec3(0, 33, 64)));
+		assertEquals(false, f.inOpening(new Vec3(0, 0, 64 + 55)));
+	}
+
+	@Test
 	void fallingIntoAFloorPortalFlingsOutOfAWall() {
 		// The fling: fall into a floor portal, come out of a wall portal facing +y at speed.
 		Proto.HostPortal f = floor(new Vec3(0, 0, 0)), w = wall(new Vec3(0, 1000, 128), 90);

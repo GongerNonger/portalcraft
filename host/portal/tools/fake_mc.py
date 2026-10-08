@@ -16,9 +16,9 @@ HOST = ("127.0.0.1", HOST_PORT)
 MC = ("127.0.0.1", MC_PORT)
 DEV_INPUT = struct.Struct("<4s32sBBbBffII")  # "PCK2", pcproto::DevInput
 assert DEV_INPUT.size == 56
-HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I")
-MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s")
-assert HOST_STATE.size == 312 and MC_STATE.size == 88
+HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I" + "f")
+MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s4f")
+assert HOST_STATE.size == 316 and MC_STATE.size == 104
 
 
 def parse(data):
@@ -333,7 +333,7 @@ def main():
                 t = time.time() - t0
                 pos = (centre[0] + 64 * math.cos(t), centre[1] + 64 * math.sin(t), centre[2])
                 seq += 1
-                sock.sendto(MC_STATE.pack(b"PCM4", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0, 0, 0, b"\xff" * 4), HOST)
+                sock.sendto(MC_STATE.pack(b"PCM5", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0, 0, 0, b"\xff" * 4, 0.0, 0.0, 0.0, 0.0), HOST)
 
 
 if __name__ == "__main__":

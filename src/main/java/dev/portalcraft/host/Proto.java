@@ -10,8 +10,8 @@ import net.minecraft.world.phys.Vec3;
 public final class Proto {
 	public static final int HOST_PORT = 27515;
 	public static final int MC_PORT = 27516;
-	public static final int HOST_STATE_SIZE = 312;
-	public static final int MC_STATE_SIZE = 88;
+	public static final int HOST_STATE_SIZE = 316;
+	public static final int MC_STATE_SIZE = 104;
 
 	public static final int HOST_IN_GAME = 1;
 	public static final int HOST_FOREGROUND = 1 << 1;
@@ -63,7 +63,7 @@ public final class Proto {
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
 		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, int teleportKind, HostPortal[] portals,
 		float cursorX, float cursorY, @org.jspecify.annotations.Nullable Crossing crossing, int crossMatched, int shots,
-		Vec3 handLight, int gunEffect, int moveBase, int gunFizzles
+		Vec3 handLight, int gunEffect, int moveBase, int gunFizzles, float playerCentre
 	) {
 		public boolean inGame() {
 			return (flags & HOST_IN_GAME) != 0;
@@ -88,7 +88,7 @@ public final class Proto {
 
 	public static HostState readHostState(ByteBuffer b) {
 		b.order(ByteOrder.LITTLE_ENDIAN);
-		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '6') {
+		if (b.remaining() != HOST_STATE_SIZE || b.get(0) != 'P' || b.get(1) != 'C' || b.get(2) != 'H' || b.get(3) != '7') {
 			return null;
 		}
 		b.position(4);
@@ -130,8 +130,9 @@ public final class Proto {
 		Vec3 handLight = vec(b); // the host's light at its player, linear rgb; x < 0: unknown
 		int gun = b.getInt(); // low byte: the host gun's effect state (2: holding an object; 0xFF unknown); second byte: its fizzles
 		int gunEffect = (gun & 0xFF) == 0xFF ? -1 : gun & 0xFF, gunFizzles = (gun >>> 8) & 0xFF;
+		float playerCentre = b.getFloat(); // the host player's centre above its feet, as its portals see it; 0: unknown
 		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, teleportKind, portals, cursorX,
-			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null, crossMatched, shots, handLight, gunEffect, crossBase, gunFizzles);
+			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null, crossMatched, shots, handLight, gunEffect, crossBase, gunFizzles, playerCentre);
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */
@@ -176,9 +177,9 @@ public final class Proto {
 
 	public static ByteBuffer writeMcState(int seq, int flags, int teleportAck, Vec3 origin, Vec3 velocity, boolean onGround,
 		boolean sneaking, boolean holdingGun, int cameraMode, Vec3 tickPrevious, Vec3 tickCurrent, int tickSeq, float cameraDistance,
-		int crossCount, int crossMatchedEcho, byte[] crossPortal) {
+		int crossCount, int crossMatchedEcho, byte[] crossPortal, float[] crossCentre) {
 		ByteBuffer b = ByteBuffer.allocate(MC_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'M').put((byte) '4');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'M').put((byte) '5');
 		b.putInt(seq).putInt(flags).putInt(teleportAck);
 		putVec(b, origin);
 		putVec(b, velocity);
@@ -189,6 +190,9 @@ public final class Proto {
 		b.putFloat(cameraDistance);
 		b.putInt(crossCount).putInt(crossMatchedEcho);
 		b.put(crossPortal, 0, 4);
+		for (int i = 0; i < 4; i++) {
+			b.putFloat(crossCentre[i]);
+		}
 		return b.flip();
 	}
 

@@ -505,8 +505,12 @@ public final class HostDriver {
 			return;
 		}
 		double halfHeight = player.getBbHeight() * 0.5 * Units.PER_BLOCK;
+		// Through by the point Portal goes by for its own player (PlayerCrossings): 36 units above
+		// his feet while it stands, 18 while it is ducked, whatever Steve's own hull is. The middle
+		// of his hull if the host can't say (or says something that is neither).
+		double centre = s.playerCentre() >= 1.0F && s.playerCentre() <= 64.0F ? s.playerCentre() : halfHeight;
 		PlayerCrossings.Carried c = PlayerCrossings.step(s.portals(), Units.toSrc(new Vec3(player.xo, player.yo, player.zo)),
-			Units.toSrc(player.position()), Units.velocityToSrc(player.getDeltaMovement()), halfHeight, player.getBbWidth() * 0.5 * Units.PER_BLOCK);
+			Units.toSrc(player.position()), Units.velocityToSrc(player.getDeltaMovement()), halfHeight, player.getBbWidth() * 0.5 * Units.PER_BLOCK, centre);
 		if (c == null) {
 			return;
 		}
@@ -546,8 +550,8 @@ public final class HostDriver {
 			});
 		}
 		if (crossingsLogged++ < 40) {
-			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} (host {}, moved {} to fit) with velocity {}", c.crossings(),
-				PlayerCrossings.count(), feet, c.feet(), c.fit(), velocity);
+			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} (host {}, moved {} to fit) with velocity {}, by the point {} above his feet (half his hull is {})",
+				c.crossings(), PlayerCrossings.count(), feet, c.feet(), c.fit(), velocity, centre, halfHeight);
 		}
 	}
 
@@ -594,15 +598,17 @@ public final class HostDriver {
 			vel = PlayerCrossings.unfoldDir(Units.velocityToSrc(player.position().subtract(player.xo, player.yo, player.zo)));
 		}
 		byte[] crossPortal = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+		float[] crossCentre = new float[4];
 		for (int k = Math.max(1, PlayerCrossings.count() - 3); k <= PlayerCrossings.count(); k++) {
 			crossPortal[k & 3] = (byte) PlayerCrossings.portalOf(k);
+			crossCentre[k & 3] = (float) PlayerCrossings.centreOf(k);
 		}
 		int flags = (ready ? Proto.MC_READY : 0) | (screenWantsCursor(minecraft) ? Proto.MC_SCREEN : 0) | (ready && player.isSprinting() ? Proto.MC_SPRINT : 0)
 			| (ready && player.isFallFlying() ? Proto.MC_GLIDING : 0);
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),
-			crossPortal));
+			crossPortal, crossCentre));
 		return ready;
 	}
 
