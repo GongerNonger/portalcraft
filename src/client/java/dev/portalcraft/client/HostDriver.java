@@ -14,6 +14,7 @@ import dev.portalcraft.host.BspMap;
 import dev.portalcraft.host.HostCollision;
 import dev.portalcraft.host.HostLink;
 import dev.portalcraft.host.LiveEntities;
+import dev.portalcraft.host.MoverRide;
 import dev.portalcraft.host.PlayerCrossings;
 import dev.portalcraft.host.HostEvents;
 import dev.portalcraft.host.PortalAir;
@@ -91,6 +92,36 @@ public final class HostDriver {
 	private static long holdWithHostUntil;
 	/** Where the level start put him (a fixed place: following the host's live position fed back on itself). */
 	private static Vec3 holdAt = Vec3.ZERO;
+	/**
+	 * ... or, when the host's player is over a mover (HostState.moverIndex: the lift a level starts on,
+	 * already on its way), that mover and the place on it where the host's player was (units): fixed
+	 * on the lift as holdAt is in the world, wherever the lift goes meanwhile. 0: held in the world.
+	 */
+	private static int holdMover;
+	private static Vec3 holdOffset = Vec3.ZERO;
+	/** Set while he is held on a mover: where, so the end of the tick can put him back (see settleRide). */
+	private static Vec3 heldOnMoverAt;
+
+	/**
+	 * The mover Steve is on, if any, and where Minecraft has it: the frame his place is told in
+	 * (MoverRide has the invariant). He is on one from standing on it (settleRide) until he stands on
+	 * something else, a jump included.
+	 */
+	private static final MoverRide RIDE = new MoverRide();
+	/** Ticks in the air since he last stood on the mover he is on. */
+	private static int rideAirTicks;
+	/** The mover whose carrying has been logged (0: none), and how many such lines this map has had. */
+	private static int rideSaid, rideLogs;
+	/** In the air this long, he has left it for good: its speed becomes his (three seconds; a jump is 12 ticks). */
+	private static final int RIDE_MAX_AIR_TICKS = 60;
+	/**
+	 * Carried upwards while standing, Steve is set this much above where the mover's floor went
+	 * (blocks: 0.064 units) and comes down onto it in the same tick. The floor's new height is worked
+	 * out afresh from the entity's new origin (floats, and heights snapped to 1/256 unit), so "exactly
+	 * on it" can come out a hair inside it, and Minecraft doesn't stop a body that starts inside a
+	 * shape: it falls through.
+	 */
+	private static final double RISE_CLEARANCE = 0.002;
 
 	private HostDriver() {
 	}
@@ -138,6 +169,7 @@ public final class HostDriver {
 				OverlayLink.close();
 				WorldLink.close();
 				linked = false;
+				RIDE.detach();
 				heldWithoutHost = minecraft.player != null && HostCollision.active() ? minecraft.player.position() : null;
 			}
 			// ... and hold Steve where he was. The walls stay but nothing takes him through the host's
@@ -230,8 +262,7 @@ public final class HostDriver {
 				// with the lift under him not yet arrived Steve dropped down its shaft (seen: one first
 				// load of testchmb_a_14, down 660 units).
 				if (System.currentTimeMillis() - mapLoadedAt < 20000) {
-					holdWithHostUntil = System.currentTimeMillis() + 2500;
-					holdAt = Units.toMc(s.origin());
+					startHold(Units.toMc(s.origin()));
 				}
 			}
 			respawned = false;
@@ -253,11 +284,12 @@ public final class HostDriver {
 			}
 			lastPose = player.getPose();
 		}
-		// Not in a fast fall (see there), and not while a lift carries him: its platform rises under
-		// Steve every tick, each tick read as "feet in the floor", and riding one shook all the way up.
-		// (A lift standing still is a floor like any other: left out as well, Steve sank through the
-		// one a level starts on and fell out of the map.)
-		if (player.getDeltaMovement().y > -0.5 && !s.riding()) {
+		// Not in a fast fall (see there). On a lift as anywhere else: carry() has just set him on its
+		// floor where that now is, so his feet are in it only if something else put them there. (This
+		// used to be left out while a lift moved: its platform came up under Steve between ticks, each
+		// tick read as "feet in the floor", and riding one shook all the way up. And left out on a
+		// lift standing still as well, Steve sank through the one a level starts on.)
+		if (player.getDeltaMovement().y > -0.5) {
 			liftOutOfTheFloor(player);
 		}
 		for (String command; (command = HostLink.takeDevCommand()) != null;) {
@@ -275,40 +307,17 @@ public final class HostDriver {
 		look(player, s);
 
 		followHostMoves(minecraft, player, s);
-		if (System.currentTimeMillis() < holdWithHostUntil && teleportAck == s.teleportSeq() && !s.riding()
-			&& player.position().distanceToSqr(holdAt) < 30.0 * 30.0) {
-			player.setPos(holdAt);
-			player.setDeltaMovement(Vec3.ZERO);
-			player.resetFallDistance();
-		}
+		holdAtLevelStart(player, s);
 		PortalAir.tick(player);
 		PortalAir.funnel(player, s.portals());
 		HostEvents.drainHits();
 		HostHealth.tick(minecraft, player);
 		BlockSolids.tick(minecraft);
 
-		if (s.riding()) {
-			// On a moving lift Portal owns Steve's height (it carries its player exactly; our copy of the
-			// lift lags): stand at its height, keep walking about, no sag and no fall.
-			double hostY = Units.toMc(s.origin()).y;
-			// However far apart in a level's first seconds: the level-start lift is already moving and
-			// can reach Minecraft a moment after Steve does. With nothing under him yet he dropped past
-			// the two blocks, was let go, and fell down the lift shaft (seen: one start of testchmb_a_13
-			// in four, 'fell from a high place').
-			// (No jumping on a moving lift. Leaving his height to Minecraft for the length of a jump was
-			// tried: he came down on Minecraft's copy of the lift, which arrives in steps of several
-			// units, went through it, and fell down the shaft. It needs his height kept relative to
-			// the lift on both sides; until then the lift holds him, as Portal's own does a ducked player.)
-			if (Math.abs(player.getY() - hostY) < 2.0 || System.currentTimeMillis() - mapLoadedAt < 8000) {
-				player.setPos(player.getX(), hostY, player.getZ());
-				Vec3 v = player.getDeltaMovement();
-				player.setDeltaMovement(v.x, 0.0, v.z);
-				player.resetFallDistance();
-			}
-		}
 		if (s.scripted()) {
 			// A scripted scene has Portal's player (its camera, or frozen): stand where it is, take no
 			// input, and keep Minecraft's HUD and hand out of Portal's camera (F1) until it's over.
+			RIDE.detach(); // the host says where he is, in the world
 			player.setPos(Units.toMc(s.origin()));
 			player.setDeltaMovement(Vec3.ZERO);
 			player.resetFallDistance();
@@ -341,8 +350,13 @@ public final class HostDriver {
 		}
 		Proto.HostState s = HostLink.current();
 		if (s != null && s.inGame()) {
+			int crossings = PlayerCrossings.count();
 			crossPortals(minecraft, player, s);
+			if (PlayerCrossings.count() != crossings) {
+				RIDE.detach(); // through a portal: wherever he was carried, he is somewhere else now
+			}
 		}
+		settleRide(player);
 		tickSeq++;
 		tickPrevious = PlayerCrossings.unfold(Units.toSrc(new Vec3(player.xo, player.yo, player.zo)));
 		tickCurrent = PlayerCrossings.unfold(Units.toSrc(player.position()));
@@ -500,7 +514,7 @@ public final class HostDriver {
 	 * on a lift, or in a scripted scene: then the host has the player.
 	 */
 	private static void crossPortals(Minecraft minecraft, LocalPlayer player, Proto.HostState s) {
-		if (!HostCollision.active() || s.scripted() || s.riding() || s.teleportSeq() != teleportAck
+		if (!HostCollision.active() || s.scripted() || s.teleportSeq() != teleportAck
 			|| Units.offsetX() != dev.portalcraft.host.MapRegions.offsetX(s.map())) {
 			return;
 		}
@@ -602,7 +616,7 @@ public final class HostDriver {
 		HostLink.send(Proto.writeMcState(++seq, flags, teleportAck, pos, vel,
 			ready && player.onGround(), ready && player.isShiftKeyDown(), ready && player.getMainHandItem().is(PortalCraft.PORTAL_GUN), cameraMode(minecraft),
 			tickPrevious, tickCurrent, tickSeq, ready ? cameraDistance(minecraft, player) : 0.0F, PlayerCrossings.count(), PlayerCrossings.matched(),
-			crossPortal));
+			crossPortal, ready ? RIDE.index() : 0, RIDE.origin()));
 		return ready;
 	}
 
@@ -747,7 +761,40 @@ public final class HostDriver {
 		}
 	}
 
+	/**
+	 * Start of a tick, the host's entities just updated: Steve goes with what carries him.
+	 *
+	 * The mover he is on (RIDE) takes him by exactly what Minecraft's copy of it moved, whether he
+	 * stands on it or is in the air above it since he last did: his place on the mover stays his own
+	 * doing, and that place is what the host is told (MoverRide). A jump on a rising lift is then an
+	 * ordinary jump over a floor that doesn't move under him, however unevenly the copy arrives (none
+	 * in one tick, 16 units in the next). Carried only while he stood on it, as this used to be, a
+	 * jump left him behind and the lift came up through him.
+	 *
+	 * A loose prop (a cube he stands on) carries him as it always did, from under his feet only.
+	 */
 	private static void carry(LocalPlayer player, List<LiveEntities.Moved> moved) {
+		if (RIDE.riding()) {
+			Vec3 now = LiveEntities.originOf(RIDE.index());
+			if (now == null) {
+				leaveMover(player, "it is gone"); // out of the stream: removed, or the level changed
+			} else {
+				Vec3 before = RIDE.origin();
+				Vec3 by = RIDE.follow(now);
+				if (!RIDE.riding()) {
+					saidLeft("it was put somewhere else");
+				} else if (by.lengthSqr() > 0.0) {
+					if (rideSaid != RIDE.index() && rideLogs++ < 40) {
+						rideSaid = RIDE.index();
+						LOG.info("PortalCraft: Steve is carried by host entity #{}: {} units on it from {} (host)", rideSaid, RIDE.offset(Units.toSrc(player.position())), now);
+					}
+					carryBy(player, Units.toMc(now).subtract(Units.toMc(before)));
+				}
+			}
+			if (RIDE.riding()) {
+				return; // one thing carries him at a time (a cube on the same platform moves with it too)
+			}
+		}
 		if (moved.isEmpty()) {
 			return;
 		}
@@ -761,9 +808,161 @@ public final class HostDriver {
 			if (m.loose() && m.before().maxY > player.getY() + 0.15) {
 				continue;
 			}
-			if (m.before().intersects(feet) && m.delta().lengthSqr() < 4.0) {
-				player.setPos(player.position().add(m.delta()));
+			if (m.delta().lengthSqr() >= 4.0) {
+				continue; // it didn't move, it was put somewhere else
+			}
+			if (m.loose()) {
+				if (m.before().intersects(feet)) {
+					player.setPos(player.position().add(m.delta()));
+					return;
+				}
+				continue;
+			}
+			// A fixture that moved just under him while he is in the air (coming down onto a lift on its
+			// way up, he never stood on it, and this step of it has brought its floor up to his feet or
+			// through them): he is on it from here, and goes up with it. Its top has to be there, within
+			// a step or two of the copy's (8 units each on a lift): a door sliding shut beside him as he
+			// jumps through is not under him. And not while he stands on something: what that is,
+			// settleRide has said, and a cart passing the ledge he stands on is not it. (Any fixture
+			// whose box met his feet took him along, whatever he stood on, when this was the only
+			// carrying there was.)
+			Vec3 at = player.onGround() || !LiveEntities.topNear(m.index(), player.getBoundingBox(), 0.25, 0.55) ? null : LiveEntities.originOf(m.index());
+			if (at != null) {
+				RIDE.attach(m.index(), at);
+				rideAirTicks = 0;
+				carryBy(player, m.delta());
 				return;
+			}
+		}
+	}
+
+	/**
+	 * Steve moved by what the mover under him moved (blocks), stopped by whatever is in the way as
+	 * any move of his is: a platform doesn't carry him through a wall it passes. And stopped on the
+	 * way down, it is the ground that holds him now (a lift leaving the ledge he stands half on): he
+	 * is off the lift.
+	 */
+	private static void carryBy(LocalPlayer player, Vec3 by) {
+		Vec3 want = player.onGround() && by.y > 0.0 ? by.add(0.0, RISE_CLEARANCE, 0.0) : by;
+		Vec3 went = net.minecraft.world.entity.Entity.collideBoundingBox(player, want, player.getBoundingBox(), player.level(), List.of());
+		player.setPos(player.position().add(went));
+		if (want.y < 0.0 && went.y > want.y + 0.01) {
+			leaveMover(player, "the ground stopped him on its way down");
+		}
+	}
+
+	/** Steve is off the mover he was on. In mid-air, its speed is his from here on, as Source has it (base velocity). */
+	private static void leaveMover(LocalPlayer player, String why) {
+		if (!player.onGround()) {
+			Vec3 v = RIDE.velocity(); // units a tick, host axes
+			player.setDeltaMovement(player.getDeltaMovement().add(v.x / Units.PER_BLOCK, v.z / Units.PER_BLOCK, -v.y / Units.PER_BLOCK));
+		}
+		RIDE.detach();
+		saidLeft(why);
+	}
+
+	private static void saidLeft(String why) {
+		if (rideSaid != 0) {
+			LOG.info("PortalCraft: Steve is off host entity #{}: {}", rideSaid, why);
+			rideSaid = 0;
+		}
+	}
+
+	/**
+	 * End of a tick, the physics step done: what Steve stands on now. A fixture of the host's with
+	 * its top at his soles is the mover he is on (if it never moves, being on it changes nothing);
+	 * the ground, or a cube, and he is on none. In the air he stays on the one he left, so that a
+	 * jump comes down where it went up (see carry), until he has plainly gone: three seconds, or
+	 * flying, gliding or swimming.
+	 */
+	private static void settleRide(LocalPlayer player) {
+		if (heldOnMoverAt != null) {
+			// Held on the lift a level starts on (holdAtLevelStart): back to his place on it. The step
+			// just run dropped him a twelfth of a block, the lift's floor not being there yet, and told
+			// as it is that would put the host's player 2.5 units into the lift.
+			player.setPos(heldOnMoverAt);
+			return;
+		}
+		if (!HostCollision.active()) {
+			RIDE.detach();
+			return;
+		}
+		if (player.onGround()) {
+			rideAirTicks = 0;
+			int under = LiveEntities.fixtureUnder(player.getBoundingBox(), RIDE.index());
+			Vec3 at = under != 0 ? LiveEntities.originOf(under) : null;
+			if (at != null) {
+				RIDE.attach(under, at);
+			} else if (RIDE.riding()) {
+				RIDE.detach();
+				saidLeft("he stands on something else");
+			}
+		} else if (RIDE.riding() && (++rideAirTicks > RIDE_MAX_AIR_TICKS || player.isFallFlying() || player.getAbilities().flying || player.isInWater())) {
+			leaveMover(player, "long in the air");
+		}
+	}
+
+	/** A level start put Steve at `at`: he is held there (or on the lift under the host's player) for a moment. */
+	private static void startHold(Vec3 at) {
+		holdWithHostUntil = System.currentTimeMillis() + 2500;
+		holdAt = at;
+		holdMover = 0;
+	}
+
+	/**
+	 * Every tick for a moment after a level start (holdWithHostUntil): Steve stays where it put him
+	 * instead of falling by himself, the map's lift and doors not having reached Minecraft yet.
+	 *
+	 * Where the host's player is over a mover, that is a place on the mover: its lift is already on
+	 * its way, and held at a fixed place in the world Steve would be left behind by it (and the
+	 * host's player, set where Steve is, pulled off it). The host says which entity and where it is
+	 * (HostState.moverIndex, moverOrigin), so Steve is on it from the first tick, before Minecraft
+	 * has it at all, and for as long as it hasn't, up to 8 seconds into the level: let go with
+	 * nothing under him he fell down the lift shaft (seen: one start of testchmb_a_13 in four, 'fell
+	 * from a high place'). His place on it is the host player's own (origin - moverOrigin, taken
+	 * once: followed live it fed back on itself), and told on the mover like any other (MoverRide),
+	 * so the host's player stays where Portal stood it.
+	 */
+	private static void holdAtLevelStart(LocalPlayer player, Proto.HostState s) {
+		heldOnMoverAt = null;
+		if (holdWithHostUntil == 0 || teleportAck != s.teleportSeq()) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		Vec3 copy = holdMover != 0 ? LiveEntities.originOf(holdMover) : null;
+		if (copy == null && s.overMover() && s.moverIndex() != holdMover && (holdMover != 0 || now < holdWithHostUntil)) {
+			holdMover = s.moverIndex(); // the first word of it, or another piece of the lift than the one that never came
+			holdOffset = s.origin().subtract(s.moverOrigin());
+			copy = LiveEntities.originOf(holdMover);
+			LOG.info("PortalCraft: level start on host entity #{}: Steve is held {} units from it (Minecraft {} it)", holdMover, holdOffset,
+				copy != null ? "has" : "doesn't have");
+		}
+		boolean waitingForIt = holdMover != 0 && copy == null && now - mapLoadedAt < 8000;
+		if (now >= holdWithHostUntil && !waitingForIt) {
+			holdWithHostUntil = 0;
+			holdMover = 0;
+			return;
+		}
+		Vec3 at = holdAt;
+		if (holdMover != 0) {
+			Vec3 frame = copy != null ? copy : s.moverIndex() == holdMover ? s.moverOrigin() : null;
+			at = frame != null ? Units.toMc(frame.add(holdOffset)) : player.position();
+			if (frame != null) {
+				RIDE.attach(holdMover, frame);
+				rideAirTicks = 0;
+			}
+		}
+		if (player.position().distanceToSqr(at) < 30.0 * 30.0) {
+			player.setPos(at);
+			player.setDeltaMovement(Vec3.ZERO);
+			player.resetFallDistance();
+			if (holdMover != 0) {
+				heldOnMoverAt = at;
+				// ... and was there a tick ago, as far as anything that reads his motion goes: what the
+				// host is told between ticks lies between the two (sendState).
+				player.xo = player.xOld = at.x;
+				player.yo = player.yOld = at.y;
+				player.zo = player.zOld = at.z;
 			}
 		}
 	}
@@ -868,6 +1067,8 @@ public final class HostDriver {
 			LOG.info("PortalCraft: {} is at x {} in the Minecraft world", name, (long) offset);
 		}
 		mapLoadedAt = System.currentTimeMillis();
+		RIDE.detach(); // another map: its entities are other entities
+		rideSaid = rideLogs = 0;
 		Path file = maps().resolve(name + ".bsp");
 		if (file.equals(failedMap)) {
 			return;
@@ -1074,8 +1275,7 @@ public final class HostDriver {
 			} else {
 				PlayerCrossings.forgetPending(); // the host placed him: nothing of ours left to unfold
 				if (System.currentTimeMillis() - mapLoadedAt < 20000) {
-					holdWithHostUntil = System.currentTimeMillis() + 2500;
-					holdAt = to;
+					startHold(to);
 				}
 				Vec3 velocity = Units.velocityToMc(s.teleportVelocity());
 				teleport(minecraft, player, to, velocity);
@@ -1086,6 +1286,10 @@ public final class HostDriver {
 				}
 			}
 			teleportAck = s.teleportSeq();
+			// A level start's hold begins with the move itself, not at the next tick: the host drives
+			// its player from our answer on, and told a place in the world for those first frames it
+			// would set its player where the lift under it had been (and the lift would come up into it).
+			holdAtLevelStart(player, s);
 		}
 	}
 
@@ -1095,6 +1299,8 @@ public final class HostDriver {
 		double speed = handed.length();
 		Vec3 velocity = speed > PortalAir.MAX_SPEED ? handed.scale(PortalAir.MAX_SPEED / speed) : handed;
 		boolean far = player.position().distanceToSqr(pos) > 0.25;
+		RIDE.detach(); // a place in the world: whatever carried him, he isn't on it until he stands on it again
+		saidLeft("the host moved him");
 		player.setPos(pos);
 		player.setDeltaMovement(velocity);
 		player.resetFallDistance();

@@ -338,6 +338,8 @@ struct TickSample {
 	pcproto::Vec3 pos;
 	uint32_t ack;     // Minecraft's teleportAck when it sent this step: which side of later crossings it's on
 	uint32_t matched; // ... and its crossMatchedEcho
+	uint32_t mover;        // the mover Steve was on at this step (McState.moverIndex; 0: none)
+	pcproto::Vec3 moverAt; // ... and where Minecraft had it: pos is told relative to that (see movers)
 };
 constexpr int kTickHistory = 8;
 TickSample g_ticks[kTickHistory] = {};
@@ -783,25 +785,70 @@ void updateScripted() {
 		g_scripted = scripted;
 	}
 }
-// ---- riding lifts ---------------------------------------------------------------------------
-// Standing on something that moves up or down (the elevators, lifts, moving platforms), Portal owns
-// the player's height: its train pushes its player along exactly, while Minecraft's copy of the
-// lift arrives ~16 times a second and Minecraft's position plays back a tick or two late, so Steve
-// sagged, got pushed up, and bounced all the way up the elevator. While riding, the plugin keeps
-// Portal's height (Minecraft still walks him around inside the lift) and Minecraft follows it
-// (kHostRiding).
-bool g_riding = false;
-int g_rideEntity = -1;
-float g_rideLastZ = 0.0f;
-DWORD g_rideStill = 0; // when the lift last stopped moving
-// A platform that carries the player sideways (the light-rail platforms). Portal moves its player
-// along with it, and as he jumps off it Portal's velocity for him jumps too: read as impulses and
-// shoves and handed to Minecraft, each one replaced Steve's own jump (seen: a jump on a moving
-// platform cut to 18 units of 40, five hand-overs in six ticks, Steve thrown about). On one, and
-// for a moment after leaving it, Portal's small moves and velocity changes are the platform's and
-// are not handed over; Minecraft carries Steve on its own copy of the platform.
-float g_rideLastX = 0.0f, g_rideLastY = 0.0f;
-DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sideways
+// ---- movers: the player on something that moves ----------------------------------------------
+// Lifts (func_tracktrain elevators, 128 units a second) and the light-rail platforms (a
+// func_tracktrain with a prop_dynamic platform parented to it, 12 to 50 units a second).
+//
+// INVARIANT (protocol/portalcraft_protocol.h, "movers"): on a mover, the player's place is kept
+// relative to the mover on both sides. Minecraft says which host entity Steve is on and where its
+// own copy of it is (McState.moverIndex, moverOrigin); we write the player at where that entity is
+// this tick plus Steve's offset from Minecraft's copy (inFrame). Minecraft's copy is a tick or more
+// stale and arrives in steps of several units, but Steve stands on that same copy, so the offset is
+// exact: standing still it is constant and the player doesn't move on the mover, and through a
+// jump it is Minecraft's own jump, because Minecraft goes on carrying Steve with its copy until he
+// lands (Source does the same with the ground entity's velocity, kept as base velocity from
+// take-off: CGameMovement::SetGroundEntity).
+//
+// What this replaced. First Portal owned the player's height on a lift (g_riding: we wrote Portal's
+// own z, Minecraft snapped Steve to it), which rode well but could not jump: Minecraft had no say
+// in his height, and leaving it to Minecraft for the length of a jump dropped Steve through its
+// copy of the lift, which had come up 8 or 16 units into him between two of his ticks. And sideways
+// platforms were Minecraft's alone, Steve carried by its copy at 16 steps a second and played back
+// here in the world's frame: he trailed the real platform by its speed times the lag, unevenly
+// (seen: 0.3 to 0.6 units of jitter a tick standing still on a cart), Portal's pusher shoved its
+// player back, and two timers (carriedLately, onMoverLately) kept those shoves from Minecraft.
+//
+// Which entities: Minecraft only ever names a solid entity it was streamed and stands on, never a
+// loose prop (LiveEntities.fixtureUnder), and here it has to be a mover by its class as well: a
+// brush entity (func_tracktrain, func_door, func_movelinear...) or a prop_dynamic riding on one. So
+// a cube stays what it was, and the collision Portal builds around an open portal
+// (portalsimulator_collisionentity, a "ground entity" too, which "moves" whenever a portal does) can
+// never be one: it isn't streamed and isn't of these classes. (A rule that took every non-world
+// ground entity for a mover broke all the portal crossings in one night.)
+bool collideableOrigin(int index, Vector* out);
+bool collideablesChecked();
+
+bool moverClass(const char* cls) {
+	return cls && (std::strncmp(cls, "func_", 5) == 0 || std::strncmp(cls, "prop_dynamic", 12) == 0);
+}
+
+// Entity `index`, if it is a mover: where it is right now.
+bool moverNow(uint32_t index, Vector* at) {
+	if (index < 2 || index >= 2048 || !collideablesChecked()) { // 0 is the world, 1 the player
+		return false;
+	}
+	void* e = edictAt(int(index));
+	void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
+	return networkable && moverClass(sdk::networkableClassName(networkable)) && collideableOrigin(int(index), at);
+}
+
+// The mover whose frame the player was last written in (the newest of Minecraft's steps played back
+// named it), and where it was at that write; 0 for the world's frame. Portal's own carrying is told
+// from anything else by it: a pusher moves what stands on it by its own move, exactly
+// (CPhysicsPushedEntities, physics_main.cpp), so between two of our writes the player has either
+// moved as the mover did or (not standing on it in Portal's eyes that tick) not at all.
+uint32_t g_setMover = 0;
+Vector g_setMoverAt{};
+// ... and the same for the step being composed now (applyMinecraft, the server's and the client's).
+uint32_t g_stepMover = 0;
+Vector g_stepMoverAt{};
+// The mover under Portal's own player and where it is, for HostState (moverUnder, below).
+uint32_t g_underMover = 0;
+Vector g_underMoverAt{};
+// Where g_setMover was between two ticks (GameFrame), to tell which of it and the player moves first.
+Vector g_moverAtFrame{};
+bool g_haveMoverAtFrame = false;
+
 // When Portal's player last went through a portal with Steve (a match, or one we made). Just out
 // of a portal, close to its rim, Portal nudges its player's velocity tick after tick to work him
 // clear of the wall around the opening. Each was handed to Minecraft as an impulse, and they add
@@ -812,92 +859,24 @@ DWORD g_carriedAt = 0; // when the thing under Portal's player last moved sidewa
 // own business.
 DWORD g_crossedAt = 0;
 
-// When Portal's player last stood on something that was itself moving (not the world, not a loose
-// prop): a lift, a platform, a button's top going down. What such a thing does to the player
-// (carries it, lifts it, sets it down a few units away) is the mover's doing and Minecraft has its
-// own copy of the mover: small moves of Portal's player on or just off one are not handed over.
-// Only while it moves: Portal's player has other "ground entities" that never do (the collision
-// Portal builds around an open portal is one), and with those counted every portal crossing lost
-// its hand-overs (30 bounce-backs in a suite that has none).
-DWORD g_onMoverAt = 0;
-bool onMoverLately() {
-	return g_onMoverAt != 0 && GetTickCount() - g_onMoverAt < 500;
-}
-
-bool carriedLately() {
-	return g_carriedAt != 0 && GetTickCount() - g_carriedAt < 1500;
-}
-
-bool collideableOrigin(int index, Vector* out);
-
 bool g_onLooseProp = false; // Portal has its player standing on a loose prop (a cube)
 
-void updateRiding() {
+// A cube settles under the player's weight, a hair up and down, and Portal drags its player back
+// over it as he walks: its small moves there are not handed to Minecraft (see draggedOnProp).
+void updateStanding() {
 	uint8_t* base = playerFields();
-	bool moving = false;
+	bool loose = false;
 	if (base && g_pl.groundEntity >= 0) {
 		uint32_t h = *reinterpret_cast<uint32_t*>(base + g_pl.groundEntity);
 		int index = h == 0xFFFFFFFFu ? -1 : int(h & 0xFFF);
-		Vector o;
-		// Only what carries the player like a lift: not a loose prop he happens to stand on. A cube
-		// settles under his weight, a hair up and down, and each twitch handed Steve's height to
-		// Portal and back (standing on a cube flapped between the two).
-		bool loose = false;
-		// ... and what is a mover by its class: a brush entity (func_tracktrain, func_door, ...) or a
-		// prop_dynamic riding on one. Not whatever else Portal stands its player on: the collision it
-		// builds around an open portal is a ground entity too, and it "moves" whenever a portal does.
-		bool moverClass = false;
-		if (index > 1) {
+		if (index > 1) { // 0 is the world, 1 the player
 			void* e = edictAt(index);
 			void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
 			const char* cls = networkable ? sdk::networkableClassName(networkable) : nullptr;
 			loose = cls && (std::strncmp(cls, "prop_physics", 12) == 0 || std::strncmp(cls, "npc_", 4) == 0);
-			moverClass = cls && (std::strncmp(cls, "func_", 5) == 0 || std::strncmp(cls, "prop_dynamic", 12) == 0);
-		}
-		g_onLooseProp = loose;
-		// The lift is still the lift for a moment after Portal's player loses its footing on it:
-		// set down from Minecraft a hair above its floor, the player is "in the air" every few ticks
-		// of a fast ride, and each time the ride was declared over and begun again (27 times in one
-		// trip up testchmb_a_03's lift, a hand-over at each).
-		static int lastIndex = -1;
-		static DWORD lastOnIt = 0;
-		bool held = false;
-		if (index > 1 && !loose && moverClass) {
-			lastIndex = index;
-			lastOnIt = GetTickCount();
-		} else if (index <= 1 && lastIndex > 1 && GetTickCount() - lastOnIt < 400) {
-			index = lastIndex;
-			held = moverClass = true;
-		}
-		if (index > 1 && !loose && collideableOrigin(index, &o)) { // 0 is the world, 1 the player
-			if (index == g_rideEntity && std::fabs(o.z - g_rideLastZ) > 0.05f) {
-				moving = true;
-			}
-			if (index == g_rideEntity && (std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f)) {
-				g_carriedAt = GetTickCount();
-			}
-			if (moverClass && !held && index == g_rideEntity &&
-				(std::fabs(o.x - g_rideLastX) > 0.01f || std::fabs(o.y - g_rideLastY) > 0.01f || std::fabs(o.z - g_rideLastZ) > 0.01f)) {
-				g_onMoverAt = GetTickCount();
-			}
-			g_rideEntity = index;
-			g_rideLastZ = o.z;
-			g_rideLastX = o.x;
-			g_rideLastY = o.y;
-		} else {
-			g_rideEntity = -1;
 		}
 	}
-	DWORD now = GetTickCount();
-	if (moving) {
-		g_rideStill = now;
-	}
-	// Stays on a moment after the lift stops, so a stop-start ride doesn't flap.
-	bool riding = moving || (g_riding && g_rideEntity >= 0 && now - g_rideStill < 300);
-	if (riding != g_riding) {
-		logf("riding %s", riding ? "a moving lift: Portal keeps the player's height" : "over");
-		g_riding = riding;
-	}
+	g_onLooseProp = loose;
 }
 
 constexpr int kFullHealth = 100;
@@ -1235,7 +1214,7 @@ void linkPoll() {
 		if (n <= 0) {
 			return;
 		}
-		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM4", 4) == 0) {
+		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM5", 4) == 0) {
 			bool wasReady = mcReady();
 			uint32_t oldAck = g_mc.teleportAck, oldEcho = g_mc.crossMatchedEcho;
 			std::memcpy(&g_mc, buf, sizeof g_mc);
@@ -1273,8 +1252,11 @@ void linkPoll() {
 					if (anyCrossingAfter(at) && crossingsBetween(at, mcNow, &x)) {
 						Vector p = xfPoint(x, toVecP(t.pos));
 						t.pos = {p.x, p.y, p.z};
+						t.mover = 0; // through a portal: no longer on whatever carried him (Minecraft lets go as well)
 					} else if (t.ack != mcNow.ack) {
 						t.pos = g_mc.origin;
+						t.mover = g_mc.moverIndex;
+						t.moverAt = g_mc.moverOrigin;
 					}
 					t.ack = mcNow.ack;
 					t.matched = mcNow.matched;
@@ -1292,7 +1274,8 @@ void linkPoll() {
 				// slow average of where Minecraft's 20 Hz timeline sits on our clock: arrival jitter
 				// averages out instead of jerking the camera.
 				g_tickSeq = g_mc.tickSeq;
-				g_ticks[g_tickSeq % kTickHistory] = {g_tickSeq, g_mc.tickCurrent, g_mc.teleportAck, g_mc.crossMatchedEcho};
+				g_ticks[g_tickSeq % kTickHistory] = {g_tickSeq, g_mc.tickCurrent, g_mc.teleportAck, g_mc.crossMatchedEcho, g_mc.moverIndex,
+					g_mc.moverOrigin};
 				double sample = nowSeconds() - g_tickSeq * 0.05;
 				if (!g_haveOffset || sample - g_tickOffset > 0.2 || sample - g_tickOffset < -0.2) {
 					g_tickOffset = sample; // first step, or Minecraft stalled: start over
@@ -1499,13 +1482,31 @@ const TickSample* tickAt(uint32_t seq) {
 uint32_t g_dbgTagAck = 0, g_dbgTagMatched = 0; // the last step played back, for the trace
 bool g_dbgCarried = false;
 
+// A place Minecraft told while on mover `index`, which it had at `then`: the same place on that
+// mover where the mover is this tick (the invariant: see movers). `p` as it is if it names no
+// mover, or none that is one here. Notes the frame it used (g_stepMover).
+Vector inFrame(const Vector& p, uint32_t index, const pcproto::Vec3& then) {
+	Vector now;
+	if (!moverNow(index, &now)) {
+		g_stepMover = 0;
+		return p;
+	}
+	g_stepMover = index;
+	g_stepMoverAt = now;
+	return {now.x + (p.x - then.x), now.y + (p.y - then.y), now.z + (p.z - then.z)};
+}
+
 Vector stepNow(const TickSample& t) {
 	Xf x;
 	McAt at{t.ack, t.matched};
 	g_dbgTagAck = t.ack;
 	g_dbgTagMatched = t.matched;
 	g_dbgCarried = anyCrossingAfter(at) && crossingsBetween(at, {g_teleportSeq, g_matched}, &x);
-	return g_dbgCarried ? xfPoint(x, toVec(t.pos)) : toVec(t.pos);
+	if (g_dbgCarried) {
+		g_stepMover = 0; // through a portal since: wherever he was carried, he isn't now
+		return xfPoint(x, toVec(t.pos));
+	}
+	return inFrame(toVec(t.pos), t.mover, t.moverAt);
 }
 
 // The clock Minecraft's steps are played back on: one even step per server tick. Portal runs its
@@ -1536,8 +1537,11 @@ Vector interpolatedMinecraft(Vector* velocity) {
 	McAt mcAt{g_mc.teleportAck, g_mc.crossMatchedEcho};
 	bool carried = anyCrossingAfter(mcAt) && crossingsBetween(mcAt, {g_teleportSeq, g_matched}, &now);
 	*velocity = carried ? xfDir(now, toVec(g_mc.velocity)) : toVec(g_mc.velocity);
+	g_stepMover = 0;
+	// Minecraft's latest place rather than a step of its timeline (no timeline yet, or a gap in it).
+	auto latest = [&]() { return carried ? xfPoint(now, toVec(g_mc.origin)) : inFrame(toVec(g_mc.origin), g_mc.moverIndex, g_mc.moverOrigin); };
 	if (!g_haveOffset) {
-		return carried ? xfPoint(now, toVec(g_mc.origin)) : toVec(g_mc.origin);
+		return latest();
 	}
 	double ticks = ((g_playClock != 0.0 ? g_playClock : nowSeconds()) - g_tickOffset) / 0.05 - 1.0;
 	if (ticks > double(g_tickSeq)) {
@@ -1548,13 +1552,16 @@ Vector interpolatedMinecraft(Vector* velocity) {
 	const TickSample* b = tickAt(k + 1);
 	if (!a) {
 		const TickSample* newest = tickAt(g_tickSeq);
-		return newest ? stepNow(*newest) : carried ? xfPoint(now, toVec(g_mc.origin)) : toVec(g_mc.origin);
+		return newest ? stepNow(*newest) : latest();
 	}
+	// Both steps where they are on their movers this tick: two steps on the same mover differ by
+	// what Steve did on it and nothing else, however far the mover went meanwhile. (The velocity
+	// below is then his own on it, as Portal's is for a player a train carries.)
 	Vector pa = stepNow(*a);
 	if (!b) {
 		return pa;
 	}
-	Vector pb = stepNow(*b);
+	Vector pb = stepNow(*b); // the newer step last: its frame is the one this tick is reckoned in (g_stepMover)
 	if (dist(pa, pb) > 64.0f) {
 		// A teleport between the two steps: don't smear it across the map, and don't read it as
 		// speed either (the velocity stays Minecraft's own, set above). As speed, a teleport beside
@@ -1718,6 +1725,7 @@ void watchGunShots(int buttons) {
 void logSolidNear(const Vector& at);
 void logHostSolid(const Vector& at, void* playerEntity);
 bool clampToProps(const Vector& from, Vector* to);
+uint32_t moverUnder(const Vector& feet, void* playerEntity, Vector* at);
 
 using ProcessMovementFn = void(__thiscall*)(void* self, void* player, void* mv);
 ProcessMovementFn g_serverOriginal = nullptr;
@@ -1757,7 +1765,39 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
-	if (g_haveSet && !g_riding) {
+	// The mover our last write was reckoned on (see movers) and how far it has gone since. Portal
+	// has carried its player by just that if the player stood on the mover in Portal's eyes, and not
+	// at all if it didn't (set down a hair above its floor, or in a jump), so the player is expected
+	// at one of the two; what it is away from the nearer of them is Portal's doing, as it is on fixed
+	// ground. (Before, anything under 16 units on or lately off a mover was let go, by two timers.)
+	Vector moverMoved{};
+	if (g_haveSet && g_setMover != 0) {
+		Vector at;
+		if (moverNow(g_setMover, &at)) {
+			moverMoved = {at.x - g_setMoverAt.x, at.y - g_setMoverAt.y, at.z - g_setMoverAt.z};
+			// Which of the two moves first within a tick, said once (Portal runs its entities in the
+			// order they joined its list, entitylist.cpp, and that is not ours to choose). The mover
+			// first, as a map's trains are: the player is written where the mover already is, exactly.
+			// The player first: the mover then moves on and Portal's push has to bring the player along,
+			// which it does only for a player it counts as standing on it; in a jump he is one tick of
+			// the mover's travel behind (2 units on a lift at 128).
+			static int orderSaid = -1;
+			static int orderLogs = 0;
+			int moverFirst = dist(at, g_moverAtFrame) > 0.001f ? 1 : 0; // it has moved since the tick began
+			if (g_haveMoverAtFrame && dist(at, g_setMoverAt) > 0.001f && moverFirst != orderSaid && orderLogs++ < 8) {
+				orderSaid = moverFirst;
+				logf(moverFirst ? "movers: #%u moves before Portal's player within a tick: the player is written where it already is"
+								: "movers: #%u moves after Portal's player within a tick: Portal's own push carries the player that tick", g_setMover);
+			}
+		}
+	}
+	const bool moverMoving = moverMoved.x != 0.0f || moverMoved.y != 0.0f || moverMoved.z != 0.0f;
+	const Vector carriedTo{g_lastSet.x + moverMoved.x, g_lastSet.y + moverMoved.y, g_lastSet.z + moverMoved.z};
+	const bool portalCarried = moverMoving && dist(origin, carriedTo) < dist(origin, g_lastSet); // for the trace
+
+	// Not on a mover that is moving: a lift's own push is a small straight-up move every tick, and
+	// learnt as "Portal rests the player higher" it grew to its 4 units all the way up the ride.
+	if (g_haveSet && !moverMoving) {
 		float dx = origin.x - g_lastSet.x, dy = origin.y - g_lastSet.y, dz = origin.z - g_lastSet.z;
 		if (dx * dx + dy * dy < 0.25f && dz > 0.1f && g_zLift + dz <= 4.0f) {
 			g_zLift += dz; // a small straight-up nudge: keep it (see applyMinecraft)
@@ -1769,6 +1809,38 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			g_lastSet = origin;
 		}
 	}
+	// Where the player is if nothing but the mover has moved it since our write.
+	const Vector expected = portalCarried ? carriedTo : g_lastSet;
+	// The first ticks after Steve steps onto a moving mover or off one, the two frames are still
+	// meeting: Minecraft's copy of the mover is behind the real one by the mover's speed times the lag
+	// (up to 7 units for a cart at 50, 19 for a lift on the move), so the step across is played back
+	// that much longer or shorter than Steve took it, and can end a little inside the mover's side or
+	// the ledge. What Portal does about that is not handed over; it is over when the step is. (Only
+	// for a mover that was moving: on and off one at rest, a button or a door's sill, the frames are
+	// the same place and nothing is different from fixed ground.)
+	static uint32_t frameTick = 100, frameChangedTick = 0, moverMovingTick = 0;
+	static uint32_t lastFrameMover = 0, saidMover = 0;
+	static int moverLogs = 0;
+	frameTick++;
+	if (g_setMover != lastFrameMover) {
+		lastFrameMover = g_setMover;
+		frameChangedTick = frameTick;
+		if (saidMover != 0) {
+			logf("movers: Steve is off #%u: the player is placed %s", saidMover, g_setMover ? "on another" : "in the world");
+			saidMover = 0;
+		}
+	}
+	if (moverMoving) {
+		moverMovingTick = frameTick;
+		if (saidMover != g_setMover && moverLogs++ < 60) {
+			saidMover = g_setMover;
+			void* e = edictAt(int(g_setMover));
+			logf("movers: #%u (%s) carries Steve: the player is placed relative to it, at (%.1f %.1f %.1f) from it", g_setMover,
+				edictInUse(e) ? sdk::networkableClassName(sdk::edictNetworkable(e)) : "?", g_lastSet.x - g_setMoverAt.x, g_lastSet.y - g_setMoverAt.y,
+				g_lastSet.z - g_setMoverAt.z);
+		}
+	}
+	const bool framesMeeting = g_haveSet && frameTick - frameChangedTick < 8 /* two of Minecraft's steps */ && frameTick - moverMovingTick < 16;
 
 	// Something other than us moved the player since last tick: a portal, a trigger_teleport, a
 	// fresh level, or Portal's physics shoving the player out of a prop. That move is Portal's;
@@ -1796,7 +1868,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	tickNow++;
 	static int pendingTicks = 0; // ticks a crossing of Steve's has gone unmatched
 	pendingTicks = g_mc.crossCount > g_matched ? pendingTicks + 1 : 0;
-	if (!g_needSync && g_haveSet && !g_riding && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
+	if (!g_needSync && g_haveSet && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
 		dist(origin, g_lastSet) > 24.0f) {
 		Xf x;
 		if (portalCrossing(g_lastSet, origin, &x)) {
@@ -1827,7 +1899,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// Steve went through in Minecraft, our playback took Portal's player in behind the portal, and
 	// Portal didn't teleport it (its own rules said no): make the crossing ourselves, the way
 	// Minecraft did, so the two don't part. Portal's camera jumps this once instead of turning smoothly.
-	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
+	if (!matchedNow && !g_needSync && g_haveSet && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
 		dist(origin, g_lastSet) <= 0.5f) {
 		uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
 		const float kHalf = steveHalfHeight();
@@ -1877,7 +1949,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// Portal's own test (its ducked player's centre is lower than Steve's) flips. Not handed over:
 	// the player goes back to where Minecraft has Steve, below. Handed over, he ping-ponged.
 	bool bounced = false;
-	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount == g_matched && lastMatchIn < 2 && tickNow - lastMatchTick < 20 &&
+	if (!matchedNow && !g_needSync && g_haveSet && g_mc.crossCount == g_matched && lastMatchIn < 2 && tickNow - lastMatchTick < 20 &&
 		dist(origin, g_lastSet) > 24.0f) {
 		Xf x;
 		const pcproto::Vec3& out = g_portalsNow[1 - lastMatchIn].origin;
@@ -1891,30 +1963,27 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		}
 	}
 
-	// (Riding a lift, the lift moving the player is the point: it's not handed over, see updateRiding.)
+	// (A mover carrying the player is not a move to hand over: `expected` has it, see movers.)
 	// Standing on a cube, Portal drags its player back over it as he walks (its physics has him
 	// stuck to the cube under his feet): handed to Minecraft, every step Steve took on a cube was
 	// undone and he couldn't walk off one. Small moves of Portal's there are not handed over.
-	bool draggedOnProp = g_onLooseProp && g_haveSet && !g_needSync && !impulse && dist(origin, g_lastSet) < 12.0f;
+	bool draggedOnProp = g_onLooseProp && g_haveSet && !g_needSync && !impulse && dist(origin, expected) < 12.0f;
 	// Nor is a small move straight up or down: Portal settling its player onto its own floor. On a
 	// slope the two floors differ at every step (Portal's is the smooth ramp, Minecraft's a flight of
 	// two-unit columns), each settling was handed over as a shove, pushed Steve into the next column
 	// or off it, and walking over the wedges of a floor button shook hard.
-	if (g_haveSet && !g_needSync && !impulse && std::fabs(origin.x - g_lastSet.x) < 0.5f && std::fabs(origin.y - g_lastSet.y) < 0.5f &&
-		std::fabs(origin.z - g_lastSet.z) < 3.0f) {
+	if (g_haveSet && !g_needSync && !impulse && std::fabs(origin.x - expected.x) < 0.5f && std::fabs(origin.y - expected.y) < 0.5f &&
+		std::fabs(origin.z - expected.z) < 3.0f) {
 		draggedOnProp = true;
 	}
-	if (carriedLately() && g_haveSet && !g_needSync && !impulse && dist(origin, g_lastSet) < 12.0f) {
-		draggedOnProp = true; // carried by a moving platform (see g_carriedAt)
+	if (framesMeeting && !g_needSync && dist(origin, expected) < 16.0f) {
+		draggedOnProp = true; // stepping onto a mover or off one (see framesMeeting)
 	}
-	if (onMoverLately() && g_haveSet && !g_needSync && dist(origin, g_lastSet) < 16.0f) {
-		draggedOnProp = true; // on or just off a mover (see g_onMoverAt)
-	}
-	if (!matchedNow && !bounced && !draggedOnProp && (g_needSync || impulse || (g_haveSet && !g_riding && dist(origin, g_lastSet) > 0.5f))) {
+	if (!matchedNow && !bounced && !draggedOnProp && (g_needSync || impulse || (g_haveSet && dist(origin, expected) > 0.5f))) {
 		g_teleportSeq++;
 		g_teleportOrigin = origin;
 		g_teleportVelocity = mvVelocity;
-		bool hard = g_needSync || !g_haveSet || dist(origin, g_lastSet) > 24.0f;
+		bool hard = g_needSync || !g_haveSet || dist(origin, expected) > 24.0f;
 		g_teleportKind = hard ? pcproto::kMoveTeleport : impulse ? pcproto::kMoveImpulse : pcproto::kMoveShove;
 		if (hard) {
 			Xf x;
@@ -1930,7 +1999,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				std::memmove(g_shoves, g_shoves + 1, sizeof(Shove) * (kShoves - 1));
 				g_shoveCount--;
 			}
-			g_shoves[g_shoveCount++] = {g_teleportSeq, {origin.x - g_lastSet.x, origin.y - g_lastSet.y, origin.z - g_lastSet.z}};
+			g_shoves[g_shoveCount++] = {g_teleportSeq, {origin.x - expected.x, origin.y - expected.y, origin.z - expected.z}};
 		}
 		if (hard) {
 			logf("handing teleport %u to Minecraft: (%.1f %.1f %.1f)%s", g_teleportSeq, origin.x, origin.y, origin.z,
@@ -1954,7 +2023,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		// Minecraft has Steve, against Portal's loose props where they are this tick. Minecraft stops
 		// Steve at its copy of a cube, a tick old; placed a hair inside the real one, the player was
 		// thrown clear by Portal's physics (up onto the cube, or shaking against it).
-		if (!g_riding && g_haveSet && dist(g_lastSet, origin) < 24.0f) {
+		if (g_haveSet && dist(g_lastSet, origin) < 24.0f) {
 			Vector to = origin;
 			if (clampToProps(g_lastSet, &to)) {
 				// ... and Minecraft is told, as a shove back to where the player stopped: left to
@@ -1976,10 +2045,6 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				origin = to;
 			}
 		}
-		if (g_riding) {
-			origin.z = zPortal; // the lift carries the player; Minecraft follows (kHostRiding)
-			g_zLift = 0.0f;
-		}
 		// Just took over again after a teleport: Portal moved the player by itself while Minecraft
 		// caught up. Hand that difference over as a shove, so we write where Portal had it, not a
 		// step back, and Minecraft is told.
@@ -1996,19 +2061,28 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		g_lastSet = origin;
 		g_lastSetVelocity = *reinterpret_cast<Vector*>(mv + sdk::kMvVelocity);
 		g_haveSet = true;
+		g_setMover = g_stepMover; // the frame this write was reckoned in (applyMinecraft, just above)
+		g_setMoverAt = g_stepMoverAt;
 	} else {
 		g_haveSet = false;
+		g_setMover = 0;
 	}
 	if (g_needSync) {
 		g_zLift = 0.0f;
 	}
+	g_underMover = moverUnder(origin, player, &g_underMoverAt);
 	if (g_traceTicks > 0 && g_log) {
 		g_traceTicks--;
+		// "mover": the one the player was written on, the player's place relative to it (constant
+		// while Steve stands still on it, whatever the mover does), and whether Portal's own push had
+		// carried the player since the tick before (1) or left it behind (0).
+		Vector rel = g_setMover ? Vector{origin.x - g_setMoverAt.x, origin.y - g_setMoverAt.y, origin.z - g_setMoverAt.z} : Vector{};
 		fprintf(g_log, "S %lu z in %.3f portal %.3f out %.3f | mc z %.3f vz %.1f ground %d lift %.2f | xy (%.2f %.2f)"
-			" | drive %d seq %u ack %u matched %u mc count %u echo %u | crossings %d step tag %u/%u carried %d",
+			" | drive %d seq %u ack %u matched %u mc count %u echo %u | crossings %d step tag %u/%u carried %d"
+			" | mover %u rel (%.3f %.3f %.3f) pushed %d under %u",
 			GetTickCount(), zIn, zPortal, origin.z, g_mc.origin.z, g_mc.velocity.z, g_mc.onGround, g_zLift, origin.x, origin.y, g_drivingNow,
 			g_teleportSeq, g_mc.teleportAck, g_matched, g_mc.crossCount, g_mc.crossMatchedEcho, g_crossingCount, g_dbgTagAck, g_dbgTagMatched,
-			g_dbgCarried);
+			g_dbgCarried, g_setMover, rel.x, rel.y, rel.z, portalCarried ? 1 : 0, g_underMover);
 		fputc(10, g_log); // newline
 	}
 	g_origin = origin;
@@ -2029,14 +2103,11 @@ void __fastcall clientProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (drive) {
 		applyMinecraft(mv);
 		Vector& predicted = *reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin);
-		if (!g_riding && g_haveSet && dist(g_lastSet, predicted) < 24.0f) {
+		if (g_haveSet && dist(g_lastSet, predicted) < 24.0f) {
 			Vector to = predicted; // the same check as the server's, so the two draw the player in one place
 			if (clampToProps(g_lastSet, &to)) {
 				predicted = to;
 			}
-		}
-		if (g_riding) {
-			reinterpret_cast<Vector*>(mv + sdk::kMvAbsOrigin)->z = zPortal;
 		}
 	}
 	if (g_traceTicks > 0 && g_log) {
@@ -2238,6 +2309,15 @@ void* g_modelInfo = nullptr; // VModelInfoServer00x: 1 GetModel(int), 3 GetModel
 enum { kColMins = 3, kColMaxs = 4, kColModel = 9, kColOrigin = 10, kColAngles = 11, kColSolid = 13, kColSolidFlags = 14, kColGroup = 16 };
 constexpr int FSOLID_NOT_SOLID = 0x4, FSOLID_TRIGGER = 0x8;
 int g_colState = 0; // 0 unchecked, 1 verified, -1 mismatch (entity streaming off)
+
+void checkCollideableLayout();
+
+// (Checked here if not yet: the first movement tick of a level asks before GameFrame has, and the
+// lift a level starts on has to be known from that tick.)
+bool collideablesChecked() {
+	checkCollideableLayout();
+	return g_colState == 1;
+}
 
 void* collideableOf(void* edict) {
 	void* unknown = sdk::edictUnknown(edict);
@@ -2569,6 +2649,62 @@ void logHostSolid(const Vector& at, void* playerEntity) {
 		end.z - 36.0f, fraction, tr[55], surface ? surface : "?", contents, hit == world ? "the world" : hit ? "an entity" : "nothing");
 }
 
+// The mover under the player's feet, for HostState.moverIndex: Portal's own answer, from its
+// player's hull dropped 96 units. Not the player's ground entity: at a level's start the player is
+// put down a little above the lift's floor and Minecraft needs to know of the lift before it lands
+// (it holds Steve on it from the first tick it drives, see HostDriver's hold), and once we drive,
+// the ground entity comes and goes with how exactly the player was set down.
+uint32_t moverUnder(const Vector& feet, void* playerEntity, Vector* at) {
+	if (!g_serverTrace && g_engineFactory) {
+		g_serverTrace = g_engineFactory("EngineTraceServer003", nullptr);
+	}
+	if (!g_serverTrace || !collideablesChecked()) {
+		return 0;
+	}
+	TraceRayArgs ray{};
+	ray.start[0] = feet.x, ray.start[1] = feet.y, ray.start[2] = feet.z + 1.0f + 36.0f; // hull centre, a unit up
+	ray.delta[2] = -97.0f;
+	ray.extents[0] = ray.extents[1] = 16.0f, ray.extents[2] = 36.0f; // the player's standing hull
+	ray.isSwept = true;
+	TraceAll filter;
+	filter.skip = playerEntity;
+	alignas(16) uint8_t tr[256] = {};
+	__try {
+		sdk::vcall<void>(g_serverTrace, 4, static_cast<const void*>(&ray), 0x201400Bu /* MASK_PLAYERSOLID */, static_cast<void*>(&filter),
+			static_cast<void*>(tr));
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		return 0;
+	}
+	void* hit = *reinterpret_cast<void**>(tr + 76);
+	void* world = edictInUse(edictAt(0)) ? sdk::networkableBaseEntity(sdk::edictNetworkable(edictAt(0))) : nullptr;
+	// Its edict: the one found last time, nearly always; else a look through them all (and one that
+	// has none, as the collision around a portal, is remembered so it isn't looked for every tick).
+	static int index = 0;
+	static void* noEdict = nullptr;
+	static unsigned calls = 0;
+	if ((calls++ & 255) == 0) {
+		noEdict = nullptr; // not for good: another entity can come to live at that address
+	}
+	if (!hit || hit == world || hit == noEdict) {
+		return 0;
+	}
+	void* e = index > 1 ? edictAt(index) : nullptr;
+	if (!edictInUse(e) || sdk::networkableBaseEntity(sdk::edictNetworkable(e)) != hit) {
+		index = 0;
+		for (int i = 2; i < 2048; i++) {
+			void* candidate = edictAt(i);
+			if (edictInUse(candidate) && sdk::networkableBaseEntity(sdk::edictNetworkable(candidate)) == hit) {
+				index = i;
+				break;
+			}
+		}
+		if (index == 0) {
+			noEdict = hit;
+		}
+	}
+	return index > 1 && moverNow(uint32_t(index), at) ? uint32_t(index) : 0;
+}
+
 /** Every solid entity within 96 units: who might be shoving the player. */
 void logSolidNear(const Vector& at) {
 	if (g_colState != 1 || !g_modelInfo) {
@@ -2767,7 +2903,7 @@ void fillCursor(pcproto::HostState& s) {
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH6", 4);
+	std::memcpy(s.magic, "PCH7", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
@@ -2781,8 +2917,9 @@ void sendState() {
 	if (g_scripted) {
 		s.flags |= pcproto::kHostScripted;
 	}
-	if (g_riding) {
-		s.flags |= pcproto::kHostRiding;
+	if (g_inLevel && g_haveOrigin && g_underMover != 0) {
+		s.moverIndex = g_underMover; // read with g_origin, in the same tick
+		s.moverOrigin = {g_underMoverAt.x, g_underMoverAt.y, g_underMoverAt.z};
 	}
 	// Steve holds the Minecraft portal gun in his hand; Portal's own gun model (its viewmodel) isn't
 	// drawn over it while Minecraft is linked. Portal's portal-gun HUD (the crosshair halves that show
@@ -3011,6 +3148,8 @@ public:
 		std::strncpy(g_map, mapName ? mapName : "", sizeof g_map - 1);
 		g_needSync = true;
 		g_haveSet = false;
+		g_setMover = g_underMover = 0;
+		g_haveMoverAtFrame = false;
 		g_haveOrigin = false;
 		g_shoveCount = 0;
 		g_hardPending = false;
@@ -3062,7 +3201,8 @@ public:
 		launcher::frame(mcReady(), g_inLevel, checkedBuild("engine.dll") ? g_engineClient : nullptr);
 		bridgeHealth();
 		updateScripted();
-		updateRiding();
+		updateStanding();
+		g_haveMoverAtFrame = g_setMover != 0 && moverNow(g_setMover, &g_moverAtFrame);
 		updateBlockPhysics();
 		sendState();
 		sendMapsDir();

@@ -9,11 +9,11 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
-/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH6, 312 bytes). */
+/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH7, 328 bytes). */
 class ProtoTest {
 	private static ByteBuffer hostState() {
 		ByteBuffer b = ByteBuffer.allocate(Proto.HOST_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '6');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '7');
 		b.putInt(7).putInt(1); // seq, flags (in game)
 		b.put(new byte[64]); // map
 		b.putFloat(90.0F).putFloat(-10.0F); // yaw, pitch
@@ -41,6 +41,7 @@ class ProtoTest {
 		b.putInt(5); // crossMatched
 		b.putFloat(0.25F).putFloat(0.5F).putFloat(0.125F); // handLight
 		b.putInt(2); // gunEffect: holding
+		b.putInt(57).putFloat(-64).putFloat(128).putFloat(900.5F); // moverIndex, moverOrigin
 		return b.flip();
 	}
 
@@ -65,6 +66,9 @@ class ProtoTest {
 		assertEquals(0x83, s.shots());
 		assertEquals(0.5, s.handLight().y, 1e-6);
 		assertEquals(2, s.gunEffect());
+		assertEquals(true, s.overMover());
+		assertEquals(57, s.moverIndex());
+		assertEquals(900.5, s.moverOrigin().z, 1e-6);
 		assertEquals(90.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).x, 1e-6);
 		assertEquals(5.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).z, 1e-6);
 	}
@@ -72,8 +76,22 @@ class ProtoTest {
 	@Test
 	void rejectsOtherLayouts() {
 		ByteBuffer b = hostState();
-		b.put(3, (byte) '5'); // PCH5
+		b.put(3, (byte) '6'); // PCH6
 		assertNull(Proto.readHostState(b));
 		assertNull(Proto.readHostState(ByteBuffer.allocate(228).order(ByteOrder.LITTLE_ENDIAN)));
+	}
+
+	/** McState's wire layout (PCM5, 104 bytes): the mover is the last sixteen. */
+	@Test
+	void writesTheMoverAfterEverythingElse() {
+		net.minecraft.world.phys.Vec3 zero = net.minecraft.world.phys.Vec3.ZERO;
+		ByteBuffer b = Proto.writeMcState(1, Proto.MC_READY, 0, zero, zero, true, false, true, 0, zero, zero, 9, 0.0F, 3, 2, new byte[] {0, 1, 0, 1}, 57,
+			new net.minecraft.world.phys.Vec3(-64, 128, 900.5));
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		assertEquals(Proto.MC_STATE_SIZE, b.remaining());
+		assertEquals('5', b.get(3));
+		assertEquals(1, b.get(87)); // the last of crossPortal, where PCM4 ended
+		assertEquals(57, b.getInt(88));
+		assertEquals(900.5F, b.getFloat(100), 1e-6);
 	}
 }

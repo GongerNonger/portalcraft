@@ -139,6 +139,38 @@ public final class HostCollision {
 		}
 	}
 
+	/**
+	 * True if the map's fixed geometry (the world and static props; not the host's live entities) has
+	 * a top in `soles`, the thin slab around a hull's bottom: fixed ground he stands on, or might.
+	 * For telling a ledge from the lift beside it (LiveEntities.fixtureUnder).
+	 */
+	public static boolean fixedGroundAt(AABB soles) {
+		Index fixed = world;
+		int x0 = Math.floorDiv((int) Math.floor(soles.minX), BUCKET), x1 = Math.floorDiv((int) Math.floor(soles.maxX), BUCKET);
+		int y0 = Math.floorDiv((int) Math.floor(soles.minY), BUCKET), y1 = Math.floorDiv((int) Math.floor(soles.maxY), BUCKET);
+		int z0 = Math.floorDiv((int) Math.floor(soles.minZ), BUCKET), z1 = Math.floorDiv((int) Math.floor(soles.maxZ), BUCKET);
+		for (int x = x0; x <= x1; x++) {
+			for (int y = y0; y <= y1; y++) {
+				for (int z = z0; z <= z1; z++) {
+					if (topIn(fixed.near(x * BUCKET, y * BUCKET, z * BUCKET), soles)) {
+						return true;
+					}
+				}
+			}
+		}
+		return topIn(fixed.huge(), soles);
+	}
+
+	private static boolean topIn(List<BspMap.Brush> brushes, AABB soles) {
+		for (BspMap.Brush brush : brushes) {
+			AABB box = brush.mcBox();
+			if (box.intersects(soles) && (brush.sloped() || box.maxY <= soles.maxY)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static Index index(List<BspMap.Brush> brushes) {
 		Map<Long, List<BspMap.Brush>> index = new HashMap<>();
 		List<BspMap.Brush> big = new ArrayList<>();

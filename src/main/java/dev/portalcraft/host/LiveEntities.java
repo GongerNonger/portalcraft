@@ -115,6 +115,77 @@ public final class LiveEntities {
 		return overlaps(new AABB(body.minX, body.minY - 0.1, body.minZ, body.maxX, body.minY + 0.5, body.maxZ), false);
 	}
 
+	/** How near Steve's soles a fixture's top has to be for him to be standing on it (blocks: 0.64 units). */
+	private static final double FOOTING = 0.02;
+
+	/**
+	 * The host fixture `body` stands on (HostEntity index), or 0: a solid entity that isn't a loose
+	 * prop, one of whose pieces has its top at his soles and under his hull. That is the mover Steve
+	 * is on (MoverRide), if it moves. `preferred` wins when it is one of several (a platform is a
+	 * brush and a model on it, both under him), so the answer doesn't change from tick to tick.
+	 *
+	 * At his soles, not merely near them: a lift going down past a ledge he stands on is under his
+	 * hull too, and counted as what he stood on it would have taken him down with it. And where the
+	 * fixed ground is at his soles as well (a platform level with the ledge it stops at, he with a
+	 * foot on each), he is on whichever his middle is over: with any overlap counting, a cart passing
+	 * the ledge he stood at the edge of would have taken him along.
+	 */
+	public static int fixtureUnder(AABB body, int preferred) {
+		AABB soles = new AABB(body.minX, body.minY - FOOTING, body.minZ, body.maxX, body.minY + FOOTING, body.maxZ);
+		double x = (body.minX + body.maxX) * 0.5, z = (body.minZ + body.maxZ) * 0.5;
+		int under = 0, underMiddle = 0;
+		for (Placed p : PLACED.values()) {
+			int index = p.pose().index();
+			if (p.bounds() == null || movableProp(p.pose().model()) || !p.bounds().intersects(soles)) {
+				continue;
+			}
+			boolean has = false, hasMiddle = false;
+			for (BspMap.Brush brush : p.brushes()) {
+				AABB box = brush.mcBox();
+				// (A sloped piece's box says nothing of where its top is under him: under his soles is enough.)
+				if (box.intersects(soles) && (brush.sloped() || box.maxY <= soles.maxY)) {
+					has = true;
+					if (x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ) {
+						hasMiddle = true;
+						break;
+					}
+				}
+			}
+			if (has && firstChoice(index, under, preferred)) {
+				under = index;
+			}
+			if (hasMiddle && firstChoice(index, underMiddle, preferred)) {
+				underMiddle = index;
+			}
+		}
+		return underMiddle != 0 ? underMiddle : under != 0 && !HostCollision.fixedGroundAt(soles) ? under : 0;
+	}
+
+	/**
+	 * True if fixture `index` has a piece under `body` with its top between `below` under his soles
+	 * and `above` over them (blocks): one he is about to come down on, or that has just come up to
+	 * (or through) his feet. Not a door he jumps past: that is beside him, its top far over his head.
+	 */
+	public static boolean topNear(int index, AABB body, double below, double above) {
+		Placed p = PLACED.get(index);
+		if (p == null || p.bounds() == null || movableProp(p.pose().model())) {
+			return false;
+		}
+		AABB band = new AABB(body.minX, body.minY - below, body.minZ, body.maxX, body.minY + above, body.maxZ);
+		for (BspMap.Brush brush : p.brushes()) {
+			AABB box = brush.mcBox();
+			if (box.intersects(band) && (brush.sloped() || box.maxY <= band.maxY)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Of two fixtures under him, the one he was on already, else the lower index: the same answer every tick. */
+	private static boolean firstChoice(int index, int found, int preferred) {
+		return found == 0 || index == preferred || (found != preferred && index < found);
+	}
+
 	private static boolean overlaps(AABB body, boolean movable) {
 		for (Placed p : PLACED.values()) {
 			if (p.bounds() == null || movableProp(p.pose().model()) != movable || !p.bounds().intersects(body)) {
@@ -163,8 +234,8 @@ public final class LiveEntities {
 	private LiveEntities() {
 	}
 
-	/** An entity that moved in the latest update: where it was, by how much (blocks), and whether it is a loose prop (a cube). */
-	public record Moved(AABB before, Vec3 delta, boolean loose) {
+	/** An entity that moved in the latest update: which, where it was, by how much (blocks), and whether it is a loose prop (a cube). */
+	public record Moved(int index, AABB before, Vec3 delta, boolean loose) {
 	}
 
 	/** Applies the newest entity packet. Returns the entities that moved, for carrying riders. */
@@ -225,7 +296,7 @@ public final class LiveEntities {
 				LOG.info("PortalCraft: entity #{} {} moved to {}", e.index(), e.model(), e.origin());
 			}
 			if (old != null && old.bounds() != null && old.pose().model().equals(e.model())) {
-				moved.add(new Moved(old.bounds(), Units.toMc(e.origin()).subtract(Units.toMc(old.pose().origin())), movableProp(e.model())));
+				moved.add(new Moved(e.index(), old.bounds(), Units.toMc(e.origin()).subtract(Units.toMc(old.pose().origin())), movableProp(e.model())));
 			}
 		}
 		for (Map.Entry<Integer, Placed> gone : PLACED.entrySet()) {
