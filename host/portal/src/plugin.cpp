@@ -905,7 +905,10 @@ bool collideableOrigin(int index, Vector* out);
 bool collideablesChecked();
 
 bool moverClass(const char* cls) {
-	return cls && (std::strncmp(cls, "func_", 5) == 0 || std::strncmp(cls, "prop_dynamic", 12) == 0);
+	// (prop_portal_stats_display: the lift with the end-of-chamber screen in it, which is what every
+	// lift's body is from testchmb_a_08 on. Left out, those rides were the old fight: Portal lifting
+	// its player, Minecraft letting Steve drop, 75 hand-overs a ride.)
+	return cls && (std::strncmp(cls, "func_", 5) == 0 || std::strncmp(cls, "prop_dynamic", 12) == 0 || std::strcmp(cls, "prop_portal_stats_display") == 0);
 }
 
 // Entity `index`, if it is a mover: where it is right now.
