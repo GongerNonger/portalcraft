@@ -94,5 +94,12 @@ vmf += entity({"classname": "func_breakable_surf", "origin": "-385 -400 64", "su
 vmf += entity({"classname": "npc_rocket_turret", "targetname": "rocket", "origin": "-385 -150 1", "angles": "0 270 0", "spawnflags": "1"})
 vmf += entity({"classname": "trigger_once", "origin": "-480 -480 32", "spawnflags": "1", "StartDisabled": "0", "OnStartTouch": "rocket,Enable,,0,-1"},
               box(-512, -512, 0, -448, -448, 64, "TOOLS/TOOLSTRIGGER"))
+# The ending's seat (escape_02's prop_vehicle_choreo_generic): stepping on (-150 300) seats the player for four seconds.
+vmf += entity({"classname": "prop_vehicle_choreo_generic", "targetname": "seat", "origin": "-150 250 1", "angles": "0 0 0", "solid": "0", "skin": "0",
+               "vehiclescript": "scripts/vehicles/choreo_vehicle_portal_flythru.txt", "model": "models/vehicles/vehicle_blackout_e1_dogintro.mdl",
+               "VehicleLocked": "0", "useplayereyes": "1", "ignoreplayer": "1", "actionScale": "1"})
+vmf += entity({"classname": "trigger_once", "origin": "-150 300 32", "spawnflags": "1", "StartDisabled": "0",
+               "OnStartTouch": "seat,EnterVehicle,,0.1,-1", "OnTrigger": "seat,ExitVehicle,,4,-1"},
+              box(-182, 268, 0, -118, 332, 64, "TOOLS/TOOLSTRIGGER"))
 open("pc_test.vmf", "w", newline="\n").write(vmf)
 print("wrote pc_test.vmf")
