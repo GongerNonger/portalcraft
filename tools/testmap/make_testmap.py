@@ -5,6 +5,8 @@ A 1024 x 1024 x 320 concrete room (every surface takes portals), floor at z 0, w
   cubes at (160 0 20) and (160 96 20)
   a glass pane at x -256, y -448..-192; one of GLaDOS's cores at (160 -96 24)
   a turret at (-440 440) looking along +x down an alley walled off at y 380 (x -512..-96)
+  an energy ball launcher (y -150, from the +x wall) switched on from the +x +y corner
+  a crusher at (430 -350) set off from (430 -460); a cell behind breakable glass in the -x -y corner with a rocket turret outside
   an air current (trigger_push, 300 units/s towards -x) over x 256..448, y 288..448, z 0..96
 Compile and install with build_testmap.sh; load with `map pc_test`.
 """
@@ -16,7 +18,7 @@ FLOOR = "CONCRETE/CONCRETE_MODULAR_FLOOR001A"
 CEIL = "CONCRETE/CONCRETE_MODULAR_CEILING001A"
 
 
-def box(x1, y1, z1, x2, y2, z2, material):
+def box(x1, y1, z1, x2, y2, z2, material, north=None):
     faces = [
         ((x1, y2, z2), (x2, y2, z2), (x2, y1, z2), "[1 0 0 0]", "[0 -1 0 0]"),
         ((x1, y1, z1), (x2, y1, z1), (x2, y2, z1), "[1 0 0 0]", "[0 -1 0 0]"),
@@ -26,12 +28,13 @@ def box(x1, y1, z1, x2, y2, z2, material):
         ((x2, y1, z1), (x1, y1, z1), (x1, y1, z2), "[1 0 0 0]", "[0 0 -1 0]"),
     ]
     out = ["\tsolid\n\t{\n\t\t\"id\" \"%d\"\n" % next(ids)]
-    for a, b, c, u, v in faces:
+    for n, (a, b, c, u, v) in enumerate(faces):
+        face = north if north and n == 4 else material  # (faces: top, bottom, -x, +x, +y, -y)
         plane = " ".join("(%d %d %d)" % p for p in (a, b, c))
         out.append(
             "\t\tside\n\t\t{\n\t\t\t\"id\" \"%d\"\n\t\t\t\"plane\" \"%s\"\n\t\t\t\"material\" \"%s\"\n"
             "\t\t\t\"uaxis\" \"%s 0.25\"\n\t\t\t\"vaxis\" \"%s 0.25\"\n\t\t\t\"rotation\" \"0\"\n"
-            "\t\t\t\"lightmapscale\" \"16\"\n\t\t\t\"smoothing_groups\" \"0\"\n\t\t}\n" % (next(ids), plane, material, u, v)
+            "\t\t\t\"lightmapscale\" \"16\"\n\t\t\t\"smoothing_groups\" \"0\"\n\t\t}\n" % (next(ids), plane, face, u, v)
         )
     out.append("\t}\n")
     return "".join(out)
@@ -72,5 +75,24 @@ vmf += entity({"classname": "func_brush", "origin": "-256 -320 64", "Solidity": 
 vmf += entity({"classname": "prop_glados_core", "origin": "160 -96 24", "angles": "0 0 0", "CoreType": "1", "DelayBetweenLines": "0.4", "spawnflags": "256", "model": "models/props_bts/glados_ball_reference.mdl", "physdamagescale": "0.1"})
 # A turret in its own alley (the wall at y 380..384 hides the rest of the room from it): it looks along +x from (-440 440).
 vmf += entity({"classname": "npc_portal_turret_floor", "origin": "-440 440 1", "angles": "0 0 0", "spawnflags": "0", "DamageForce": "1", "targetname": "alley_turret"})
+# An energy ball launcher on the +x wall, firing along y = -150; off until Steve steps into the +x +y corner.
+vmf += entity({"classname": "point_energy_ball_launcher", "targetname": "ball_launcher", "origin": "500 -150 40", "angles": "0 180 0", "spawnflags": "4096",
+               "minspeed": "200.0", "maxspeed": "200.0", "MinLifeAfterPortal": "6", "balltype": "Combine Energy Ball 1", "ballrespawntime": "2.0",
+               "ballradius": "12.0", "BallLifetime": "12", "ballcount": "1"})
+vmf += entity({"classname": "trigger_once", "origin": "488 488 32", "spawnflags": "1", "StartDisabled": "0", "OnStartTouch": "ball_launcher,Enable,,0,-1"},
+              box(464, 464, 0, 512, 512, 64, "TOOLS/TOOLSTRIGGER"))
+# A crusher (escape_01's): a block that slides to within 32 units of the -y wall, a second after Steve steps in front of it.
+vmf += entity({"classname": "func_door", "targetname": "crusher", "origin": "430 -350 50", "movedir": "0 270 0", "speed": "100", "lip": "20", "dmg": "25",
+               "wait": "-1", "spawnflags": "4096", "forceclosed": "0", "health": "0"}, box(380, -400, 0, 480, -300, 100, WALL))
+vmf += entity({"classname": "trigger_once", "origin": "430 -460 32", "spawnflags": "1", "StartDisabled": "0", "OnStartTouch": "crusher,Open,,1,-1"},
+              box(390, -500, 0, 470, -420, 64, "TOOLS/TOOLSTRIGGER"))
+# The -x -y corner is a cell behind breakable glass (y = -400, x -512..-258; the pane above closes most of its east side).
+# Stepping into its far corner wakes a rocket turret outside, which shoots the glass out as it does in escape_01.
+vmf += entity({"classname": "func_breakable_surf", "origin": "-385 -400 64", "surfacetype": "0", "health": "5", "fragility": "100", "material": "0",
+               "error": "0", "spawnflags": "0", "propdata": "0"},
+              box(-512, -401, 0, -258, -400, 128, "TOOLS/TOOLSNODRAW", north="GLASS/GLASSWINDOW_FROSTED_BREAK001A"))
+vmf += entity({"classname": "npc_rocket_turret", "targetname": "rocket", "origin": "-385 -150 1", "angles": "0 270 0", "spawnflags": "1"})
+vmf += entity({"classname": "trigger_once", "origin": "-480 -480 32", "spawnflags": "1", "StartDisabled": "0", "OnStartTouch": "rocket,Enable,,0,-1"},
+              box(-512, -512, 0, -448, -448, 64, "TOOLS/TOOLSTRIGGER"))
 open("pc_test.vmf", "w", newline="\n").write(vmf)
 print("wrote pc_test.vmf")
