@@ -1,0 +1,182 @@
+63 maps, BSP versions {21: 63}
+prop_dynamic                           5729  in  62 maps  <- on func_tracktrain:1043, func_movelinear:229, func_door:161, prop_dynamic:137, func_door_rotating:89
+logic_relay                            4844  in  62 maps
+light                                  2807  in  63 maps
+vgui_movie_display                     2539  in  62 maps
+func_brush                             1835  in  62 maps  <- on prop_dynamic:807, func_movelinear:19, func_door:17, func_tracktrain:8, npc_personality_core:5
+light_spot                             1397  in  62 maps
+path_track                             1393  in  60 maps  <- on func_brush:18
+trigger_once                           1280  in  62 maps  <- on func_tracktrain:39, prop_dynamic:15, func_physbox:2, func_tank:1, func_door_rotating:1
+func_portal_bumper                     1239  in  59 maps
+env_fog_controller                     1147  in  62 maps
+ambient_generic                        1007  in  63 maps  <- on func_tracktrain:2
+env_soundscape                          793  in  62 maps
+info_overlay_accessor                   663  in  45 maps
+trigger_multiple                        652  in  60 maps  <- on func_physbox:9, npc_portal_turret_floor:5, prop_dynamic:4, func_movelinear:4, func_door:3
+logic_auto                              644  in  63 maps
+func_instance_io_proxy                  636  in  62 maps
+move_rope                               587  in  47 maps  <- on func_movelinear:12, func_tracktrain:8, func_physbox:5, prop_dynamic:4
+keyframe_rope                           504  in  43 maps  <- on prop_dynamic:15, func_movelinear:2, func_physbox:1
+func_noportal_volume                    448  in  36 maps  <- on func_door:2, func_brush:1, func_tracktrain:1
+env_sprite_clientside                   446  in   8 maps
+func_clip_vphysics                      372  in  52 maps  <- on func_tracktrain:1, func_door:1
+logic_branch                            322  in  46 maps
+env_sprite                              321  in  19 maps  <- on trigger_once:12, func_rotating:5, prop_dynamic:3, func_tracktrain:2, func_movelinear:1
+info_particle_system                    301  in  36 maps  <- on prop_dynamic:10, func_movelinear:7, keyframe_rope:2, func_rotating:1
+info_target                             265  in  49 maps  <- on prop_dynamic:13, func_rotating:3, func_tracktrain:2, prop_dynamic_override:1, func_physbox:1
+prop_dynamic_override                   252  in  23 maps  <- on func_movelinear:29, func_door_rotating:12, func_physbox:11, func_rotating:5, prop_dynamic_override:4
+beam_spotlight                          212  in  12 maps  <- on func_physbox:1, func_rotating:1
+env_projectedtexture                    202  in  57 maps  <- on func_tracktrain:38, func_movelinear:3, func_physbox:2, func_tank:2, func_rotating:2
+game_text                               202  in  62 maps
+logic_script                            201  in  62 maps
+func_door                               195  in  32 maps  <- on func_door:11, func_tracktrain:4, func_movelinear:2, func_door_rotating:2, func_rotating:1
+func_tracktrain                         195  in  61 maps  <- on func_brush:1
+filter_activator_class                  176  in  52 maps
+func_areaportal                         167  in  35 maps
+info_placement_helper                   163  in  43 maps  <- on func_brush:3, func_door:1
+logic_branch_listener                   156  in  44 maps
+func_door_rotating                      152  in  41 maps  <- on func_tracktrain:20, func_door:14, func_movelinear:7, func_door_rotating:7, func_physbox:1
+point_template                          149  in  44 maps
+func_areaportalwindow                   143  in  53 maps
+info_paint_sprayer                      131  in  12 maps  <- on func_physbox:5
+point_clientcommand                     129  in  62 maps
+point_teleport                          128  in  61 maps  <- on func_tracktrain:2
+prop_physics                            125  in  17 maps
+env_spark                               123  in  31 maps  <- on func_door:6, func_tank:2, prop_dynamic:2, func_rotating:2, npc_portal_turret_floor:1
+prop_physics_override                   120  in  13 maps
+func_movelinear                         119  in  28 maps  <- on func_movelinear:34, func_tracktrain:30
+env_fade                                117  in  62 maps
+trigger_portal_cleanser                 116  in  55 maps
+trigger_catapult                        116  in  35 maps  <- on prop_dynamic:14, func_brush:2, func_tracktrain:1
+env_shake                               115  in  39 maps  <- on prop_dynamic:2, func_tracktrain:2, func_door:1
+env_texturetoggle                       105  in  45 maps
+prop_testchamber_door                    98  in  42 maps
+logic_timer                              90  in  31 maps
+trigger_hurt                             89  in  29 maps  <- on prop_dynamic:4, func_door:1, func_movelinear:1
+func_illusionary                         86  in  20 maps
+logic_autosave                           81  in  61 maps
+func_physbox                             81  in  16 maps
+npc_portal_turret_floor                  77  in  16 maps  <- on func_door_rotating:1
+generic_actor                            75  in  61 maps
+trigger_push                             73  in  32 maps  <- on func_brush:3, func_tracktrain:3
+info_node                                69  in  61 maps
+filter_activator_name                    67  in  29 maps
+logic_case                               67  in  16 maps
+info_player_start                        66  in  63 maps
+point_servercommand                      66  in  61 maps
+env_tonemap_controller                   64  in  62 maps
+worldspawn                               63  in  63 maps
+shadow_control                           63  in  62 maps
+env_entity_maker                         62  in  33 maps  <- on func_tracktrain:1
+point_changelevel                        62  in  62 maps
+trigger_transition                       62  in  62 maps
+info_landmark_exit                       62  in  61 maps
+info_landmark_entry                      62  in  61 maps
+env_physexplosion                        61  in  10 maps  <- on func_physbox:8
+trigger_autosave                         57  in  31 maps
+prop_weighted_cube                       55  in  32 maps
+math_counter                             52  in  28 maps
+env_shooter                              50  in   9 maps
+logic_achievement                        49  in  31 maps
+paint_sphere                             49  in   1 maps
+vgui_screen                              44  in  42 maps
+npc_bullseye                             44  in  13 maps  <- on func_tracktrain:7, npc_portal_turret_floor:1
+trigger_teleport                         43  in  40 maps  <- on func_tracktrain:37
+info_teleport_destination                41  in  40 maps  <- on func_tracktrain:37
+func_breakable                           41  in  10 maps  <- on func_tracktrain:18
+func_button                              40  in  14 maps  <- on func_tracktrain:1
+prop_floor_button                        38  in  30 maps
+npc_security_camera                      38  in  26 maps
+trigger_look                             37  in  19 maps
+phys_hinge                               37  in   7 maps
+func_tank                                35  in  18 maps  <- on func_tank:14, func_tracktrain:12, func_door:4, prop_dynamic_override:1
+logic_choreographed_scene                33  in  10 maps
+scripted_sequence                        32  in  16 maps
+func_portal_detector                     31  in  17 maps
+env_splash                               31  in   2 maps
+point_spotlight                          30  in  11 maps  <- on func_tank:2, func_rotating:2
+prop_button                              28  in  22 maps  <- on func_door:1, func_movelinear:1
+prop_indicator_panel                     28  in  20 maps
+phys_constraint                          27  in   6 maps
+func_monitor                             24  in  13 maps  <- on prop_dynamic:18
+path_corner                              23  in  11 maps
+phys_ballsocket                          23  in   4 maps
+prop_laser_catcher                       22  in  15 maps  <- on func_door:1
+prop_monster_box                         22  in  11 maps
+prop_portal                              21  in  10 maps
+npc_personality_core                     21  in  19 maps  <- on func_tank:13, prop_dynamic:2, prop_dynamic_override:1, func_rotating:1
+water_lod_control                        20  in  20 maps
+env_portal_laser                         20  in  17 maps  <- on func_door:1
+light_environment                        18  in  17 maps
+ai_script_conditions                     17  in   8 maps
+func_rotating                            16  in  11 maps  <- on func_tracktrain:2, func_door:2, func_tank:1, func_rotating:1, func_door_rotating:1
+env_physimpact                           16  in   4 maps
+env_instructor_hint                      15  in  10 maps
+npc_wheatley_boss                        15  in  15 maps  <- on func_door_rotating:14, func_tank:1
+point_camera                             14  in  14 maps
+env_wind                                 13  in  11 maps
+prop_tractor_beam                        13  in  12 maps
+logic_playerproxy                         9  in   8 maps
+filter_multi                              9  in   6 maps
+prop_wall_projector                       9  in   7 maps
+phys_ragdollconstraint                    9  in   3 maps
+prop_laser_relay                          9  in   3 maps
+player_loadsaved                          9  in   9 maps
+vgui_neurotoxin_countdown                 8  in   2 maps  <- on func_door:2
+env_global                                8  in   8 maps
+prop_paint_bomb                           8  in   5 maps
+logic_register_activator                  7  in   2 maps
+prop_under_button                         7  in   4 maps
+trigger_paint_cleanser                    7  in   6 maps
+prop_exploding_futbol                     7  in   2 maps
+env_hudhint                               6  in   2 maps
+point_viewcontrol                         6  in   5 maps  <- on prop_dynamic:3, prop_dynamic_override:1
+sky_camera                                6  in   6 maps
+linked_portal_door                        6  in   2 maps
+env_lightglow                             6  in   5 maps
+prop_under_floor_button                   6  in   4 maps
+env_ar2explosion                          5  in   3 maps
+func_wall                                 5  in   2 maps  <- on func_tracktrain:4
+point_viewproxy                           5  in   4 maps  <- on prop_dynamic_override:1
+info_game_event_proxy                     5  in   4 maps
+point_survey                              5  in   5 maps
+ai_relationship                           5  in   3 maps
+env_fire                                  5  in   1 maps
+color_correction                          4  in   3 maps
+filter_player_held                        4  in   3 maps
+phys_lengthconstraint                     4  in   4 maps
+point_push                                4  in   1 maps
+env_microphone                            4  in   3 maps
+light_directional                         4  in   2 maps
+ai_addon_builder                          3  in   2 maps
+postprocess_controller                    3  in   2 maps
+light_dynamic                             3  in   1 maps
+logic_playmovie                           2  in   2 maps
+phys_spring                               2  in   1 maps
+material_modify_control                   2  in   2 maps
+info_lighting_relative                    2  in   1 maps  <- on prop_dynamic:1
+trigger_weapon_strip                      2  in   2 maps
+filter_damage_type                        2  in   2 maps
+phys_constraintsystem                     2  in   2 maps
+player_weaponstrip                        2  in   2 maps
+logic_collision_pair                      2  in   1 maps
+infodecal                                 2  in   1 maps
+player_speedmod                           2  in   2 maps
+func_rot_button                           2  in   2 maps
+info_landmark                             2  in   2 maps
+env_portal_credits                        2  in   2 maps
+env_explosion                             2  in   2 maps
+prop_ragdoll                              1  in   1 maps
+npc_enemyfinder                           1  in   1 maps  <- on func_tank:1
+color_correction_volume                   1  in   1 maps
+phys_motor                                1  in   1 maps
+point_anglesensor                         1  in   1 maps
+env_soundscape_proxy                      1  in   1 maps  <- on env_soundscape:1
+weapon_portalgun                          1  in   1 maps
+info_target_instructor_hint               1  in   1 maps
+filter_activator_model                    1  in   1 maps
+point_futbol_shooter                      1  in   1 maps
+prop_vehicle_choreo_generic               1  in   1 maps
+game_gib_manager                          1  in   1 maps
+trigger_changelevel                       1  in   1 maps
+logic_random_outputs                      1  in   1 maps
