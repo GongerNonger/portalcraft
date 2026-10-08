@@ -940,6 +940,9 @@ public final class HostDriver {
 		if (player.onGround()) {
 			rideAirTicks = 0;
 			int under = LiveEntities.fixtureUnder(player.getBoundingBox(), RIDE.index());
+			if (under == 0) {
+				under = LiveEntities.fixtureLandedOn(player.getBoundingBox(), RIDE.index()); // a mover already on its way
+			}
 			Vec3 at = under != 0 ? LiveEntities.originOf(under) : null;
 			if (at != null) {
 				RIDE.attach(under, at);
