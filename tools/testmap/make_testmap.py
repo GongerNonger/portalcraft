@@ -67,6 +67,6 @@ vmf += entity(
 # A pane of the first chamber's glass (x = -256, y -448..-192): Minecraft water put behind it must show behind it.
 vmf += entity({"classname": "func_brush", "origin": "-256 -320 64", "Solidity": "2", "spawnflags": "2"}, box(-258, -448, 0, -254, -192, 128, "GLASS/GLASSWINDOW_REFRACT01"))
 # One of GLaDOS's cores, to carry: they only exist in the last fight otherwise.
-vmf += entity({"classname": "prop_glados_core", "origin": "160 -96 24", "angles": "0 0 0", "CoreType": "1", "DelayBetweenLines": "0.4"})
+vmf += entity({"classname": "prop_glados_core", "origin": "160 -96 24", "angles": "0 0 0", "CoreType": "1", "DelayBetweenLines": "0.4", "spawnflags": "256", "model": "models/props_bts/glados_ball_reference.mdl", "physdamagescale": "0.1"})
 open("pc_test.vmf", "w", newline="\n").write(vmf)
 print("wrote pc_test.vmf")

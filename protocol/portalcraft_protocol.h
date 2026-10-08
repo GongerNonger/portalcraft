@@ -377,6 +377,13 @@ struct WorldVertex { // matches D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1
 	float u, v;     // into the atlas, 0..1, v down
 };
 
+// In the header page, after the header's own fields: the rectangles of the block atlas Minecraft
+// has rewritten in place since the atlas was sent (animated sprites, water and lava, on their next
+// frame). uint32 seq (bumped after the pixels and the list are written), uint32 count, then count
+// pairs of uint32: x | y << 16, w | h << 16. The host copies just those into its texture.
+constexpr uint32_t kWorldPatchOffset = 1024;
+constexpr uint32_t kWorldPatchMax = 120;
+
 struct WorldHeader {
 	char magic[4];            // "PCW6", written by the host
 	uint32_t atlasWidth;      // Minecraft

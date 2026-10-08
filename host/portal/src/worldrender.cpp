@@ -290,6 +290,52 @@ void uploadAtlas(IDirect3DDevice9* dev, IDirect3DTexture9** tex, const uint8_t* 
 	}
 }
 
+// Minecraft's animated sprites (water, lava, fire) on their next frame: it rewrites those few
+// cells of the atlas in the mapping and lists them (kWorldPatchOffset); just those are copied
+// into the texture. The whole atlas again each time is 16 MB.
+uint32_t g_patchSeq = 0;
+
+void patchAtlas() {
+	const uint8_t* list = g_shm + pcproto::kWorldPatchOffset;
+	uint32_t seq, count;
+	std::memcpy(&seq, list, 4);
+	if (seq == g_patchSeq || !g_atlas) {
+		return;
+	}
+	g_patchSeq = seq;
+	std::memcpy(&count, list + 4, 4);
+	uint32_t w = g_header->atlasWidth, h = g_header->atlasHeight;
+	if (count > pcproto::kWorldPatchMax || w == 0 || h == 0 || w > pcproto::kWorldAtlasMaxW || h > pcproto::kWorldAtlasMaxH) {
+		return;
+	}
+	const uint8_t* src = g_shm + pcproto::kWorldAtlasOffset;
+	for (uint32_t i = 0; i < count; i++) {
+		uint32_t xy, wh;
+		std::memcpy(&xy, list + 8 + i * 8, 4);
+		std::memcpy(&wh, list + 12 + i * 8, 4);
+		uint32_t x = xy & 0xFFFF, y = xy >> 16, rw = wh & 0xFFFF, rh = wh >> 16;
+		if (rw == 0 || rh == 0 || x + rw > w || y + rh > h) {
+			continue;
+		}
+		RECT r{LONG(x), LONG(y), LONG(x + rw), LONG(y + rh)};
+		D3DLOCKED_RECT lr;
+		if (FAILED(g_atlas->LockRect(0, &lr, &r, 0))) {
+			return;
+		}
+		for (uint32_t row = 0; row < rh; row++) {
+			const uint8_t* in = src + (size_t(y + row) * w + x) * 4;
+			uint8_t* out = static_cast<uint8_t*>(lr.pBits) + size_t(row) * lr.Pitch;
+			for (uint32_t col = 0; col < rw; col++) { // RGBA -> BGRA
+				out[col * 4 + 0] = in[col * 4 + 2];
+				out[col * 4 + 1] = in[col * 4 + 1];
+				out[col * 4 + 2] = in[col * 4 + 0];
+				out[col * 4 + 3] = in[col * 4 + 3];
+			}
+		}
+		g_atlas->UnlockRect(0);
+	}
+}
+
 void uploadAtlases(IDirect3DDevice9* dev) {
 	if (g_header->atlasSeq != g_atlasSeq) {
 		g_atlasSeq = g_header->atlasSeq;
@@ -298,6 +344,7 @@ void uploadAtlases(IDirect3DDevice9* dev) {
 			uploadAtlas(dev, &g_atlas, g_shm + pcproto::kWorldAtlasOffset, w, h, "block");
 		}
 	}
+	patchAtlas();
 	if (g_header->itemAtlasSeq != g_itemAtlasSeq) {
 		g_itemAtlasSeq = g_header->itemAtlasSeq;
 		uint32_t w = g_header->itemAtlasWidth, h = g_header->itemAtlasHeight;

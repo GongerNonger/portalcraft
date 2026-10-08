@@ -160,6 +160,39 @@ public final class WorldLink {
 		view.set(INT, ATLAS_SEQ, WorldFormat.nextSeq(view.get(INT, ATLAS_SEQ)));
 	}
 
+	/**
+	 * Rewrites parts of the block atlas already sent (animated sprites on their next frame):
+	 * {@code rects} is four ints a rectangle (x, y, width, height) of {@code rgba}, an image
+	 * {@code width} wide. The pixels go straight into the mapping's atlas; the host is told which
+	 * rectangles to take from it (a seq, a count and the rectangles, in the header page), and takes
+	 * only those: sending the whole 2048 x 2048 atlas again every other tick would be 160 MB a second.
+	 * A list the host misses is no loss, the same sprites being in the next.
+	 */
+	public static void patchAtlas(int width, int[] rgba, int[] rects) {
+		if (!isOpen() || view.get(INT, ATLAS_SEQ) == 0 || width != view.get(INT, ATLAS_W)) {
+			return;
+		}
+		int height = view.get(INT, ATLAS_H), count = 0;
+		for (int i = 0; i + 3 < rects.length && count < WorldFormat.PATCH_MAX; i += 4) {
+			int x = rects[i], y = rects[i + 1], w = rects[i + 2], h = rects[i + 3];
+			if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > width || y + h > height) {
+				continue;
+			}
+			for (int row = y; row < y + h; row++) {
+				MemorySegment.copy(rgba, row * width + x, view, INT_UNALIGNED, WorldFormat.ATLAS_OFFSET + ((long) row * width + x) * 4, w);
+			}
+			view.set(INT, WorldFormat.PATCH_OFFSET + 8 + count * 8L, x | y << 16);
+			view.set(INT, WorldFormat.PATCH_OFFSET + 12 + count * 8L, w | h << 16);
+			count++;
+		}
+		if (count == 0) {
+			return;
+		}
+		view.set(INT, WorldFormat.PATCH_OFFSET + 4, count);
+		VarHandle.releaseFence();
+		view.set(INT, WorldFormat.PATCH_OFFSET, WorldFormat.nextSeq(view.get(INT, WorldFormat.PATCH_OFFSET)));
+	}
+
 	/** The mesh slot Minecraft may write now, or -1 if the host holds both. */
 	public static int freeSlot() {
 		if (!isOpen()) {

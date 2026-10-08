@@ -99,6 +99,8 @@ public final class WorldExporter {
 		}
 	}
 
+	private static long animatedTick = Long.MIN_VALUE;
+
 	/** Once per frame while linked and the world mapping is open: the blocks, then the entities. */
 	public static void frame(Minecraft minecraft) {
 		try {
@@ -121,6 +123,15 @@ public final class WorldExporter {
 		if (sentGeneration != WorldLink.generation() || sentLevel != level || atlas == null || atlas.stale(minecraft)) {
 			if (!reset(minecraft, level)) {
 				return;
+			}
+		}
+		// Water, lava, fire: on to the frame Minecraft shows this tick (they stood still on their first).
+		long tick = level.getGameTime();
+		if (tick != animatedTick && atlas.fitsMapping()) {
+			animatedTick = tick;
+			int[] changed = atlas.animate(tick);
+			if (changed.length > 0) {
+				WorldLink.patchAtlas(atlas.width, atlas.pixels, changed);
 			}
 		}
 		boolean backlog = meshDirtySections(minecraft, level);

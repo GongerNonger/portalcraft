@@ -12,6 +12,9 @@ public final class WorldFormat {
 	public static final int ATLAS_MAX_H = 2048;
 	public static final long HEADER_BYTES = 4096;
 	public static final long ATLAS_OFFSET = 4096;
+	/** In the header page: the parts of the block atlas rewritten since (kWorldPatchOffset). A seq, a count, then (x | y << 16, w | h << 16) each. */
+	public static final long PATCH_OFFSET = 1024;
+	public static final int PATCH_MAX = 120; // kWorldPatchMax
 	public static final long ATLAS_BYTES = (long) ATLAS_MAX_W * ATLAS_MAX_H * 4;
 	public static final int MAX_VERTICES = 196608; // kWorldMaxVertices
 	public static final int VERTEX_BYTES = 24;
