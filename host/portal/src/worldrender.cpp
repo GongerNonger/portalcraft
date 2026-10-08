@@ -19,10 +19,13 @@
 // overload first): 37 Push3DView(+depth), 38 Push3DView, 39 Push2DView, 40 PopView,
 // 50 GetMatricesForView.
 //
-// Two passes per view. Glass and other see-through surfaces don't write depth, so anything drawn
-// after them lands on top: our solid triangles go in just before the view's first translucent
-// world surface (IVRenderView::DrawTranslucentSurfaces, slot 18), and our translucent ones at the
-// view's end. A view with no translucent surfaces gets both at the end.
+// Where in the view. Glass and other see-through surfaces don't write depth, so anything drawn
+// after them lands on top of them, however far behind them it is. So both of our passes, solid
+// then translucent, go in just before the view's first translucent world surface
+// (IVRenderView::DrawTranslucentSurfaces, slot 18): Portal's glass is then blended over Minecraft's
+// water behind it, as it is over our blocks. A view with no translucent surfaces gets both at its
+// end. (Our translucent pass used to wait for the view's end, which put water seen through glass
+// in front of the glass; -pclatetranslucent brings that order back, see g_lateTranslucent.)
 //
 // Portal's lighting: every Minecraft triangle is tinted by what Portal would light a model with at
 // that spot, facing that way: IVEngineClient::ComputeLighting (slot 67; the ambient cube from the
@@ -81,9 +84,16 @@ struct ViewEntry {
 	sdk::Vector origin;
 	bool throughPortal;   // draw our meshes into it when it is popped
 	bool isMain;          // the frame's first view straight to the screen: the player's own
-	bool solidDone;       // our solid pass is in (before its glass)
+	int done;             // which of our passes (kPassSolid, kPassTranslucent) are in already
 };
-bool g_mainSolidDone = false;
+int g_mainDone = 0; // the same for the main view, which SceneEnd finishes after its entry is popped
+// Off: our translucent triangles (water, stained glass, particles) follow our solid ones, before
+// Portal's see-through surfaces, so its glass is drawn over them. What that costs: a see-through
+// thing of Portal's that is BEHIND Minecraft's water (more glass, a sprite, a beam) is drawn after
+// the water and so shows at full strength instead of dimmed by it; water doesn't write depth, or
+// it would hide those outright and its own faces would cut each other out. On (Portal started with
+// -pclatetranslucent): the old order, translucent triangles at the view's end, over everything.
+bool g_lateTranslucent = false;
 
 // ---- Portal's lighting ----------------------------------------------------------------------
 
@@ -397,6 +407,9 @@ void draw(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes)
 }
 
 void drawTimed(IDirect3DDevice9* dev, const float* m, bool throughPortal, int passes) {
+	if (!passes) {
+		return; // this view has had everything
+	}
 	if (!g_header || (g_header->meshSeq == 0 && g_header->entitySeq == 0)) {
 		return skipped("no mesh published yet");
 	}
@@ -727,7 +740,7 @@ void __fastcall hkSceneEnd(void* self, void* /*edx*/) {
 	// monitors and the like, which WorldToScreenMatrix doesn't describe.
 	if (g_scenesThisFrame == 1) {
 		if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-			draw(dev, worldToScreen(), false, g_mainSolidDone ? kPassTranslucent : kPassBoth);
+			draw(dev, worldToScreen(), false, kPassBoth & ~g_mainDone);
 		}
 	}
 	g_sceneEndOriginal(self);
@@ -754,8 +767,8 @@ void pushView(const void* view, bool candidate, bool toScreen) {
 	e.setup = static_cast<const uint8_t*>(view);
 	e.origin = view ? *reinterpret_cast<const sdk::Vector*>(e.setup + kSetupOrigin) : sdk::Vector{};
 	e.throughPortal = false;
-	e.isMain = g_viewDepth == 0 && toScreen && view && !g_mainSolidDone;
-	e.solidDone = false;
+	e.isMain = g_viewDepth == 0 && toScreen && view && !g_mainDone;
+	e.done = 0;
 	if (candidate && view && g_viewDepth >= 1 && g_viewDepth - 1 < kMaxViews) {
 		const sdk::Vector& p = g_views[g_viewDepth - 1].origin;
 		float dx = e.origin.x - p.x, dy = e.origin.y - p.y, dz = e.origin.z - p.z;
@@ -793,23 +806,34 @@ void portalMatrix(const ViewEntry& e, float* worldToProjection) {
 using DrawTranslucentSurfacesFn = void(__thiscall*)(void* self, void* list, int sortIndex, unsigned long flags, bool shadowDepth);
 DrawTranslucentSurfacesFn g_translucentOriginal = nullptr;
 
-// The view's first translucent world surface: our solids go in now, under its glass.
+// Draws into the view being drawn (the main one, or one through a portal) those of the passes
+// `want` it hasn't had yet.
+void drawInto(ViewEntry& e, int want) {
+	want &= ~e.done;
+	if (!want || !(e.isMain || e.throughPortal)) {
+		return;
+	}
+	e.done |= want;
+	auto* dev = static_cast<IDirect3DDevice9*>(overlay::device());
+	if (!dev) {
+		return;
+	}
+	if (e.isMain) {
+		g_mainDone |= want;
+		draw(dev, worldToScreen(), false, want);
+	} else if (g_renderView) {
+		float worldToProjection[16];
+		portalMatrix(e, worldToProjection);
+		draw(dev, worldToProjection, true, want);
+	}
+}
+
+// The view's first translucent world surface: our triangles go in now, under its glass. This is
+// the point our solid pass has always used, with the same matrix, so the translucent pass moving
+// here from the view's end changes only what is blended over what.
 void __fastcall hkDrawTranslucentSurfaces(void* self, void* /*edx*/, void* list, int sortIndex, unsigned long flags, bool shadowDepth) {
 	if (!shadowDepth && g_viewDepth > 0 && g_viewDepth <= kMaxViews) {
-		ViewEntry& e = g_views[g_viewDepth - 1];
-		if (!e.solidDone && (e.isMain || e.throughPortal)) {
-			e.solidDone = true;
-			if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-				if (e.isMain) {
-					g_mainSolidDone = true;
-					draw(dev, worldToScreen(), false, kPassSolid);
-				} else if (g_renderView) {
-					float worldToProjection[16];
-					portalMatrix(e, worldToProjection);
-					draw(dev, worldToProjection, true, kPassSolid);
-				}
-			}
-		}
+		drawInto(g_views[g_viewDepth - 1], g_lateTranslucent ? kPassSolid : kPassBoth);
 	}
 	g_translucentOriginal(self, list, sortIndex, flags, shadowDepth);
 }
@@ -826,20 +850,7 @@ DrawWorldListsFn g_worldListsOriginal = nullptr;
 void __fastcall hkDrawWorldLists(void* self, void* /*edx*/, void* list, unsigned long flags, float waterZAdjust) {
 	g_worldListsOriginal(self, list, flags, waterZAdjust);
 	if (g_viewDepth > 0 && g_viewDepth <= kMaxViews) {
-		ViewEntry& e = g_views[g_viewDepth - 1];
-		if (!e.solidDone && (e.isMain || e.throughPortal)) {
-			e.solidDone = true;
-			if (auto* dev = static_cast<IDirect3DDevice9*>(overlay::device())) {
-				if (e.isMain) {
-					g_mainSolidDone = true;
-					draw(dev, worldToScreen(), false, kPassSolid);
-				} else if (g_renderView) {
-					float worldToProjection[16];
-					portalMatrix(e, worldToProjection);
-					draw(dev, worldToProjection, true, kPassSolid);
-				}
-			}
-		}
+		drawInto(g_views[g_viewDepth - 1], kPassSolid);
 	}
 }
 
@@ -852,7 +863,7 @@ void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
 			portalMatrix(g_views[g_viewDepth], worldToProjection);
 			if (dev) {
 				g_portalViewsThisFrame++;
-				draw(dev, worldToProjection, true, g_views[g_viewDepth].solidDone ? kPassTranslucent : kPassBoth);
+				draw(dev, worldToProjection, true, kPassBoth & ~g_views[g_viewDepth].done);
 			}
 		}
 	}
@@ -902,7 +913,7 @@ void frameDone() {
 		}
 	}
 	g_viewDepth = 0;
-	g_mainSolidDone = false;
+	g_mainDone = 0;
 	g_portalViewsThisFrame = 0;
 	g_scenesThisFrame = 0;
 }
@@ -975,6 +986,10 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	if (std::strstr(GetCommandLineA(), "-pcearlysolid")) {
 		hook(vt, 13, reinterpret_cast<void*>(&hkDrawWorldLists), reinterpret_cast<void**>(&g_worldListsOriginal));
 		log("world: -pcearlysolid: solids drawn straight after the opaque world (experiment)");
+	}
+	if (std::strstr(GetCommandLineA(), "-pclatetranslucent")) {
+		g_lateTranslucent = true;
+		log("world: -pclatetranslucent: translucent triangles drawn at the view's end, over Portal's glass (the old order)");
 	}
 	log("world: mapping %s ready (%u MB), SceneEnd and the view stack hooked", instance::named(pcproto::kWorldMapping).c_str(), pcproto::kWorldBytes >> 20);
 	return true;
