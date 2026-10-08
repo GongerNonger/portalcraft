@@ -104,6 +104,11 @@ struct HostState {
 	// player along at that speed without becoming his own, upwards it is an acceleration (units/s^2),
 	// and as it ends its sideways part is left to him as momentum.
 	Vec3 baseVelocity;
+	// PCH7: how far above its feet the centre of the host's player is, as the host's portals see it
+	// this tick (Portal: 36 standing, 18 ducked), or 0 when the host can't tell. A portal takes the
+	// player when this point is behind its plane, so it is the point Minecraft carries Steve
+	// through by (PlayerCrossings), whatever his own hull is: then both cross at the same place.
+	float playerCentre;
 };
 
 enum McFlags : uint32_t {
@@ -114,7 +119,7 @@ enum McFlags : uint32_t {
 };
 
 struct McState {
-	char magic[4]; // "PCM4"
+	char magic[4]; // "PCM5"
 	uint32_t seq;
 	uint32_t flags;       // McFlags
 	uint32_t teleportAck; // last HostState.teleportSeq Minecraft has applied
@@ -141,6 +146,10 @@ struct McState {
 	uint32_t crossCount;
 	uint32_t crossMatchedEcho;
 	uint8_t crossPortal[4]; // the portal (0 blue, 1 orange) crossing k went in through, at [k % 4]; 0xFF unknown
+	// PCM5: the point crossing k carried Steve through by, as its height above his feet, at [k % 4]
+	// (the HostState.playerCentre Minecraft had then, or half his own hull); 0 unknown. The host
+	// makes the same carry with it, so what it plays back after the match is where Steve is.
+	float crossCentre[4];
 };
 
 struct Command {
@@ -439,8 +448,8 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 324, "HostState layout");
-static_assert(sizeof(McState) == 88, "McState layout");
+static_assert(sizeof(HostState) == 328, "HostState layout");
+static_assert(sizeof(McState) == 104, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
 static_assert(sizeof(DevInput) == 56, "DevInput layout");

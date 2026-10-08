@@ -14,8 +14,19 @@ import org.jspecify.annotations.Nullable;
  * an infinite fall near top speed one step is longer than the whole loop between the two portals,
  * so waiting for Portal left Minecraft's player further below the floor portal every loop until he
  * fell out of the bottom of its hole. So Minecraft carries its own player through the moment his
- * centre crosses a linked portal inside the oval, as many times as the step needs, the way Portal
+ * centre crosses a linked portal inside its opening, as many times as the step needs, the way Portal
  * moves Chell: the centre goes through, the hull stays upright, the velocity turns with the portal.
+ *
+ * "His centre" is the point Portal goes by, not the middle of Steve's own hull: the host says how
+ * far above its player's feet that is (HostState.playerCentre: 36 standing, 18 ducked), and its
+ * player's feet are Steve's. Portal teleports its player when that point is behind a portal's
+ * plane (CProp_Portal::ShouldTeleportTouchingEntity, on CPortal_Player::WorldSpaceCenter), and takes
+ * it straight back if the point is behind the plane it has just come out of. Going by the middle
+ * of Steve's hull, the two agreed only while the hulls were the same height: sneaking (a hull of
+ * 60 against Portal's ducked 36) Steve's middle was 12 units above Portal's, so into a floor portal
+ * Portal went first and handed its own crossing over, and out of one Steve stood with his middle
+ * in front of the plane and Portal's behind it, and Portal took its player back. Going by Portal's
+ * point, Steve is through exactly where Portal's player will be, whatever the two hulls are.
  *
  * Portal still does its own teleport (it owns the camera, the view turn and the smoothing), so the
  * positions sent to it are "unfolded": as if Minecraft hadn't yet made the crossings Portal hasn't
@@ -29,11 +40,11 @@ public final class PlayerCrossings {
 	/** Unmatched crossings kept; past this Portal has lost track and they're forgotten. */
 	private static final int MAX_PENDING = 16;
 
-	private record Crossing(int index, int portal, HostPortalTransit.Frame in, HostPortalTransit.Frame out, double halfHeight) {
+	private record Crossing(int index, int portal, HostPortalTransit.Frame in, HostPortalTransit.Frame out, double centre) {
 		/** Undoes the carry (Portal hasn't made it yet): back out of `in`... from `out`. */
 		Vec3 unfoldFeet(Vec3 feet) {
-			Vec3 centre = feet.add(0.0, 0.0, halfHeight);
-			return carryCentre(out, in, centre).subtract(0.0, 0.0, halfHeight);
+			Vec3 point = feet.add(0.0, 0.0, centre);
+			return carryCentre(out, in, point).subtract(0.0, 0.0, centre);
 		}
 
 		Vec3 unfoldDir(Vec3 v) {
@@ -66,6 +77,19 @@ public final class PlayerCrossings {
 			}
 		}
 		return 0xFF;
+	}
+
+	/**
+	 * McState.crossCentre: how far above Steve's feet the point crossing `index` carried him through
+	 * by was (0 once it is matched and forgotten). The host makes the same carry with it.
+	 */
+	public static double centreOf(int index) {
+		for (Crossing c : PENDING) {
+			if (c.index() == index) {
+				return c.centre();
+			}
+		}
+		return 0.0;
 	}
 
 	/** A fresh link, a respawn, a new map: nothing pending, counting from zero (the host follows). */
@@ -106,9 +130,9 @@ public final class PlayerCrossings {
 
 	/**
 	 * Minecraft just moved Steve from `previousFeet` to `feet` (velocity `velocity`, all host units;
-	 * `halfHeight` is half his hull). If his centre went in through a linked portal inside its oval,
-	 * carries all three through, again for each further portal the rest of the step crosses. Null if
-	 * no portal was crossed.
+	 * `halfHeight` is half his hull). If his centre went in through a linked portal inside its
+	 * opening, carries all three through, again for each further portal the rest of the step crosses.
+	 * Null if no portal was crossed.
 	 */
 	public static @Nullable Carried step(Proto.HostPortal[] portals, Vec3 previousFeet, Vec3 feet, Vec3 velocity, double halfHeight) {
 		return step(portals, previousFeet, feet, velocity, halfHeight, 0.0);
@@ -116,11 +140,20 @@ public final class PlayerCrossings {
 
 	/** As above, with the hull's half width: Steve comes out fitted inside the exit portal's opening (fit). */
 	public static @Nullable Carried step(Proto.HostPortal[] portals, Vec3 previousFeet, Vec3 feet, Vec3 velocity, double halfHeight, double halfWidth) {
+		return step(portals, previousFeet, feet, velocity, halfHeight, halfWidth, halfHeight);
+	}
+
+	/**
+	 * As above, going by the point `centre` above his feet instead of the middle of his hull: the
+	 * host's own centre for its player (see the class comment).
+	 */
+	public static @Nullable Carried step(Proto.HostPortal[] portals, Vec3 previousFeet, Vec3 feet, Vec3 velocity, double halfHeight, double halfWidth,
+		double centre) {
 		if (portals.length < 2 || portals[0] == null || portals[1] == null || !portals[0].linked() || !portals[1].linked()) {
 			return null;
 		}
 		HostPortalTransit.Frame[] frames = {new HostPortalTransit.Frame(portals[0]), new HostPortalTransit.Frame(portals[1])};
-		Vec3 up = new Vec3(0.0, 0.0, halfHeight);
+		Vec3 up = new Vec3(0.0, 0.0, centre);
 		Vec3 from = previousFeet.add(up), to = feet.add(up), prev = previousFeet.add(up);
 		Vec3 v = velocity;
 		int made = 0;
@@ -138,7 +171,7 @@ public final class PlayerCrossings {
 					continue; // didn't go in through its front
 				}
 				double t = d0 / (d0 - d1);
-				if (t < best && frames[i].inOval(from.add(to.subtract(from).scale(t)))) {
+				if (t < best && frames[i].inOpening(from.add(to.subtract(from).scale(t)))) {
 					best = t;
 					hit = i;
 				}
@@ -149,7 +182,7 @@ public final class PlayerCrossings {
 			HostPortalTransit.Frame in = frames[hit], out = frames[1 - hit];
 			Vec3 crossing = from.add(to.subtract(from).scale(best));
 			from = carryCentre(in, out, crossing);
-			Vec3 fit = halfWidth > 0.0 ? fit(out, carryCentre(in, out, to), halfWidth, halfHeight) : Vec3.ZERO; // where the step ends
+			Vec3 fit = halfWidth > 0.0 ? fit(out, carryCentre(in, out, to), halfWidth, halfHeight, centre) : Vec3.ZERO; // where the step ends
 			fitted = fitted.add(fit);
 			from = from.add(fit);
 			to = carryCentre(in, out, to).add(fit);
@@ -158,7 +191,7 @@ public final class PlayerCrossings {
 			skip = 1 - hit;
 			made++;
 			count++;
-			PENDING.addLast(new Crossing(count, hit, in, out, halfHeight));
+			PENDING.addLast(new Crossing(count, hit, in, out, centre));
 			while (PENDING.size() > MAX_PENDING) {
 				PENDING.removeFirst();
 			}
@@ -193,12 +226,25 @@ public final class PlayerCrossings {
 	 * The fit isn't taken out again when unfolding: Portal, playing the unfolded steps, sees Steve
 	 * shift by it behind the portal he went into (for a tick or two, out of sight), and the plain
 	 * carry of those steps is then exactly where Steve is. Nothing jumps once he is out.
+	 *
+	 * `point` is the point he was carried through by, `centre` above his feet. The box fitted
+	 * stands on his feet and is as tall as the taller of his hull and Portal's player's (twice
+	 * `centre`): sneaking under a Portal player that still stands, or gliding in a hull 24 units
+	 * high, Portal's player reaches above Steve's head, and it is Portal's player that Portal pushes
+	 * clear. How far out in front goes by the point itself: that is what Portal's own test is on.
+	 *
+	 * (The numbers are for the opening Portal makes solid walls around, 64.2 x 108.2 units:
+	 * PORTAL_HOLE_HALF_WIDTH and _HEIGHT in PortalSimulation.cpp. Steve's 33.2-wide hull kept inside
+	 * 64 x 105 has Portal's 32-wide one 0.7 clear of that at the sides and 1.6 at the ends. The
+	 * smaller 62.72 x 105.84 rectangle in the same file is not something a player has to fit: Portal
+	 * only asks that his box overlaps it before it teleports him.)
 	 */
-	static Vec3 fit(HostPortalTransit.Frame out, Vec3 centre, double halfWidth, double halfHeight) {
-		Vec3 rel = centre.subtract(out.origin);
-		double front = rel.dot(out.forward);
-		return out.right.scale(fitAlong(rel.dot(out.right), out.right, HostCollision.PORTAL_HALF_WIDTH - FIT_SIDE, halfWidth, halfHeight))
-			.add(out.up.scale(fitAlong(rel.dot(out.up), out.up, HostCollision.PORTAL_HALF_HEIGHT - FIT_END, halfWidth, halfHeight)))
+	static Vec3 fit(HostPortalTransit.Frame out, Vec3 point, double halfWidth, double halfHeight, double centre) {
+		double boxHalf = Math.max(halfHeight, centre);
+		Vec3 rel = point.add(0.0, 0.0, boxHalf - centre).subtract(out.origin); // the middle of the box
+		double front = point.subtract(out.origin).dot(out.forward);
+		return out.right.scale(fitAlong(rel.dot(out.right), out.right, HostCollision.PORTAL_HALF_WIDTH - FIT_SIDE, halfWidth, boxHalf))
+			.add(out.up.scale(fitAlong(rel.dot(out.up), out.up, HostCollision.PORTAL_HALF_HEIGHT - FIT_END, halfWidth, boxHalf)))
 			.add(out.forward.scale(Math.max(0.0, FIT_FRONT - front)));
 	}
 

@@ -332,6 +332,25 @@ float steveHalfHeight() {
 	}
 	return g_mc.sneaking ? 30.0f : 36.0f;
 }
+
+// How far above its feet Portal has its own player's centre: 36 standing, 18 ducked; 0 until it
+// has been read (updatePortalCentre, after each move). This is the point every one of Portal's
+// portal tests is on (CPortal_Player::WorldSpaceCenter): it teleports its player when the point is
+// behind a portal's plane, and takes ownership of him when it is in front. Sent to Minecraft
+// (HostState.playerCentre), which carries Steve through by the same point, so the two cross at
+// the same place whatever their hulls are.
+float g_portalCentre = 0.0f;
+
+float portalCentre() {
+	return g_portalCentre > 0.0f ? g_portalCentre : steveHalfHeight();
+}
+
+// The point Minecraft carried Steve through by on its crossing k (McState.crossCentre), for making
+// the same carry here. Half his hull if it doesn't say (an older Minecraft side, fake_mc).
+float crossingCentre(uint32_t k) {
+	float c = g_mc.crossCentre[k & 3];
+	return c >= 1.0f && c <= 64.0f ? c : steveHalfHeight();
+}
 void dropAppliedShoves(uint32_t ack); // the player puppet, below
 // Minecraft's recent physics steps on a smoothed timeline (see interpolatedMinecraft).
 struct TickSample {
@@ -728,6 +747,7 @@ bool serverToolsReady() {
 struct PlayerOffsets {
 	bool ready = false;
 	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1, nextAttack = -1, baseVelocity = -1, vehicle = -1;
+	int ducked = -1; // m_Local.m_bDucked
 } g_pl;
 
 // Portal's player entity, its send-table offsets looked up the first time. Null between levels.
@@ -751,12 +771,65 @@ uint8_t* playerFields() {
 			g_pl.nextAttack = findProp(sc->table, "m_flNextAttack", 0);
 			g_pl.baseVelocity = findProp(sc->table, "m_vecBaseVelocity", 0);
 			g_pl.vehicle = findProp(sc->table, "m_hVehicle", 0);
+			g_pl.ducked = findProp(sc->table, "m_bDucked", 0);
 		}
-		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d m_hGroundEntity %d", sc ? sc->name : "?",
-			g_pl.health, g_pl.lifeState, g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon, g_pl.groundEntity);
+		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d m_hGroundEntity %d m_bDucked %d", sc ? sc->name : "?",
+			g_pl.health, g_pl.lifeState, g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon, g_pl.groundEntity, g_pl.ducked);
 		logf("player: m_vecBaseVelocity %d m_hVehicle %d", g_pl.baseVelocity, g_pl.vehicle);
 	}
 	return base;
+}
+
+// ---- Portal's centre for its player ----------------------------------------------------------
+// Portal's player has two hulls, 72 units high and 36 ducked, and its centre for the portals is
+// half of whichever it is in (m_Local.m_bDucked: CPortal_Player::WorldSpaceCenter, portal_player.cpp).
+// Steve has three (72, 60 sneaking, 24 gliding) and none of them is Portal's ducked one, so "is his
+// centre behind the plane" had two answers whenever the hulls differed, and the forced crossings
+// and the bounce-back rule below were what held the two together. Three ways to one answer:
+//  - write Portal's origin so that its centre is where Steve's is. That floats or sinks Portal's
+//    player by up to 24 units whenever Steve isn't standing: off its floor, out of its triggers,
+//    and every reader of its height (the lift, the floor it rests on, the camera) has to know.
+//  - keep Portal's player out of its duck. That leaves the duck that matters: while Steve sneaks
+//    we hold IN_DUCK for Portal ourselves (quietPortalMovement), and its hull is 36 to his 60.
+//  - ask Portal which hull its player is in and have Minecraft carry Steve through by that point.
+//    Nothing in Portal moves, and it holds for hull states nobody thought of. This is what is done.
+//
+// Read after Portal's own move, because that is the state its portals test in the touch pass that
+// follows. It also keeps the duck Portal forces at a crossing out of sight. Going in through any
+// portal that isn't a wall (unless both are floor or ceiling), TeleportTouchingEntity ducks a
+// standing player (ForceDuckThisFrame and m_bInDuckJump, prop_portal.cpp) and carries it by a
+// point 16 units nearer its feet. ForceDuckThisFrame forces IN_DUCK onto the next command only:
+// CPortalGameMovement::ProcessMovement un-forces it after every move. We take IN_DUCK out of that
+// command unless Steve sneaks (quietPortalMovement), so CGameMovement::Duck goes to its un-duck
+// branch on the very first move after the teleport, and stands the player up there and then:
+// with floor within 36 units under it and room to stand on it (CanUnDuckJump, FinishUnDuckJump),
+// or in the air with the standing hull clear from where it is to 36 units lower (CanUnduck,
+// FinishUnDuck, at once off the ground; on it too, m_flDucktime being 0). So the forced duck
+// lasts from the touch pass of one tick to the move of the next, and no portal test ever sees
+// it, unless there is no room to stand: then it lasts until there is, the retry being every
+// tick, and for as long Portal's centre really is 18 and Minecraft is told so.
+void updatePortalCentre() {
+	uint8_t* base = playerFields();
+	if (!base) {
+		g_portalCentre = 0.0f;
+		return;
+	}
+	bool ducked;
+	if (g_pl.ducked >= 0) {
+		ducked = *reinterpret_cast<uint8_t*>(base + g_pl.ducked) != 0;
+	} else if (g_pl.flags >= 0) {
+		ducked = (*reinterpret_cast<int*>(base + g_pl.flags) & (1 << 1)) != 0; // FL_DUCKING: set and cleared with m_bDucked
+	} else {
+		g_portalCentre = 0.0f;
+		return;
+	}
+	float centre = ducked ? 18.0f : 36.0f;
+	static int centreLogs = 0;
+	if (centre != g_portalCentre && centreLogs++ < 200) {
+		logf("Portal's player is %s: its centre is %.0f units above its feet (Steve %s)", ducked ? "ducked" : "standing", centre,
+			(g_mc.flags & pcproto::kMcGliding) ? "glides" : g_mc.sneaking ? "sneaks" : "stands");
+	}
+	g_portalCentre = centre;
 }
 
 // ---- scripted scenes ----------------------------------------------------------------------
@@ -1248,7 +1321,7 @@ void linkPoll() {
 		if (n <= 0) {
 			return;
 		}
-		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM4", 4) == 0) {
+		if (n == sizeof(pcproto::McState) && std::memcmp(buf, "PCM5", 4) == 0) {
 			bool wasReady = mcReady();
 			uint32_t oldAck = g_mc.teleportAck, oldEcho = g_mc.crossMatchedEcho;
 			std::memcpy(&g_mc, buf, sizeof g_mc);
@@ -1638,6 +1711,8 @@ void applyMinecraft(uint8_t* mv) {
 void quietPortalMovement(uint8_t* mv) {
 	// Minecraft decides jumping, crouching and walking. Portal only crouches when Minecraft sneaks,
 	// which lowers Portal's camera the way sneaking lowers Steve's.
+	// (Taking IN_DUCK out also drops the one Portal forces onto the command after a crossing, which
+	// is what stands its player up again on that first move: see updatePortalCentre.)
 	int& buttons = *reinterpret_cast<int*>(mv + sdk::kMvButtons);
 	buttons &= ~(sdk::IN_JUMP | sdk::IN_DUCK);
 	if (g_mc.sneaking) {
@@ -1852,9 +1927,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			// head over the opening. Minecraft fits Steve its own way, and what it sends from here on,
 			// carried plainly, is where he is; with Portal's fix-up in the carry the player jumped by
 			// the difference a few ticks after every such crossing, when Minecraft heard of the match.)
+			// (By the point Minecraft carried him through by: McState.crossCentre. It was half of
+			// whatever hull Steve is in now, which is another point if he has let go of sneak, or
+			// opened his elytra, since he went through.)
 			uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
+			float by = crossingCentre(g_matched + 1);
 			Xf plain;
-			if (in < 2 && geometricCrossing(in, steveHalfHeight(), &plain)) {
+			if (in < 2 && geometricCrossing(in, by, &plain)) {
 				x = plain;
 			}
 			g_matched++;
@@ -1869,6 +1948,13 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 				logf("Portal matched Steve's crossing %u: (%.1f %.1f %.1f) -> (%.1f %.1f %.1f)", g_matched, g_lastSet.x, g_lastSet.y, g_lastSet.z, origin.x,
 					origin.y, origin.z);
 			}
+			// Steve went through by one point and Portal's player by another: the two hulls changed
+			// between his crossing and this one (or Minecraft never heard which hull Portal's is in).
+			// Harmless here, since Portal did follow; counted, because it is how the nets below get used.
+			static int differLogs = 0;
+			if (std::fabs(by - portalCentre()) > 0.5f && differLogs++ < 200) {
+				logf("crossing %u: Steve went through by the point %.0f above his feet, Portal's player by %.0f", g_matched, by, portalCentre());
+			}
 		}
 	}
 	// Steve went through in Minecraft, our playback took Portal's player in behind the portal, and
@@ -1877,7 +1963,10 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount > g_matched && g_crossingCount < kCrossings &&
 		dist(origin, g_lastSet) <= 0.5f) {
 		uint8_t in = g_mc.crossPortal[(g_matched + 1) & 3];
-		const float kHalf = steveHalfHeight();
+		// "Behind" is asked of Portal's own centre for its player, the point its test is on: that is
+		// what tells whether Portal has had its chance. The carry is by the point Minecraft used.
+		const float kHalf = portalCentre();
+		const float by = crossingCentre(g_matched + 1);
 		if (in < 2) {
 			Vector f, r, u;
 			angleBasis(g_portalsNow[in].angles, &f, &r, &u);
@@ -1903,7 +1992,18 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 			// re-placed as he falls through) never owns him and never takes him; waiting the ticks above
 			// for it, he hung in the opening and the two sides came apart (one such start in five bobbed).
 			bool justOpened = behind > 0.0f && nearPortal && g_portalsChangedAt != 0 && GetTickCount() - g_portalsChangedAt < 600;
-			if ((behindTicks >= 2 || justBehindTicks >= 6 || pendingTicks >= 8 || justOpened) && geometricCrossing(in, kHalf, &x)) {
+			if ((behindTicks >= 2 || justBehindTicks >= 6 || pendingTicks >= 8 || justOpened) && geometricCrossing(in, by, &x)) {
+				// A net, not the way through: with Steve carried by Portal's own centre, Portal takes
+				// its player the tick it gets behind the plane. Every use is logged, with the rule that
+				// fired, so a test run can count them (one that opens a portal under him has its
+				// "just opened" ones; any other is the two sides disagreeing).
+				static uint32_t forced = 0;
+				if (++forced <= 2000) {
+					logf("crossing net: forced %u (crossing %u, portal %u: %s; Portal's centre %.0f above its feet and %.1f behind the plane, Steve went through by %.0f)",
+						forced, g_matched + 1, in,
+						justOpened ? "the portal just opened" : behindTicks >= 2 ? "two ticks well behind" : justBehindTicks >= 6 ? "six ticks just behind" : "eight ticks unmatched",
+						kHalf, behind, by);
+				}
 				behindTicks = justBehindTicks = 0;
 				pendingTicks = pendingTicks >= 8 ? 7 : 0; // still behind after this one: the next goes next tick
 				g_matched++;
@@ -1923,6 +2023,9 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	// Minecraft hasn't: after a slow crossing he stands with his centre a unit in front of it, and
 	// Portal's own test (its ducked player's centre is lower than Steve's) flips. Not handed over:
 	// the player goes back to where Minecraft has Steve, below. Handed over, he ping-ponged.
+	// (Steve is carried by Portal's own centre now, and comes out with that point in front of the
+	// plane, so this is left for the ticks in which Portal's hull changes just after a crossing,
+	// and for what lifts its player a unit or two off where Minecraft has Steve.)
 	bool bounced = false;
 	if (!matchedNow && !g_needSync && g_haveSet && !g_riding && g_mc.crossCount == g_matched && lastMatchIn < 2 && tickNow - lastMatchTick < 20 &&
 		dist(origin, g_lastSet) > 24.0f) {
@@ -1931,6 +2034,14 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 		const pcproto::Vec3& in = g_portalsNow[lastMatchIn].origin;
 		if (portalCrossing(g_lastSet, origin, &x) && dist(g_lastSet, toVecP(out)) < dist(g_lastSet, toVecP(in))) {
 			bounced = true;
+			// The other net, logged every time as the forced crossings are. Portal took him back
+			// because its centre for him was behind the plane he had come out of.
+			static uint32_t bounces = 0;
+			if (++bounces <= 2000) {
+				logf("crossing net: bounce-back %u (%u ticks after crossing %u, back in through portal %u; Portal's centre %.0f above its feet, Steve %s)",
+					bounces, tickNow - lastMatchTick, g_matched, 1 - lastMatchIn, portalCentre(),
+					(g_mc.flags & pcproto::kMcGliding) ? "glides" : g_mc.sneaking ? "sneaks" : "stands");
+			}
 			static int bounceLogs = 0;
 			if (bounceLogs++ < 30) {
 				logf("Portal took its player back through portal %u right after Steve's crossing %u: not handed over", 1 - lastMatchIn, g_matched);
@@ -1994,6 +2105,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	float zIn = origin.z;
 	g_serverOriginal(self, player, mvRaw);
 	float zPortal = origin.z;
+	updatePortalCentre(); // the hull Portal's portals will find its player in, in the touch pass after this
 	if (g_drivingNow) {
 		Vector portalWent = origin;
 		applyMinecraft(mv);
@@ -2852,6 +2964,7 @@ void sendState() {
 	pcproto::HostState s{};
 	std::memcpy(s.magic, "PCH7", 4);
 	s.seq = ++g_hostSeq;
+	s.playerCentre = g_inLevel ? g_portalCentre : 0.0f;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
 	// Minecraft would resync there, out in the void, before the level-start teleport.
