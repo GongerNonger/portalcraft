@@ -29,8 +29,21 @@ enum HostFlags : uint32_t {
 	kHostForeground = 1u << 1, // the game window has focus and no console/menu: keys are live
 	kHostDriving = 1u << 2,    // the host is applying McState to its player this tick
 	kHostScripted = 1u << 3,   // a scripted scene has the player (a point_viewcontrol camera, frozen): Minecraft follows, no input
-	kHostRiding = 1u << 4,     // the player stands on a moving lift: the host owns its height, Minecraft follows it
+	// (1u << 4 was kHostRiding, "the host owns the player's height on a lift". Gone with PCH7: see movers below.)
 };
+
+// ---- movers: the player on something that moves (lifts, the light-rail platforms) ---------------
+// INVARIANT: while Steve is on a mover, his place is told and kept RELATIVE TO THAT MOVER, each side
+// using its own knowledge of where the mover is. Minecraft says "I am on host entity N, which I have
+// at C, and I am at P" (McState.moverIndex, moverOrigin, and its positions as always); the host
+// writes its player at (where N is this tick) + (P - C). Minecraft's copy of the mover arrives ~16
+// times a second and is a tick or more stale, but Steve stands on that same stale copy, so P - C is
+// exact, and neither side depends on the copy's lateness for height or for being carried. Standing
+// still, P - C is constant and the host's player doesn't move on the mover; in a jump P - C is
+// Minecraft's own jump, since Minecraft keeps carrying Steve with its copy until he lands (the way
+// Source keeps the ground entity's velocity as base velocity from take-off, gamemovement.cpp
+// SetGroundEntity). With no mover (moverIndex 0) positions are the world's, as before; where the
+// two meet (stepping on or off) the host plays one step across the difference.
 
 // What the host's latest move (teleportSeq) is. A shove only places the player; an impulse
 // (trigger_push air currents, explosions) also sets its velocity; a teleport (portals, level start)
@@ -109,6 +122,12 @@ struct HostState {
 	// player when this point is behind its plane, so it is the point Minecraft carries Steve
 	// through by (PlayerCrossings), whatever his own hull is: then both cross at the same place.
 	float playerCentre;
+	// PCH7: the mover under the host's own player (a brush entity or a prop_dynamic within 96 units
+	// below its feet; 0: none), and where that mover is, read in the same tick as `origin`. Minecraft
+	// needs it once, at a level's start: Steve arrives on a lift that is already moving before
+	// Minecraft has the lift, and is held at origin - moverOrigin on it until it has (see movers above).
+	uint32_t moverIndex;
+	Vec3 moverOrigin;
 };
 
 enum McFlags : uint32_t {
@@ -150,6 +169,10 @@ struct McState {
 	// (the HostState.playerCentre Minecraft had then, or half his own hull); 0 unknown. The host
 	// makes the same carry with it, so what it plays back after the match is where Steve is.
 	float crossCentre[4];
+	// PCM5: the mover Steve is on (a HostEntity index; 0: none) and where Minecraft has it (host
+	// units), as of tickCurrent. The host places its player relative to it (see movers above).
+	uint32_t moverIndex;
+	Vec3 moverOrigin;
 };
 
 struct Command {
@@ -448,8 +471,8 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 328, "HostState layout");
-static_assert(sizeof(McState) == 104, "McState layout");
+static_assert(sizeof(HostState) == 344, "HostState layout");
+static_assert(sizeof(McState) == 120, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");
 static_assert(sizeof(DevInput) == 56, "DevInput layout");

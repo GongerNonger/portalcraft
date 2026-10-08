@@ -16,9 +16,9 @@ HOST = ("127.0.0.1", HOST_PORT)
 MC = ("127.0.0.1", MC_PORT)
 DEV_INPUT = struct.Struct("<4s32sBBbBffII")  # "PCK2", pcproto::DevInput
 assert DEV_INPUT.size == 56
-HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I" + "3f" + "f")
-MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s4f")
-assert HOST_STATE.size == 328 and MC_STATE.size == 104
+HOST_STATE = struct.Struct("<4sII64sff3f3fI3f3f32sB3x" + "I3f3f" * 2 + "ff" + "II9f3f" + "I" + "3f" + "I" + "3f" + "f" + "I3f")
+MC_STATE = struct.Struct("<4sIII3f3fBBBB3f3fIfII4s4f" + "I3f")  # ... then the mover Steve is on (0: none) and where Minecraft has it
+assert HOST_STATE.size == 344 and MC_STATE.size == 120
 
 
 def parse(data):
@@ -26,6 +26,7 @@ def parse(data):
     s = dict(seq=v[1], flags=v[2], map=v[3].split(b"\0")[0].decode(), yaw=v[4], pitch=v[5],
              origin=v[6:9], vel=v[9:12], tp=v[12], tpOrigin=v[13:16], tpVel=v[16:19], keys=v[19], mouse=v[20])
     p = v[21:]
+    s["mover"], s["moverOrigin"] = v[-4], v[-3:]  # the mover under Portal's own player (0: none)
     s["portals"] = [dict(flags=p[i * 7], origin=p[i * 7 + 1:i * 7 + 4], angles=p[i * 7 + 4:i * 7 + 7]) for i in range(2)]
     s["pressed"] = [i for i in range(256) if s["keys"][i >> 3] & (1 << (i & 7))]
     return s
@@ -333,7 +334,7 @@ def main():
                 t = time.time() - t0
                 pos = (centre[0] + 64 * math.cos(t), centre[1] + 64 * math.sin(t), centre[2])
                 seq += 1
-                sock.sendto(MC_STATE.pack(b"PCM5", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0, 0, 0, b"\xff" * 4, 0.0, 0.0, 0.0, 0.0), HOST)
+                sock.sendto(MC_STATE.pack(b"PCM5", seq, 1, ack, *pos, 0, 0, 0, 1, 0, 0, 0, *pos, *pos, seq, 0.0, 0, 0, b"\xff" * 4, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0), HOST)
 
 
 if __name__ == "__main__":
