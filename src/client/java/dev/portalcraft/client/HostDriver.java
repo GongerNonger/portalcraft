@@ -415,7 +415,10 @@ public final class HostDriver {
 		if (pushedStuck < 6) {
 			// Through its middle, wherever Steve touches it: shoved at the corner he had met, a cube
 			// turned on the spot and hardly went anywhere.
-			HostEvents.hit(Units.toMc(now), way.scale(PROP_PUSH), 0.0F);
+			// A turret, though, high up and harder: its origin is at its feet, and shoved there it slid
+			// five units and stood, where Portal's own player walking into one knocks it over.
+			boolean turret = LiveEntities.turret(index);
+			HostEvents.hit(Units.toMc(turret ? now.add(0.0, 0.0, 44.0) : now), way.scale(turret ? PROP_PUSH * 2.5 : PROP_PUSH), 0.0F);
 		}
 	}
 	private static int liftLogs;

@@ -4,6 +4,7 @@ A 1024 x 1024 x 320 concrete room (every surface takes portals), floor at z 0, w
   player start (0 0 1), a dual portal gun on the spot
   cubes at (160 0 20) and (160 96 20)
   a glass pane at x -256, y -448..-192; one of GLaDOS's cores at (160 -96 24)
+  a turret at (-440 440) looking along +x down an alley walled off at y 380 (x -512..-96)
   an air current (trigger_push, 300 units/s towards -x) over x 256..448, y 288..448, z 0..96
 Compile and install with build_testmap.sh; load with `map pc_test`.
 """
@@ -50,6 +51,7 @@ world = "".join(
         box(S, -S - T, 0, S + T, S + T, H, WALL),
         box(-S, S, 0, S, S + T, H, WALL),
         box(-S, -S - T, 0, S, -S, H, WALL),
+        box(-512, 380, 0, -96, 384, 128, WALL),  # the turret's alley: hides the rest of the room from it
     ]
 )
 vmf = 'versioninfo\n{\n\t"editorversion" "400"\n\t"mapversion" "1"\n\t"formatversion" "100"\n}\n'
@@ -68,5 +70,7 @@ vmf += entity(
 vmf += entity({"classname": "func_brush", "origin": "-256 -320 64", "Solidity": "2", "spawnflags": "2"}, box(-258, -448, 0, -254, -192, 128, "GLASS/GLASSWINDOW_REFRACT01"))
 # One of GLaDOS's cores, to carry: they only exist in the last fight otherwise.
 vmf += entity({"classname": "prop_glados_core", "origin": "160 -96 24", "angles": "0 0 0", "CoreType": "1", "DelayBetweenLines": "0.4", "spawnflags": "256", "model": "models/props_bts/glados_ball_reference.mdl", "physdamagescale": "0.1"})
+# A turret in its own alley (the wall at y 380..384 hides the rest of the room from it): it looks along +x from (-440 440).
+vmf += entity({"classname": "npc_portal_turret_floor", "origin": "-440 440 1", "angles": "0 0 0", "spawnflags": "0", "DamageForce": "1", "targetname": "alley_turret"})
 open("pc_test.vmf", "w", newline="\n").write(vmf)
 print("wrote pc_test.vmf")

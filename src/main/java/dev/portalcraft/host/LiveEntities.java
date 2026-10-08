@@ -355,6 +355,12 @@ public final class LiveEntities {
 		return best;
 	}
 
+	/** True if host entity `index` is a turret. */
+	public static boolean turret(int index) {
+		Placed p = PLACED.get(index);
+		return p != null && p.pose().model().toLowerCase(java.util.Locale.ROOT).contains("turret");
+	}
+
 	/** True if host entity `index` is a movable prop (a cube, a turret, the radio). */
 	public static boolean movable(int index) {
 		Placed p = PLACED.get(index);
