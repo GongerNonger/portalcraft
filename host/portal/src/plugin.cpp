@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <algorithm>
 #include <intrin.h>
 
 #include "../../../protocol/portalcraft_protocol.h"
@@ -726,7 +727,7 @@ bool serverToolsReady() {
 // above it, so nothing in Portal that clamps or regenerates health can look like a hit.
 struct PlayerOffsets {
 	bool ready = false;
-	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1, nextAttack = -1;
+	int health = -1, lifeState = -1, flags = -1, viewEntity = -1, activeWeapon = -1, groundEntity = -1, nextAttack = -1, baseVelocity = -1, vehicle = -1;
 } g_pl;
 
 // Portal's player entity, its send-table offsets looked up the first time. Null between levels.
@@ -748,9 +749,12 @@ uint8_t* playerFields() {
 			g_pl.activeWeapon = findProp(sc->table, "m_hActiveWeapon", 0);
 			g_pl.groundEntity = findProp(sc->table, "m_hGroundEntity", 0);
 			g_pl.nextAttack = findProp(sc->table, "m_flNextAttack", 0);
+			g_pl.baseVelocity = findProp(sc->table, "m_vecBaseVelocity", 0);
+			g_pl.vehicle = findProp(sc->table, "m_hVehicle", 0);
 		}
 		logf("player: %s m_iHealth %d m_lifeState %d m_fFlags %d m_hViewEntity %d m_hActiveWeapon %d m_hGroundEntity %d", sc ? sc->name : "?",
 			g_pl.health, g_pl.lifeState, g_pl.flags, g_pl.viewEntity, g_pl.activeWeapon, g_pl.groundEntity);
+		logf("player: m_vecBaseVelocity %d m_hVehicle %d", g_pl.baseVelocity, g_pl.vehicle);
 	}
 	return base;
 }
@@ -758,8 +762,14 @@ uint8_t* playerFields() {
 // ---- scripted scenes ----------------------------------------------------------------------
 // Portal takes its player for a scene now and then (as Skyrim does for furniture and scenes, which
 // SkyCraft hands back to Skyrim): a point_viewcontrol camera (the chamber 00 wake-up, the escape
-// ending), or a frozen player. Meanwhile Portal moves the player itself, and Minecraft follows
-// it without input (kHostScripted).
+// ending), a frozen player, or a ride in a vehicle. Meanwhile Portal moves the player itself, and
+// Minecraft follows it without input (kHostScripted).
+// The vehicle is the game's last scene: after the ending's camera Portal seats its player in a
+// prop_vehicle_choreo_generic for the fly-through under the credits. A player in a vehicle is not
+// moved by the game movement at all (our hook isn't called), and the ending's camera has just let
+// go of him wherever its zero gravity floated him to, far above the floor: left to Minecraft there,
+// Steve would fall, die of it, and take Portal's player with him, a checkpoint reload in place of
+// the credits. Held as in any scene, he stays where the camera left him.
 constexpr int FL_FROZEN = 1 << 5, FL_ATCONTROLS = 1 << 6;
 bool g_scripted = false;
 
@@ -777,6 +787,9 @@ void updateScripted() {
 			self = *sdk::vcall<const uint32_t*>(unknown, 2); // IHandleEntity::GetRefEHandle
 		}
 		scripted = view != 0xFFFFFFFFu && view != 0 && view != self; // 0 would be the world: never a camera
+	}
+	if (base && g_pl.vehicle >= 0 && !scripted) {
+		scripted = *reinterpret_cast<uint32_t*>(base + g_pl.vehicle) != 0xFFFFFFFFu;
 	}
 	if (scripted != g_scripted) {
 		logf("scripted scene %s", scripted ? "started: Portal has the player" : "over: Minecraft drives again");
@@ -1431,6 +1444,39 @@ bool g_drivingNow = false;
 Vector g_origin{}, g_velocity{}; // player state after the last server movement tick
 bool g_haveOrigin = false;       // a movement tick has run this level: g_origin is real
 
+// The map's push on Portal's player (HostState.baseVelocity). A trigger_push doesn't move a player
+// or change his velocity: each tick it touches him it sets his "base velocity" (CTriggerPush::Touch),
+// which the next tick's movement adds for the length of its move and takes out again (sideways), or
+// adds to his velocity as an acceleration (upwards), and which becomes his own momentum in the first
+// tick nothing has set it again (CPlayerMove::CheckMovingGround). All of that happens to a player we
+// then write over with Minecraft's place and velocity, so a push did nothing at all to Steve. The
+// trigger still touches Portal's player where Steve stands, so the base velocity it leaves is the
+// push he should feel: read as each movement tick begins and handed to Minecraft to apply.
+Vector g_baseVelocity{};
+DWORD g_baseVelocityAt = 0; // when it was last read: a movement tick that never came (a pause, a vehicle) is no push
+
+void readBaseVelocity() {
+	uint8_t* base = playerFields();
+	if (!base || g_pl.baseVelocity < 0) {
+		return;
+	}
+	Vector now = *reinterpret_cast<Vector*>(base + g_pl.baseVelocity);
+	// (Finite and within what a map can ask for: sv_maxvelocity is 3500.)
+	if (!(std::fabs(now.x) <= 3500.0f && std::fabs(now.y) <= 3500.0f && std::fabs(now.z) <= 3500.0f)) {
+		now = {};
+	}
+	bool was = g_baseVelocity.x != 0.0f || g_baseVelocity.y != 0.0f || g_baseVelocity.z != 0.0f;
+	bool is = now.x != 0.0f || now.y != 0.0f || now.z != 0.0f;
+	static int logs = 0;
+	if (was != is && logs++ < 40) {
+		const Vector& v = is ? now : g_baseVelocity;
+		logf("push: the map %s the player (%.0f %.0f %.0f units/s) at (%.0f %.0f %.0f)", is ? "pushes" : "no longer pushes", v.x, v.y, v.z, g_origin.x,
+			g_origin.y, g_origin.z);
+	}
+	g_baseVelocity = now;
+	g_baseVelocityAt = GetTickCount();
+}
+
 // Small shoves (Portal's physics pushing the player off a prop or a physics brush, a lift carrying
 // it) are soft handoffs: Minecraft is told where the player went like any other move, but we keep
 // driving meanwhile, writing Minecraft's position plus the shoves it hasn't applied yet. Before,
@@ -1730,6 +1776,7 @@ void __fastcall serverProcessMovement(void* self, void* /*edx*/, void* player, v
 	updateGunGate();
 	advancePlayClock();
 	watchGunShots(*reinterpret_cast<int*>(mv + sdk::kMvButtons));
+	readBaseVelocity();
 
 	if (!g_checkedLayout && g_playerInfoMgr) {
 		g_checkedLayout = true;
@@ -2357,14 +2404,22 @@ void sendEntities() {
 	static pcproto::HostEntities packet;
 	std::memcpy(packet.magic, "PCE1", 4);
 	packet.seq = ++g_entitySeq;
-	uint32_t n = 0;
-	for (int k = 0; k < g_entityCount && n < pcproto::kMaxHostEntities; k++) {
+	// Which of them: the solid ones within 2048 units, and when there are more of those than a packet
+	// holds, the nearest. They used to go in edict order until the packet was full, and the rest were
+	// nothing to Steve: testchmb_a_15 and escape_01 have more than 128 in reach of one spot, and the
+	// last in edict order are the ones a map makes as it goes (the turrets it delivers, GLaDOS's cores).
+	// How near is measured to the entity's box, not its origin: a brush entity built without an origin
+	// (escape_01's glass) has it at the map's own, however far away that is.
+	struct Near {
+		float distance;
+		int index;
+	};
+	static Near cand[512];
+	int nearCount = 0;
+	for (int k = 0; k < g_entityCount; k++) {
 		int index = g_entityEdicts[k];
 		void* e = edictAt(index);
-		if (!edictInUse(e)) {
-			continue;
-		}
-		void* col = collideableOf(e);
+		void* col = edictInUse(e) ? collideableOf(e) : nullptr;
 		if (!col) {
 			continue;
 		}
@@ -2376,17 +2431,45 @@ void sendEntities() {
 			continue;
 		}
 		const sdk::Vector& o = *sdk::vcall<const sdk::Vector*>(col, kColOrigin);
-		if (dist(o, g_origin) > 2048.0f) {
-			continue;
-		}
-		const sdk::Vector& a = *sdk::vcall<const sdk::Vector*>(col, kColAngles);
 		const sdk::Vector& mins = *sdk::vcall<const sdk::Vector*>(col, kColMins);
 		const sdk::Vector& maxs = *sdk::vcall<const sdk::Vector*>(col, kColMaxs);
+		// (Its box as it stands unturned, as wide both ways as its wider side so a door swung a
+		// quarter turn is still inside it: near enough for choosing.)
+		float wide = std::fmax(std::fmax(std::fabs(mins.x), std::fabs(maxs.x)), std::fmax(std::fabs(mins.y), std::fabs(maxs.y)));
+		float dx = std::fmax(std::fabs(g_origin.x - o.x) - wide, 0.0f), dy = std::fmax(std::fabs(g_origin.y - o.y) - wide, 0.0f);
+		float dz = std::fmax(std::fmax(o.z + mins.z - g_origin.z, g_origin.z - (o.z + maxs.z)), 0.0f);
+		float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+		if (!(distance <= 2048.0f)) {
+			continue;
+		}
 		void* model = sdk::vcall<void*>(col, kColModel);
 		const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : nullptr;
 		if (!name || !*name) {
 			continue;
 		}
+		cand[nearCount++] = {distance, index};
+	}
+	if (nearCount > int(pcproto::kMaxHostEntities)) {
+		static int capLogs = 0;
+		std::nth_element(cand, cand + pcproto::kMaxHostEntities, cand + nearCount, [](const Near& a, const Near& b) { return a.distance < b.distance; });
+		if (capLogs++ < 5) {
+			logf("entities: %d solid ones within reach, sending the nearest %u (out to %.0f units)", nearCount, pcproto::kMaxHostEntities,
+				cand[pcproto::kMaxHostEntities].distance);
+		}
+		nearCount = int(pcproto::kMaxHostEntities);
+		std::sort(cand, cand + nearCount, [](const Near& a, const Near& b) { return a.index < b.index; }); // in edict order, as ever
+	}
+	uint32_t n = 0;
+	for (int k = 0; k < nearCount; k++) {
+		int index = cand[k].index;
+		void* e = edictAt(index);
+		void* col = collideableOf(e);
+		int solid = sdk::vcall<int>(col, kColSolid);
+		const sdk::Vector& o = *sdk::vcall<const sdk::Vector*>(col, kColOrigin);
+		const sdk::Vector& a = *sdk::vcall<const sdk::Vector*>(col, kColAngles);
+		const sdk::Vector& mins = *sdk::vcall<const sdk::Vector*>(col, kColMins);
+		const sdk::Vector& maxs = *sdk::vcall<const sdk::Vector*>(col, kColMaxs);
+		const char* name = sdk::vcall<const char*>(g_modelInfo, 3, sdk::vcall<void*>(col, kColModel));
 		pcproto::HostEntity& out = packet.entities[n++];
 		out.index = uint16_t(index);
 		out.solid = uint8_t(solid);
@@ -2767,7 +2850,7 @@ void fillCursor(pcproto::HostState& s) {
 
 void sendState() {
 	pcproto::HostState s{};
-	std::memcpy(s.magic, "PCH6", 4);
+	std::memcpy(s.magic, "PCH7", 4);
 	s.seq = ++g_hostSeq;
 	std::memcpy(s.map, g_map, sizeof s.map);
 	// Not "in game" until the player has moved once: before that the origin is (0, 0, 0), and
@@ -2828,6 +2911,9 @@ void sendState() {
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
 	s.gunEffect = (g_gunEffect & 0xFFu) | (uint32_t(g_gunFizzles) << 8); // its state (0xFF: unknown), and its fizzles
+	if (g_inLevel && g_haveOrigin && GetTickCount() - g_baseVelocityAt < 250) {
+		s.baseVelocity = {g_baseVelocity.x, g_baseVelocity.y, g_baseVelocity.z};
+	}
 	// Portal's light at the player's chest, for Minecraft to light Steve's hand by (eased, so walking
 	// past a lamp doesn't flicker). An engine slot, so only on a build it was checked on.
 	s.handLight = {-1.0f, 0.0f, 0.0f};

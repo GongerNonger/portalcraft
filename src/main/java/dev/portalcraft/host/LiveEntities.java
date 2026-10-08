@@ -326,7 +326,10 @@ public final class LiveEntities {
 		}
 		Vec3[] axes = Units.angleVectors(e.angles());
 		String model = e.model();
-		if (e.solid() == SOLID_BSP && model.startsWith("*")) {
+		// (A func_physbox is a brush model too, with physics for its solid type: its own brushes,
+		// where its physics has it. As the box around them, which is what it used to get, the broken
+		// stairs of testchmb_a_15 were five solid blocks.)
+		if ((e.solid() == SOLID_BSP || e.solid() == SOLID_VPHYSICS) && model.startsWith("*")) {
 			int n;
 			try {
 				n = Integer.parseInt(model.substring(1));

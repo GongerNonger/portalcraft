@@ -55,7 +55,7 @@ struct HostPortal {
 };
 
 struct HostState {
-	char magic[4]; // "PCH6"
+	char magic[4]; // "PCH7"
 	uint32_t seq;
 	uint32_t flags; // HostFlags
 	char map[64];
@@ -98,6 +98,12 @@ struct HostState {
 	// object), or 0xFFFFFFFF when unknown. Minecraft's gun plays Portal's pickup and release
 	// animations as it starts and stops holding.
 	uint32_t gunEffect; // low byte: the gun's m_EffectState (2: holding an object; 0xFF unknown); second byte: a count of its fizzles
+	// PCH7: the push the host's map has on its player now (a trigger_push: an air current, a conveyor),
+	// units/s, or zero. The host writes its player where Minecraft's is every tick, so the push never
+	// moves it; Minecraft applies it instead, as the host's own movement would: sideways it carries the
+	// player along at that speed without becoming his own, upwards it is an acceleration (units/s^2),
+	// and as it ends its sideways part is left to him as momentum.
+	Vec3 baseVelocity;
 };
 
 enum McFlags : uint32_t {
@@ -433,7 +439,7 @@ static_assert(kWorldBytes == 42340352, "world layout");
 
 static_assert(sizeof(HostEntity) == 108, "HostEntity layout");
 static_assert(sizeof(HostPortal) == 28, "HostPortal layout");
-static_assert(sizeof(HostState) == 312, "HostState layout");
+static_assert(sizeof(HostState) == 324, "HostState layout");
 static_assert(sizeof(McState) == 88, "McState layout");
 static_assert(sizeof(McBlast) == 24, "McBlast layout");
 static_assert(sizeof(McHit) == 36, "McHit layout");

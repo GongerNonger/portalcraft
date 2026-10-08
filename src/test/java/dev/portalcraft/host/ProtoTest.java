@@ -9,11 +9,11 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
-/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH6, 312 bytes). */
+/** HostState's wire layout, as protocol/portalcraft_protocol.h lays it out (PCH7, 324 bytes). */
 class ProtoTest {
 	private static ByteBuffer hostState() {
 		ByteBuffer b = ByteBuffer.allocate(Proto.HOST_STATE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '6');
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'H').put((byte) '7');
 		b.putInt(7).putInt(1); // seq, flags (in game)
 		b.put(new byte[64]); // map
 		b.putFloat(90.0F).putFloat(-10.0F); // yaw, pitch
@@ -41,6 +41,7 @@ class ProtoTest {
 		b.putInt(5); // crossMatched
 		b.putFloat(0.25F).putFloat(0.5F).putFloat(0.125F); // handLight
 		b.putInt(2); // gunEffect: holding
+		b.putFloat(40).putFloat(0).putFloat(21); // baseVelocity
 		return b.flip();
 	}
 
@@ -65,6 +66,8 @@ class ProtoTest {
 		assertEquals(0x83, s.shots());
 		assertEquals(0.5, s.handLight().y, 1e-6);
 		assertEquals(2, s.gunEffect());
+		assertEquals(40.0, s.baseVelocity().x, 1e-6);
+		assertEquals(21.0, s.baseVelocity().z, 1e-6);
 		assertEquals(90.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).x, 1e-6);
 		assertEquals(5.0, s.crossing().point(new net.minecraft.world.phys.Vec3(10, 0, 5)).z, 1e-6);
 	}
