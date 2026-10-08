@@ -131,28 +131,7 @@ public final class LiveEntities {
 	 * the ledge he stood at the edge of would have taken him along.
 	 */
 	public static int fixtureUnder(AABB body, int preferred) {
-		return fixtureUnder(body, preferred, FOOTING);
-	}
-
-	/** How far from his soles (blocks: 16 units) the top of a mover that is on its way may be when he lands on it. */
-	private static final double LANDING = 0.5;
-
-	/**
-	 * The fixture Steve has just come down on while it was moving, or 0. Minecraft's copy of a mover
-	 * arrives in steps (nothing one tick, several units the next), so a lift already on its way when
-	 * he lands on it is never found exactly at his soles: its top is a little under them, or has come
-	 * up into his feet. Unnamed, it never carried him, and the host lifted its player while Minecraft
-	 * let Steve drop back, all the way up (seen: the exit lift of testchmb_a_09, which leaves as he
-	 * steps in, 75 hand-overs a ride). Only where no fixed ground is at his soles: that is the ledge
-	 * a lift passes, and he stands on the ledge.
-	 */
-	public static int fixtureLandedOn(AABB body, int preferred) {
 		AABB soles = new AABB(body.minX, body.minY - FOOTING, body.minZ, body.maxX, body.minY + FOOTING, body.maxZ);
-		return HostCollision.fixedGroundAt(soles) ? 0 : fixtureUnder(body, preferred, LANDING);
-	}
-
-	private static int fixtureUnder(AABB body, int preferred, double footing) {
-		AABB soles = new AABB(body.minX, body.minY - footing, body.minZ, body.maxX, body.minY + footing, body.maxZ);
 		double x = (body.minX + body.maxX) * 0.5, z = (body.minZ + body.maxZ) * 0.5;
 		int under = 0, underMiddle = 0;
 		for (Placed p : PLACED.values()) {
