@@ -3083,14 +3083,15 @@ public:
 		}
 	}
 	virtual void LevelShutdown() {
-		// Dev: every level played leaves its recording behind (addonseplay-auto-<map>-<time>.txt):
+		// Dev: every level played leaves its recording behind (addons/replay-auto-<map>-<time>.txt):
 		// the chamber as it was solved, or the attempt that ended in a death. Played back from a
 		// fresh load of the map (fake_mc.py --replay), it is that chamber's test.
 		if (devMode() && g_replayCount > 600) {
 			SYSTEMTIME now;
 			GetLocalTime(&now);
 			char name[96];
-			snprintf(name, sizeof name, "auto-%s-%02d%02d%02d", g_map, now.wHour, now.wMinute, now.wSecond);
+			// A second pair (-pcinstance N) writes to the same folder: its recordings say which pair.
+			snprintf(name, sizeof name, "%s-%s-%02d%02d%02d", instance::named("auto").c_str(), g_map, now.wHour, now.wMinute, now.wSecond);
 			dumpReplay(name, sockaddr_in{});
 		}
 		g_inLevel = false;
