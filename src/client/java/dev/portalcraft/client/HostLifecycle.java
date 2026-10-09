@@ -74,6 +74,15 @@ final class HostLifecycle {
 		// shows meanwhile is closed by the host driver (so the screen can't say an attempt is still
 		// going), and a second attempt drops the first.
 		nextJoin = now + 45000;
+		if (screen instanceof net.minecraft.client.gui.screens.DisconnectedScreen && joinLogs < 12) {
+			try { // why the last try ended: the screen knows, and nothing else logs it
+				var f = net.minecraft.client.gui.screens.DisconnectedScreen.class.getDeclaredField("details");
+				f.setAccessible(true);
+				LOG.info("PortalCraft: the last try to join ended: {}", ((net.minecraft.network.DisconnectionDetails) f.get(screen)).reason().getString());
+			} catch (ReflectiveOperationException | RuntimeException e) {
+				LOG.info("PortalCraft: the last try to join ended (reason unreadable: {})", e.toString());
+			}
+		}
 		if (joinLogs++ < 5) {
 			LOG.info("PortalCraft: not in a world (screen: {})", minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getSimpleName());
 		}
