@@ -53,16 +53,22 @@ final class HostLifecycle {
 	 */
 	private static final String JOIN = System.getProperty("portalcraft.join", System.getenv("PORTALCRAFT_JOIN"));
 	private static long nextJoin;
+	private static int joinLogs;
 
 	private static void joinFriend(Minecraft minecraft) {
 		if (JOIN == null || JOIN.isBlank() || minecraft.level != null || minecraft.gui.overlay() != null) {
 			return;
 		}
 		long now = System.currentTimeMillis();
-		if (now < nextJoin || !(minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.TitleScreen)) {
+		// From whatever screen it is at, not only the title screen: a new Minecraft folder starts on
+		// its first-run screens, and a dropped connection leaves the "disconnected" one up.
+		if (now < nextJoin || minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.ConnectScreen) {
 			return;
 		}
 		nextJoin = now + 8000;
+		if (joinLogs++ < 5) {
+			LOG.info("PortalCraft: not in a world (screen: {})", minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getSimpleName());
+		}
 		String address = JOIN.trim();
 		if (!net.minecraft.client.multiplayer.resolver.ServerAddress.isValidAddress(address)) {
 			LOG.warn("PortalCraft: PORTALCRAFT_JOIN is not an address: {}", address);
@@ -70,7 +76,7 @@ final class HostLifecycle {
 		}
 		LOG.info("PortalCraft: joining the world at {}", address);
 		var data = new net.minecraft.client.multiplayer.ServerData("PortalCraft", address, net.minecraft.client.multiplayer.ServerData.Type.OTHER);
-		net.minecraft.client.gui.screens.ConnectScreen.startConnecting(minecraft.gui.screen(), minecraft,
+		net.minecraft.client.gui.screens.ConnectScreen.startConnecting(new net.minecraft.client.gui.screens.TitleScreen(), minecraft,
 			net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), data, false, null);
 	}
 
