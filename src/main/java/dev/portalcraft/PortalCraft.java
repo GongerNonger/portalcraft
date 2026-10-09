@@ -113,6 +113,16 @@ public class PortalCraft implements ModInitializer {
 			}
 		});
 
+		// Portal's cubes in one place for everyone (SharedProps).
+		PayloadTypeRegistry.serverboundPlay().register(dev.portalcraft.net.PropPosePayload.TYPE, dev.portalcraft.net.PropPosePayload.CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(dev.portalcraft.net.PropPosePayload.TYPE, dev.portalcraft.net.PropPosePayload.CODEC);
+		ServerPlayNetworking.registerGlobalReceiver(dev.portalcraft.net.PropPosePayload.TYPE, (payload, context) -> {
+			if (dev.portalcraft.host.HostLink.current() != null) {
+				dev.portalcraft.host.SharedProps.heldBy(context.player(), payload, context.server());
+			}
+		});
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(dev.portalcraft.host.SharedProps::serverTick);
+
 		// Everyone who joins has the portal gun. (The Minecraft that hosts the world used to hand it
 		// to its own player from the client side, which a friend joining that world never got.)
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

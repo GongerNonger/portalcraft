@@ -1178,6 +1178,59 @@ void* activeEnvironment() {
 	}
 }
 
+// ---- Putting one of Portal's loose props somewhere ---------------------------------------------
+// Playing with friends, every Portal has its own cubes; the one whose player holds a cube (or the
+// host's, for a cube nobody holds) says where it is, and the others put theirs there ("PCT1").
+// A physics prop is where its physics object is, so that is what is moved: found in the active
+// environment's object list by its game data, which is the entity (IPhysicsEnvironment 47
+// GetObjectList; IPhysicsObject 17 GetGameData, 45 SetPosition, 49 SetVelocity, 24 Wake; slots
+// counted in vphysics_interface.h, the same way as the ones the block boxes use).
+void* physicsObjectOf(void* env, void* entity) {
+	__try {
+		int count = 0;
+		void** list = sdk::vcall<void**>(env, 47, &count);
+		for (int i = 0; list && i < count && i < 4096; i++) {
+			if (list[i] && sdk::vcall<void*>(list[i], 17) == entity) {
+				return list[i];
+			}
+		}
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+	return nullptr;
+}
+
+bool looseEntity(void* networkable, const char* cls);
+
+bool placeProp(uint32_t index, const Vector& at, const sdk::QAngle& angles, const Vector& velocity) {
+	if (!g_inLevel || index < 2 || index >= 2048 || !checkedBuild("vphysics.dll")) {
+		return false;
+	}
+	if (!g_physics) {
+		g_physics = engineInterface("vphysics.dll", "VPhysics031");
+	}
+	void* e = edictAt(int(index));
+	void* networkable = edictInUse(e) ? sdk::edictNetworkable(e) : nullptr;
+	if (!g_physics || !networkable || !looseEntity(networkable, sdk::networkableClassName(networkable))) {
+		return false; // only what a player can carry: never a door, a lift or the player
+	}
+	void* entity = sdk::networkableBaseEntity(networkable);
+	void* env = activeEnvironment();
+	void* object = env && entity ? physicsObjectOf(env, entity) : nullptr;
+	if (!object) {
+		return false;
+	}
+	__try {
+		Vector zero{};
+		sdk::vcall<void>(object, 45, static_cast<const void*>(&at), static_cast<const void*>(&angles), true);
+		sdk::vcall<void>(object, 49, static_cast<const void*>(&velocity), static_cast<const void*>(&zero));
+		sdk::vcall<void>(object, 24);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		logf("props: placing #%u faulted", index);
+		return false;
+	}
+	return true;
+}
+
 void updateBlockPhysics() {
 	if (!g_inLevel || !g_blockDirty || !checkedBuild("vphysics.dll")) {
 		return;
@@ -1435,6 +1488,21 @@ void linkPoll() {
 			float exposure; // dev: lighting exposure (tools/fake_mc.py --exposure)
 			std::memcpy(&exposure, buf + 4, 4);
 			worldrender::setExposure(exposure);
+		} else if (n == 4 + 4 + 36 && std::memcmp(buf, "PCT1", 4) == 0) {
+			// One loose prop put somewhere: index, then origin, angles and velocity (nine floats).
+			uint32_t index;
+			float v[9];
+			std::memcpy(&index, buf + 4, 4);
+			std::memcpy(v, buf + 8, 36);
+			bool sane = true;
+			for (float f : v) {
+				sane = sane && f == f && f > -100000.0f && f < 100000.0f;
+			}
+			bool ok = sane && placeProp(index, Vector{v[0], v[1], v[2]}, sdk::QAngle{v[3], v[4], v[5]}, Vector{v[6], v[7], v[8]});
+			static int logged = 0;
+			if (logged++ < 6) {
+				logf("props: #%u put at (%.1f %.1f %.1f): %s", index, v[0], v[1], v[2], ok ? "done" : "not a loose prop here");
+			}
 		} else if (n > 4 && n <= 4 + 60 && std::memcmp(buf, "PCG1", 4) == 0 && g_engineServer) {
 			// In a friend's world: load the map their Portal is in (HostLifecycle.followHost). The
 			// name is letters, digits and underscores only, and the map has to be one we have.

@@ -319,6 +319,13 @@ public final class LiveEntities {
 			}
 		}
 		props = List.copyOf(nextProps);
+		List<LoosePose> nextLoose = new ArrayList<>();
+		for (Placed p : PLACED.values()) {
+			if (movableProp(p.pose().model())) {
+				nextLoose.add(new LoosePose(p.pose().index(), p.pose().origin(), p.pose().angles(), p.carried()));
+			}
+		}
+		loose = List.copyOf(nextLoose);
 		List<BspMap.Brush> all = new ArrayList<>();
 		for (Placed p : PLACED.values()) {
 			all.addAll(p.brushes());
@@ -353,6 +360,26 @@ public final class LiveEntities {
 			}
 		}
 		return best;
+	}
+
+	/** One of the host's loose props as it stands: where, which way up, and whether the host's own gun holds it. */
+	public record LoosePose(int index, Vec3 origin, Vec3 angles, boolean carried) {
+	}
+
+	/** The loose props, for other threads (SharedProps); replaced whole whenever the host's entities change. */
+	private static volatile List<LoosePose> loose = List.of();
+
+	public static List<LoosePose> loose() {
+		return loose;
+	}
+
+	public static @Nullable LoosePose looseAt(int index) {
+		for (LoosePose p : loose) {
+			if (p.index() == index) {
+				return p;
+			}
+		}
+		return null;
 	}
 
 	/** True if host entity `index` is a turret. */

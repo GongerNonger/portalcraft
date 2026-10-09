@@ -223,6 +223,7 @@ public final class HostDriver {
 		lightFollowsHostPortals(minecraft, s.portals());
 		LiveEntities.carrying(s.gunEffect() == 2 ? s.origin() : null);
 		List<LiveEntities.Moved> moved = LiveEntities.update(HostLink.entities());
+		shareProps(minecraft, s);
 		matchHostWindowSize(minecraft);
 
 		// Losing the link (host restarting) makes Minecraft pause itself; linked again, carry on.
@@ -377,6 +378,34 @@ public final class HostDriver {
 		if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(dev.portalcraft.net.HostEffectPayload.TYPE)) {
 			net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
 				new dev.portalcraft.net.HostEffectPayload(dev.portalcraft.net.HostEffectPayload.RESET_FALL, 0.0F));
+		}
+	}
+
+	/**
+	 * Playing with friends: Portal's cubes in one place for everyone (SharedProps). Ours are put
+	 * where the server says the others' are; and in a friend's world, the one our own gun holds is
+	 * told to the server, since while we hold it ours is the one that counts.
+	 */
+	private static void shareProps(Minecraft minecraft, Proto.HostState s) {
+		if (minecraft.level == null || !net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(dev.portalcraft.net.PropPosePayload.TYPE)) {
+			return;
+		}
+		boolean hostOfTheWorld = minecraft.getSingleplayerServer() != null;
+		dev.portalcraft.host.SharedProps.clientTick(hostOfTheWorld);
+		if (hostOfTheWorld || s.gunEffect() != 2) {
+			return; // (the host's own held prop goes out with the rest of its Portal's, from the server)
+		}
+		// (Every loose prop within reach counts as carried while the gun holds one: the nearest is it.)
+		LiveEntities.LoosePose held = null;
+		for (LiveEntities.LoosePose p : LiveEntities.loose()) {
+			if (p.carried() && (held == null || p.origin().distanceToSqr(s.origin()) < held.origin().distanceToSqr(s.origin()))) {
+				held = p;
+			}
+		}
+		if (held != null) {
+			net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new dev.portalcraft.net.PropPosePayload(held.index(), (float) held.origin().x,
+				(float) held.origin().y, (float) held.origin().z, (float) held.angles().x, (float) held.angles().y, (float) held.angles().z,
+				dev.portalcraft.net.PropPosePayload.HELD));
 		}
 	}
 
