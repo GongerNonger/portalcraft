@@ -23,4 +23,17 @@ public abstract class ServerMoveCheckMixin {
 			cir.setReturnValue(false);
 		}
 	}
+
+	/**
+	 * ... and "moved too quickly" as well, for a friend who has joined: the world's owner is never
+	 * asked that, but everyone else is, and a friend's Portal puts their Steve in its map from the
+	 * world's spawn in one move (and through every portal after). Refused, they stayed at the spawn
+	 * on the server, fell out of the void world and died, over and over.
+	 */
+	@Inject(method = "shouldCheckPlayerMovement", at = @At("HEAD"), cancellable = true)
+	private void portalcraft$friendsMovesAreTaken(boolean fallFlying, CallbackInfoReturnable<Boolean> cir) {
+		if (dev.portalcraft.host.HostCollision.active()) {
+			cir.setReturnValue(false);
+		}
+	}
 }
