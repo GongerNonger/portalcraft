@@ -10,8 +10,8 @@ PCROOT_2=C:/tmp/portalcraft/.claude/worktrees/agent-a9fe7c51784c95c11
 export JAVA_HOME="$(cygpath -w "C:/tmp/portalcraft/$(cd /c/tmp/portalcraft && ls -d .jdk/jdk-25* | head -1)")"
 (cd C:/tmp/portalcraft/.claude/worktrees/integration && ./gradlew build -q -x test --max-workers=1 2>&1 | grep -v "^Note")
 (cd $PCROOT_2 && ./gradlew build -q -x test --max-workers=1 2>&1 | grep -v "^Note")
-PCI=1 PORTALCRAFT_LAN_PORT=25590 bash $D/restart.sh map $MAP | tail -1
+PCI=1 bash $D/restart.sh map $MAP | tail -1
 export PCI=1; . $D/env.sh
 for i in $(seq 1 20); do grep -aq "open to friends" "$M" && break; sleep 3; done
 grep -a "to friends" "$M" | tail -1 | cut -c12-120
-PCI=2 PCROOT=$PCROOT_2 PORTALCRAFT_USERNAME=Alex PORTALCRAFT_JOIN=127.0.0.1:25590 bash $D/restart.sh map $MAP | tail -1
+PCI=2 PCROOT=$PCROOT_2 PORTALCRAFT_USERNAME=Alex bash $D/restart.sh map $MAP | tail -1

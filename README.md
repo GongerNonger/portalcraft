@@ -83,6 +83,24 @@ gh release create v0.2.1 dist\PortalCraft-Setup.exe dist\PortalCraft-0.2.1.zip d
 run `Install PortalCraft.cmd`), and the mod's jar. To try an install without touching the real
 Portal or `%LOCALAPPDATA%`, set `PORTALCRAFT_PORTAL` and `PORTALCRAFT_HOME` to scratch folders first.
 
+## Playing with friends
+
+Friends can be in the same chamber as Steves. One hosts and the others join: the **PortalCraft with
+friends** shortcut asks which, and keeps the answer.
+
+- **Host**: your Minecraft world is opened to the network on port 25590. On the same network your
+  friends join the address the dialog shows; over the internet they need a public address for that
+  port (a tunnel such as playit.gg, or a port forward on your router).
+- **Join**: type the host's address. Start after they have. Your Portal goes to whatever chamber
+  theirs is in, and follows it from level to level.
+
+Everyone is in one Minecraft world: you see each other, and blocks, mobs and items are shared. Each
+player's Portal is still its own copy of the chamber, so cubes, doors, buttons and portals are
+separate for now: a friend can't stand on your button or walk through your portals.
+
+In `portalcraft.ini` this is a `[Friends]` section with `host_port=25590` or
+`join=address:port`. Two players can be run on one PC for testing (`tools/devtests/coop.sh`).
+
 ## Building
 
 ```bat
@@ -150,7 +168,7 @@ Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
   black walls).
 - Standing on something that spins doesn't turn Steve with it. Portal's maps have nothing of the
   kind to stand on (fans, and GLaDOS's disks).
-- Co-op isn't built yet.
+- Friends share the Minecraft world but not Portal's own things (see Playing with friends).
 - After a Portal update, the features that call engine slots checked on today's build (blasts,
   block physics, the health kill, corner messages) turn themselves off until they're re-checked
   (`docs/PORTAL_MECHANICS.md`, "After a Portal update").
