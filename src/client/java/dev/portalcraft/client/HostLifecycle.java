@@ -45,8 +45,38 @@ final class HostLifecycle {
 		minecraft.getMusicManager().stopPlaying();
 	}
 
+	/**
+	 * A friend's world to play in instead of one's own: PORTALCRAFT_JOIN (or -Dportalcraft.join) is
+	 * its address, "host:port". Whenever this Minecraft is in no world (at its title screen: just
+	 * started, or dropped), it connects there, every few seconds until it is in. (Minecraft's own
+	 * --quickPlayMultiplayer did nothing here: the client sat at its title screen.)
+	 */
+	private static final String JOIN = System.getProperty("portalcraft.join", System.getenv("PORTALCRAFT_JOIN"));
+	private static long nextJoin;
+
+	private static void joinFriend(Minecraft minecraft) {
+		if (JOIN == null || JOIN.isBlank() || minecraft.level != null || minecraft.gui.overlay() != null) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (now < nextJoin || !(minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.TitleScreen)) {
+			return;
+		}
+		nextJoin = now + 8000;
+		String address = JOIN.trim();
+		if (!net.minecraft.client.multiplayer.resolver.ServerAddress.isValidAddress(address)) {
+			LOG.warn("PortalCraft: PORTALCRAFT_JOIN is not an address: {}", address);
+			return;
+		}
+		LOG.info("PortalCraft: joining the world at {}", address);
+		var data = new net.minecraft.client.multiplayer.ServerData("PortalCraft", address, net.minecraft.client.multiplayer.ServerData.Type.OTHER);
+		net.minecraft.client.gui.screens.ConnectScreen.startConnecting(minecraft.gui.screen(), minecraft,
+			net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), data, false, null);
+	}
+
 	/** Every client tick. */
 	static void tick(Minecraft minecraft, boolean linked) {
+		joinFriend(minecraft);
 		if (!STARTED_BY_HOST || quitting) {
 			return;
 		}
