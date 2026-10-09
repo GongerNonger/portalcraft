@@ -70,7 +70,10 @@ final class HostLifecycle {
 		if (now < nextJoin || !idle || minecraft.getConnection() != null) {
 			return;
 		}
-		nextJoin = now + 8000;
+		// A long wait before the next try: logging in takes longer than a few seconds, the screen it
+		// shows meanwhile is closed by the host driver (so the screen can't say an attempt is still
+		// going), and a second attempt drops the first.
+		nextJoin = now + 45000;
 		if (joinLogs++ < 5) {
 			LOG.info("PortalCraft: not in a world (screen: {})", minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getSimpleName());
 		}
