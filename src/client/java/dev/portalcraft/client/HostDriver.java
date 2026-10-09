@@ -234,6 +234,13 @@ public final class HostDriver {
 		if (player == null) {
 			return;
 		}
+		if (diagFallLogs < 24 && player.getY() < -2.0 && player.tickCount % 10 == 0) { // DIAGNOSTIC (friends)
+			diagFallLogs++;
+			var below = new net.minecraft.core.BlockPos(player.getBlockX(), -1, player.getBlockZ());
+			LOG.info("PortalCraft: DIAG below the floor at {}: chunk loaded {}, collision active {}, host shape under the floor {}, noPhysics {}, spectator {}, creative flying {}, scale {}, box {}",
+				player.position(), player.level().hasChunkAt(player.blockPosition()), HostCollision.active(), HostCollision.shapeAt(below) != null, player.noPhysics,
+				player.isSpectator(), player.getAbilities().flying, player.getScale(), player.getBoundingBox());
+		}
 		if (player.isDeadOrDying()) {
 			if (!resync) {
 				HostHealth.died(); // not a death from before this link (it would kill the host's player for nothing)
@@ -366,6 +373,7 @@ public final class HostDriver {
 	}
 
 	private static int crossingsLogged;
+	private static int diagFallLogs;
 	private static net.minecraft.world.entity.Pose lastPose;
 	private static int poseLogs;
 
