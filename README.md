@@ -75,7 +75,7 @@ host\portal\build.cmd      :: the Portal plugin (needs VS 2022 Build Tools, x86)
 ```
 `tools\make_textures.py` regenerates the art (`uv run --no-project --with pillow python tools/make_textures.py`).
 
-## Playing inside Portal (milestone 1)
+## Playing inside Portal
 
 Steve's Minecraft movement inside real Steam Portal. A hidden-in-plain-sight Minecraft runs the
 physics; Portal draws everything and keeps its own portal gun, portals and teleports.
@@ -108,9 +108,15 @@ for the slim model) to play as yourself, in Minecraft and in Portal's third pers
 Link: UDP on 127.0.0.1 ports 27515/27516, layout in `protocol/portalcraft_protocol.h`.
 Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.log`.
 Dev tools: `host\portal\tools\fake_mc.py` (stand-in for Minecraft, `--cmd` console commands,
-`--keys` test input). With `-portalcraftdev` the plugin keeps the last 45 seconds of play:
-`--dump-replay NAME` writes them to `addons\replay-NAME.txt`, and `--replay FILE --replay-check`
-plays them back and says how far the replay parted from the recording.
+`--keys` test input). With `-portalcraftdev` the plugin keeps the last 15 minutes of play and
+writes them out as each level ends (`addons\replay-auto-<map>-<time>.txt`); `--dump-replay NAME`
+writes them on demand, and `--replay FILE --replay-check` plays one back and says how far the
+replay parted from the recording.
+
+Tests: `docs/TESTING.md`. Scripted checks (`tools/devtests`) drive a running pair through portals,
+lifts, carts, cubes, turrets and the late-game hazards, most of them in a test chamber of our own
+(`tools/testmap`, compiled with Portal's map tools), and one counts gold pixels in a screenshot to
+make sure Portal is drawing Minecraft's blocks at all.
 
 Camera smoothness: Portal's single-player client doesn't predict the player (`cl_predict` is
 forced to 0), so its camera follows the server through network interpolation. At Portal's
@@ -125,6 +131,12 @@ Portal's 72 units), with his speed, jump, step and reach scaled to match.
 Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
 - Portals can't be placed on Minecraft's blocks (a shot at your wall fizzles on it, as on Portal's
   black walls).
+- Minecraft's blocks and water don't show behind glass that refracts (a brush entity with a refract
+  material), and blocks are drawn over the beams of a moving platform: both are drawn into Portal's
+  frame after it has dealt with those. (`-pcearlysolid` draws the solid ones earlier, which fixes
+  the beams and gave every block a rim while the camera moved.)
+- Standing on something that spins doesn't turn Steve with it. Portal's maps have nothing of the
+  kind to stand on (fans, and GLaDOS's disks).
 - Co-op isn't built yet.
 - After a Portal update, the features that call engine slots checked on today's build (blasts,
   block physics, the health kill, corner messages) turn themselves off until they're re-checked
