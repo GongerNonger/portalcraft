@@ -922,6 +922,12 @@ void drawInto(ViewEntry& e, int want) {
 	}
 }
 
+// Portal copying the frame it is drawing, mid-view: the copy a refracting material samples (glass
+// that is a brush entity gets it at the start of the see-through pass, before the view's first
+// translucent world surface, where our see-through triangles used to wait). They go in first, so
+// they are in the copy: Minecraft's water behind such glass was simply not there. Only for a copy
+// of the surface being drawn to, in a view of ours that hasn't had them yet.
+bool g_inCopy = false;
 // The view's first translucent world surface: our triangles go in now, under its glass. This is
 // the point our solid pass has always used, with the same matrix, so the translucent pass moving
 // here from the view's end changes only what is blended over what.
@@ -1013,6 +1019,33 @@ void frameDone() {
 	g_mainDone = 0;
 	g_portalViewsThisFrame = 0;
 	g_scenesThisFrame = 0;
+}
+
+void beforeCopy(void* device, void* source) {
+	if (g_inCopy || g_lateTranslucent || g_viewDepth <= 0 || g_viewDepth > kMaxViews || !device || !source) {
+		return;
+	}
+	ViewEntry& e = g_views[g_viewDepth - 1];
+	if (!(e.isMain || e.throughPortal) || (e.done & kPassTranslucent)) {
+		return;
+	}
+	auto* dev = static_cast<IDirect3DDevice9*>(device);
+	IDirect3DSurface9* target = nullptr;
+	if (FAILED(dev->GetRenderTarget(0, &target)) || !target) {
+		return;
+	}
+	bool own = target == source;
+	target->Release();
+	if (!own) {
+		return;
+	}
+	g_inCopy = true;
+	static int said = 0;
+	if (said++ < 3 && g_log) {
+		g_log("world: Portal copies the frame mid-view (for refraction): our see-through triangles go in first");
+	}
+	drawInto(e, kPassBoth);
+	g_inCopy = false;
 }
 
 void releaseDeviceObjects() {

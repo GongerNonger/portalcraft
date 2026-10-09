@@ -131,10 +131,6 @@ Portal's 72 units), with his speed, jump, step and reach scaled to match.
 Known gaps (see `docs/PORTAL_MECHANICS.md` for what works):
 - Portals can't be placed on Minecraft's blocks (a shot at your wall fizzles on it, as on Portal's
   black walls).
-- Minecraft's water (and stained glass) doesn't show behind glass that refracts, where that glass
-  is a brush entity: it is drawn into Portal's frame after Portal has copied the frame for the
-  refraction. Solid blocks are drawn early enough to show there, and under a platform's laser
-  beams (`-pclatesolid` puts them back to the old, later order).
 - Standing on something that spins doesn't turn Steve with it. Portal's maps have nothing of the
   kind to stand on (fans, and GLaDOS's disks).
 - Co-op isn't built yet.

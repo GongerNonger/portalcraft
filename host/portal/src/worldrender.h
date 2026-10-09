@@ -18,4 +18,6 @@ double takeDrawSeconds();
 void setExposure(float exposure);
 // Before a device reset.
 void releaseDeviceObjects();
+// Portal is about to copy the surface `source` somewhere (IDirect3DDevice9::StretchRect).
+void beforeCopy(void* device, void* source);
 } // namespace worldrender

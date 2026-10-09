@@ -42,6 +42,7 @@ using PresentFn = HRESULT(WINAPI*)(IDirect3DDevice9*, const RECT*, const RECT*, 
 using PresentExFn = HRESULT(WINAPI*)(IDirect3DDevice9Ex*, const RECT*, const RECT*, HWND, const RGNDATA*, DWORD);
 using ResetFn = HRESULT(WINAPI*)(IDirect3DDevice9*, D3DPRESENT_PARAMETERS*);
 using ResetExFn = HRESULT(WINAPI*)(IDirect3DDevice9Ex*, D3DPRESENT_PARAMETERS*, D3DDISPLAYMODEEX*);
+using StretchRectFn = HRESULT(WINAPI*)(IDirect3DDevice9*, IDirect3DSurface9*, const RECT*, IDirect3DSurface9*, const RECT*, D3DTEXTUREFILTERTYPE);
 
 // One set of originals per distinct vtable we patched (plain and Ex devices may differ).
 struct Hooked {
@@ -50,6 +51,7 @@ struct Hooked {
 	ResetFn reset = nullptr;
 	PresentExFn presentEx = nullptr;
 	ResetExFn resetEx = nullptr;
+	StretchRectFn stretchRect = nullptr;
 };
 Hooked g_vt[4];
 
@@ -277,8 +279,19 @@ HRESULT WINAPI hkResetEx(IDirect3DDevice9Ex* dev, D3DPRESENT_PARAMETERS* pp, D3D
 	return forDevice(dev)->resetEx(dev, pp, mode);
 }
 
+// Portal copies the frame it is drawing into a texture for whatever refracts (glass, water) just
+// before it draws that: Minecraft's see-through triangles have to be in the frame by then, or they
+// are not in the copy and the glass shows the room without them (worldrender::beforeCopy).
+HRESULT WINAPI hkStretchRect(IDirect3DDevice9* dev, IDirect3DSurface9* src, const RECT* srcRect, IDirect3DSurface9* dst, const RECT* dstRect,
+	D3DTEXTUREFILTERTYPE filter) {
+	if (g_presentDepth == 0) {
+		worldrender::beforeCopy(dev, src);
+	}
+	return forDevice(dev)->stretchRect(dev, src, srcRect, dst, dstRect, filter);
+}
+
 // IDirect3DDevice9 vtable slots (d3d9.h declaration order).
-constexpr int kReset = 16, kPresent = 17, kPresentEx = 121, kResetEx = 132;
+constexpr int kReset = 16, kPresent = 17, kStretchRect = 34, kPresentEx = 121, kResetEx = 132;
 
 bool patch(void** vt, int slot, void* fn, void** original) {
 	return hooks::patch(vt, slot, fn, original);
@@ -303,6 +316,7 @@ void hookVtable(void** vt, bool ex) {
 	h->vtable = vt;
 	patch(vt, kPresent, reinterpret_cast<void*>(&hkPresent), reinterpret_cast<void**>(&h->present));
 	patch(vt, kReset, reinterpret_cast<void*>(&hkReset), reinterpret_cast<void**>(&h->reset));
+	patch(vt, kStretchRect, reinterpret_cast<void*>(&hkStretchRect), reinterpret_cast<void**>(&h->stretchRect));
 	if (ex) {
 		patch(vt, kPresentEx, reinterpret_cast<void*>(&hkPresentEx), reinterpret_cast<void**>(&h->presentEx));
 		patch(vt, kResetEx, reinterpret_cast<void*>(&hkResetEx), reinterpret_cast<void**>(&h->resetEx));
