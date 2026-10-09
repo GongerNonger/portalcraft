@@ -6,11 +6,15 @@ You need:
   - Windows, about 3 GB of free RAM while playing, and about 1.5 GB of disk for Minecraft.
 
 Install:
-  1. Unzip this folder anywhere.
-  2. Run "Install PortalCraft.cmd".
-  3. Start Portal from Steam. The first time, Prism Launcher opens: sign in with your Microsoft
-     account there, and it downloads Minecraft (a few minutes). After that, Minecraft starts
-     hidden with Portal by itself, and closes with it.
+  1. Run PortalCraft-Setup.exe. (Windows may say it doesn't recognise the program: click
+     "More info", then "Run anyway". From the zip instead: unzip it and run "Install PortalCraft.cmd".)
+  2. Double-click the PortalCraft shortcut it puts on your desktop. It checks for a newer version,
+     installs it if there is one, and starts Portal.
+  3. The first time, Prism Launcher opens: sign in with your Microsoft account there, and it
+     downloads Minecraft (a few minutes). After that, Minecraft starts hidden with Portal by
+     itself, and closes with it.
+
+Always start it with the PortalCraft shortcut: that is what keeps it up to date.
 
 Playing:
   - You move, mine, build and fight as Steve, with Minecraft's physics, inventory and HUD.
@@ -22,7 +26,9 @@ Playing:
 If Minecraft doesn't start, Portal's top-left corner says why, and the logs are:
   Portal\portal\addons\portalcraft.log
   %LOCALAPPDATA%\PortalCraft\Prism\instances\PortalCraft\.minecraft\logs\latest.log
+  %LOCALAPPDATA%\PortalCraft\launcher.log   (the update check)
 
-Uninstall: delete Portal\portal\addons\portalcraft.* and %LOCALAPPDATA%\PortalCraft.
+Uninstall: delete Portal\portal\addons\portalcraft.*, the folder %LOCALAPPDATA%\PortalCraft, and
+the PortalCraft shortcut.
 
 A fan project, not affiliated with Valve, Mojang or Microsoft. You need to own both games.

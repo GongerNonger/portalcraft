@@ -95,11 +95,47 @@ $mods = Join-Path $mc "Prism\instances\PortalCraft\.minecraft\mods"
 New-Item -ItemType Directory $mods -Force | Out-Null
 Copy-Item (Join-Path $cache $fabricApiJar) $mods
 Copy-Item $jar (Join-Path $mods "portalcraft-$version.jar")
-New-Item -ItemType Directory (Join-Path $mc "world") -Force | Out-Null
-Copy-Item (Join-Path $root "worlds\PortalCraft\level.dat") (Join-Path $mc "world\level.dat")
+# The voxel portal gun: a resource pack, switched on by the first install's options.txt.
+$packs = Join-Path $mc "Prism\instances\PortalCraft\.minecraft\resourcepacks"
+New-Item -ItemType Directory $packs -Force | Out-Null
+Copy-Item -Recurse (Join-Path $root "packs\portalcraft-voxel-gun") $packs
+# The whole seed world: level.dat and data\minecraft (without the generator settings and game rules
+# in there Minecraft 26.3 refuses the world, "Overworld settings missing").
+Copy-Item -Recurse (Join-Path $root "worlds\PortalCraft") (Join-Path $mc "world")
 Set-Content (Join-Path $mc "bundle-version.txt") "PortalCraft $version, Prism Launcher $prismVersion, $fabricApiJar" -NoNewline
 
-New-ZipFromFolder (Join-Path $dist "PortalCraft-$version.zip") $stage "PortalCraft-$version/"
+$zipPath = Join-Path $dist "PortalCraft-$version.zip"
+New-ZipFromFolder $zipPath $stage "PortalCraft-$version/"
 Remove-Item -Recurse -Force $stage
 Copy-Item $jar (Join-Path $dist "portalcraft-$version.jar")
+
+# PortalCraft-Setup.exe: the same zip inside a self-extracting program (Windows' own IExpress), so
+# installing is one download and a double click. It unpacks the zip to a temporary folder and runs
+# its install.ps1 in a window that stays open to say what happened.
+$sfx = Join-Path $dist "sfx"
+New-Item -ItemType Directory $sfx -Force | Out-Null
+Copy-Item $zipPath (Join-Path $sfx "payload.zip")
+Set-Content -Path (Join-Path $sfx "setup.cmd") -Encoding ascii -Value @(
+	'@echo off',
+	'title PortalCraft setup',
+	'echo Installing PortalCraft...',
+	'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference=''Stop''; $w=Join-Path $env:TEMP ''PortalCraft-setup''; if (Test-Path $w) { Remove-Item -Recurse -Force $w }; Expand-Archive -Path ''%~dp0payload.zip'' -DestinationPath $w -Force; $i=Get-ChildItem $w -Recurse -Filter install.ps1 | Select-Object -First 1; & powershell -NoProfile -ExecutionPolicy Bypass -File $i.FullName; Remove-Item -Recurse -Force $w -ErrorAction SilentlyContinue"',
+	'echo.',
+	'pause'
+)
+$setupExe = Join-Path $dist "PortalCraft-Setup.exe"
+$sed = Join-Path $sfx "setup.sed"
+Set-Content -Path $sed -Encoding ascii -Value @(
+	'[Version]', 'Class=IEXPRESS', 'SEDVersion=3',
+	'[Options]', 'PackagePurpose=InstallApp', 'ShowInstallProgramWindow=1', 'HideExtractAnimation=1', 'UseLongFileName=1',
+	'InsideCompressed=0', 'CAB_FixedSize=0', 'CAB_ResvCodeSigning=0', 'RebootMode=N', 'InstallPrompt=', 'DisplayLicense=',
+	'FinishMessage=', "TargetName=$setupExe", "FriendlyName=PortalCraft $version setup", 'AppLaunched=cmd /c setup.cmd',
+	'PostInstallCmd=<None>', 'AdminQuietInstCmd=', 'UserQuietInstCmd=', 'SourceFiles=SourceFiles',
+	'[SourceFiles]', "SourceFiles0=$sfx\",
+	'[SourceFiles0]', 'payload.zip=', 'setup.cmd='
+)
+& (Join-Path $env:SystemRoot "System32\iexpress.exe") /N /Q $sed | Out-Null
+for ($i = 0; $i -lt 120 -and -not (Test-Path $setupExe); $i++) { Start-Sleep -Milliseconds 500 }
+Remove-Item -Recurse -Force $sfx
+if (-not (Test-Path $setupExe)) { throw "IExpress didn't write $setupExe" }
 Get-ChildItem $dist | ForEach-Object { "{0,-32} {1,14:N0} bytes" -f $_.Name, $_.Length }
