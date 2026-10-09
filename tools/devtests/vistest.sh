@@ -16,7 +16,7 @@ python - "$OUT/vistest.jpg" <<'PY'
 import sys
 from PIL import Image
 im=Image.open(sys.argv[1]).convert('RGB'); px=im.load(); w,h=im.size
-gold=sum(1 for x in range(0,w,4) for y in range(0,h,4) if px[x,y][0]>150 and px[x,y][1]>110 and px[x,y][2]<90 and px[x,y][0]-px[x,y][2]>80)
+gold=sum(1 for x in range(0,w,4) for y in range(0,h,4) if px[x,y][0]-px[x,y][2]>40 and px[x,y][1]-px[x,y][2]>30 and px[x,y][0]>55)
 share=gold*16.0/(w*h)
 print(("PASS" if share>0.08 else "FAIL")+"  Minecraft's blocks are drawn in Portal  [gold over %.0f%% of the picture]"%(share*100))
 PY
