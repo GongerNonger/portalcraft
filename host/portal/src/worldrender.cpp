@@ -313,11 +313,34 @@ void patchAtlas(IDirect3DDevice9* dev) {
 	if (count > pcproto::kWorldPatchMax || w == 0 || h == 0 || w > pcproto::kWorldAtlasMaxW || h > pcproto::kWorldAtlasMaxH) {
 		return;
 	}
-	if (!g_atlasStaging && FAILED(dev->CreateTexture(w, h, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &g_atlasStaging, nullptr))) {
-		g_atlasStaging = nullptr;
-		return;
-	}
 	const uint8_t* src = g_shm + pcproto::kWorldAtlasOffset;
+	if (!g_atlasStaging) {
+		if (FAILED(dev->CreateTexture(w, h, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &g_atlasStaging, nullptr))) {
+			g_atlasStaging = nullptr;
+			return;
+		}
+		// The whole atlas into it, once. A new texture is dirty all over, so the first UpdateTexture
+		// moves all of it across: left as it came, that wiped every block's picture out of the atlas
+		// Portal draws with, and only the animated cells written below came back (water was there,
+		// every solid block was invisible).
+		D3DLOCKED_RECT all;
+		if (FAILED(g_atlasStaging->LockRect(0, &all, nullptr, 0))) {
+			g_atlasStaging->Release();
+			g_atlasStaging = nullptr;
+			return;
+		}
+		for (uint32_t row = 0; row < h; row++) {
+			const uint8_t* in = src + size_t(row) * w * 4;
+			uint8_t* out = static_cast<uint8_t*>(all.pBits) + size_t(row) * all.Pitch;
+			for (uint32_t col = 0; col < w; col++) { // RGBA -> BGRA
+				out[col * 4 + 0] = in[col * 4 + 2];
+				out[col * 4 + 1] = in[col * 4 + 1];
+				out[col * 4 + 2] = in[col * 4 + 0];
+				out[col * 4 + 3] = in[col * 4 + 3];
+			}
+		}
+		g_atlasStaging->UnlockRect(0);
+	}
 	for (uint32_t i = 0; i < count; i++) {
 		uint32_t xy, wh;
 		std::memcpy(&xy, list + 8 + i * 8, 4);
@@ -881,7 +904,17 @@ void drawInto(ViewEntry& e, int want) {
 	}
 	if (e.isMain) {
 		g_mainDone |= want;
-		draw(dev, worldToScreen(), false, want);
+		// By this view's own setup, as the views through portals are, where there is one. The
+		// engine's WorldToScreenMatrix is this frame's only once the view is well under way: asked
+		// for straight after the opaque world (hkDrawWorldLists) it was still last frame's, so our
+		// blocks were drawn where the camera had been, and had a rim for as long as the camera moved.
+		float worldToProjection[16];
+		if (g_renderView && e.setup) {
+			portalMatrix(e, worldToProjection);
+			draw(dev, worldToProjection, false, want);
+		} else {
+			draw(dev, worldToScreen(), false, want);
+		}
 	} else if (g_renderView) {
 		float worldToProjection[16];
 		portalMatrix(e, worldToProjection);
