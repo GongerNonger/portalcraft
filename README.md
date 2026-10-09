@@ -58,13 +58,30 @@ The first run of `tools\setup.ps1` does three things:
 
 ## Releases for friends
 
-`powershell -ExecutionPolicy Bypass -File tools\package.ps1` builds both halves and writes
-`dist\PortalCraft-<version>.zip`: unzip anywhere and run `Install PortalCraft.cmd`. It installs the
-plugin into Steam Portal and a portable Prism Launcher with the PortalCraft instance (Minecraft
-26.3, Fabric, Fabric API, the mod, the void world) into `%LOCALAPPDATA%\PortalCraft`, and points
-`portalcraft.ini` at it. The first Portal start opens Prism to sign in with a Microsoft account that
-owns Minecraft; after that Minecraft starts hidden with Portal. Installing a newer zip over it keeps
-the sign-in and the world.
+Friends download `PortalCraft-Setup.exe` from the newest
+[release](https://github.com/GongerNonger/portalcraft/releases/latest), run it, and from then on
+use the **PortalCraft** shortcut it puts on their desktop. The setup installs the plugin into Steam
+Portal and a portable Prism Launcher with the PortalCraft instance (Minecraft 26.3, Fabric, Fabric
+API, the mod, the voxel portal gun, the void world) into `%LOCALAPPDATA%\PortalCraft`, and points
+`portalcraft.ini` at it. The first start opens Prism to sign in with a Microsoft account that owns
+Minecraft; after that Minecraft starts hidden with Portal.
+
+The shortcut keeps them current: it asks GitHub for the newest release, installs it if it is newer
+than theirs (the sign-in, the world and every setting are kept), and then starts Portal.
+
+Shipping an update:
+
+```bat
+:: 1. raise version= in gradle.properties (0.2.0 -> 0.2.1): the shortcut compares these numbers
+powershell -ExecutionPolicy Bypass -File tools\package.ps1
+git commit -am "0.2.1" && git tag v0.2.1 && git push origin main v0.2.1
+gh release create v0.2.1 dist\PortalCraft-Setup.exe dist\PortalCraft-0.2.1.zip dist\portalcraft-0.2.1.jar --title "PortalCraft 0.2.1" --notes "what changed"
+```
+
+`tools\package.ps1` builds both halves and writes the three files to `dist\`: the setup program
+(the zip inside a self-extracting program made with Windows' IExpress), the zip itself (unzip and
+run `Install PortalCraft.cmd`), and the mod's jar. To try an install without touching the real
+Portal or `%LOCALAPPDATA%`, set `PORTALCRAFT_PORTAL` and `PORTALCRAFT_HOME` to scratch folders first.
 
 ## Building
 
