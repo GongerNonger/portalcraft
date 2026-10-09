@@ -25,6 +25,8 @@ them are this machine's.
 | `cubeportal.sh fwd\|back`, `cubefloor.sh floorwall\|floorceiling` | a carried cube comes through a portal with him |
 | `wallpress.sh` | a carried cube leant on a wall doesn't shake him |
 | `turrettest.sh` | a turret is knocked over by walking into it |
+| `glasstest.sh` | breakable glass stops him, a rocket breaks it, he walks through |
+| `vistest.sh` | Portal really draws Minecraft's blocks (gold pixels counted in a screenshot) |
 
 The last four run in `pc_test`, a chamber of our own.
 
@@ -45,6 +47,13 @@ know. When adding an entity, copy its key values from one of Valve's maps (`tool
   every map output and input as it fires to `portal/pcconsole.log`. That is how to find out why a lift didn't
   leave or a door didn't open (testchmb_a_02's exit lift waits for GLaDOS's last line, which a trigger at the end
   of the chamber starts).
+
+## Looking at the screen
+
+`shot.sh <name>` has Portal take the picture itself (its `jpeg` command) and copies it to the pair's output folder.
+Use it rather than capturing the window: under a remote-desktop session the window capture returns the same frozen
+frame for ever. Run `vistest.sh` with every regression: the movement tests cannot see a rendering break, and two
+tagged builds (stable-12, stable-13) shipped with every solid block invisible.
 
 ## Traps
 
