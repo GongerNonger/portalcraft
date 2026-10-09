@@ -98,6 +98,21 @@ public class PortalCraft implements ModInitializer {
 			}
 		});
 
+		// Friends follow the host's Portal from map to map (HostMapPayload): told every two seconds.
+		PayloadTypeRegistry.clientboundPlay().register(dev.portalcraft.net.HostMapPayload.TYPE, dev.portalcraft.net.HostMapPayload.CODEC);
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(server -> {
+			var host = dev.portalcraft.host.HostLink.current();
+			if (server.getTickCount() % 40 != 0 || host == null || !host.inGame() || host.map().isEmpty() || server.getPlayerList().getPlayerCount() < 2) {
+				return;
+			}
+			var payload = new dev.portalcraft.net.HostMapPayload(host.map());
+			for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+				if (ServerPlayNetworking.canSend(player, dev.portalcraft.net.HostMapPayload.TYPE)) {
+					ServerPlayNetworking.send(player, payload);
+				}
+			}
+		});
+
 		// Everyone who joins has the portal gun. (The Minecraft that hosts the world used to hand it
 		// to its own player from the client side, which a friend joining that world never got.)
 		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

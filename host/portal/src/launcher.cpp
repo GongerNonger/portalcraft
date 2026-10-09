@@ -115,6 +115,21 @@ bool start() {
 	std::string command = script ? "cmd.exe /c \"\"" + g_launcher + "\" " + g_arguments + "\"" : "\"" + g_launcher + "\" " + g_arguments;
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", "1");
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", g_mapsDir.c_str()); // where Minecraft reads Portal's maps for collision
+	// Playing with friends ([Friends] in portalcraft.ini): host_port=N opens this Minecraft's world
+	// on that port; join=address:port has it join a friend's world instead of opening its own.
+	// (Left alone when already set in Portal's own environment, as the test scripts set them.)
+	char friends[256];
+	bool setHost = false, setJoin = false;
+	if (!std::getenv("PORTALCRAFT_LAN_PORT") && GetPrivateProfileStringA("Friends", "host_port", "", friends, sizeof friends, g_iniPath.c_str()) > 0) {
+		SetEnvironmentVariableA("PORTALCRAFT_LAN_PORT", friends);
+		setHost = true;
+		g_log("launcher: hosting for friends on port %s", friends);
+	}
+	if (!std::getenv("PORTALCRAFT_JOIN") && GetPrivateProfileStringA("Friends", "join", "", friends, sizeof friends, g_iniPath.c_str()) > 0) {
+		SetEnvironmentVariableA("PORTALCRAFT_JOIN", friends);
+		setJoin = true;
+		g_log("launcher: joining a friend's world at %s", friends);
+	}
 	if (instance::number() > 0) {
 		// Which pair it is, and which hl2.exe is its own: with two Portals up, the other one being
 		// alive mustn't keep this Minecraft running after its own Portal has closed.
@@ -138,6 +153,12 @@ bool start() {
 	}
 	SetEnvironmentVariableA("PORTALCRAFT_STARTED_BY_HOST", nullptr);
 	SetEnvironmentVariableA("PORTALCRAFT_MAPS", nullptr);
+	if (setHost) {
+		SetEnvironmentVariableA("PORTALCRAFT_LAN_PORT", nullptr);
+	}
+	if (setJoin) {
+		SetEnvironmentVariableA("PORTALCRAFT_JOIN", nullptr);
+	}
 	if (instance::number() > 0) {
 		SetEnvironmentVariableA("PORTALCRAFT_INSTANCE", nullptr);
 		SetEnvironmentVariableA("PORTALCRAFT_HOST_PID", nullptr);

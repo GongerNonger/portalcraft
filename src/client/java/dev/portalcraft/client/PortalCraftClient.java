@@ -23,6 +23,7 @@ public class PortalCraftClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		ClientPlayNetworking.registerGlobalReceiver(dev.portalcraft.net.HostMapPayload.TYPE, (payload, context) -> HostLifecycle.hostIsIn(payload.map()));
 		EntityRendererRegistry.register(PortalCraft.PORTAL, PortalRenderer::new);
 		// The gun's firing animation frame, for item models that have the poses (FireFrame).
 		net.minecraft.client.renderer.item.properties.numeric.RangeSelectItemModelProperties.ID_MAPPER.put(PortalCraft.id("fire_frame"),

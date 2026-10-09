@@ -1435,6 +1435,23 @@ void linkPoll() {
 			float exposure; // dev: lighting exposure (tools/fake_mc.py --exposure)
 			std::memcpy(&exposure, buf + 4, 4);
 			worldrender::setExposure(exposure);
+		} else if (n > 4 && n <= 4 + 60 && std::memcmp(buf, "PCG1", 4) == 0 && g_engineServer) {
+			// In a friend's world: load the map their Portal is in (HostLifecycle.followHost). The
+			// name is letters, digits and underscores only, and the map has to be one we have.
+			char name[64] = {};
+			std::memcpy(name, buf + 4, size_t(n - 4));
+			bool plain = name[0] != 0;
+			for (const char* c = name; *c; c++) {
+				plain = plain && ((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') || *c == '_');
+			}
+			static DWORD asked = 0;
+			if (plain && (!g_inLevel || _stricmp(name, g_map) != 0) && GetTickCount() - asked > 15000) {
+				asked = GetTickCount();
+				logf("friends: the host is in %s: loading it", name);
+				char cmd[96];
+				snprintf(cmd, sizeof cmd, "map %s\n", name);
+				sdk::serverCommand(g_engineServer, cmd);
+			}
 		} else if (n > 4 && std::memcmp(buf, "PCC1", 4) == 0 && g_engineServer && devMode()) {
 			char cmd[260];
 			int len = n - 4 < 250 ? n - 4 : 250;

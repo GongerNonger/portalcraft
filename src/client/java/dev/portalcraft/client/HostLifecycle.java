@@ -97,9 +97,44 @@ final class HostLifecycle {
 			net.minecraft.client.multiplayer.resolver.ServerAddress.parseString(address), data, false, null);
 	}
 
+	/** The map the world's host is in (HostMapPayload), in a friend's world; null in one's own. */
+	private static volatile String hostMap;
+	private static long nextFollow;
+
+	static void hostIsIn(String map) {
+		hostMap = map;
+	}
+
+	/**
+	 * In a friend's world: our own Portal is sent to the map theirs is in ("PCG1" + its name; the
+	 * plugin loads it). Asked again every twenty seconds for as long as the two differ: a level
+	 * takes a while to load, and one that isn't installed here never will.
+	 */
+	private static void followHost(Minecraft minecraft) {
+		String want = hostMap;
+		if (want == null || minecraft.getSingleplayerServer() != null || minecraft.level == null) {
+			return;
+		}
+		var own = dev.portalcraft.host.HostLink.current();
+		if (own == null || (own.inGame() && want.equalsIgnoreCase(own.map()))) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (now < nextFollow || !want.matches("[A-Za-z0-9_]{1,60}")) {
+			return;
+		}
+		nextFollow = now + 20000;
+		LOG.info("PortalCraft: the host is in {}; ours is {}: asking our Portal to load it", want, own.inGame() ? "in " + own.map() : "at its menu");
+		byte[] name = want.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+		var b = java.nio.ByteBuffer.allocate(4 + name.length);
+		b.put((byte) 'P').put((byte) 'C').put((byte) 'G').put((byte) '1').put(name);
+		dev.portalcraft.host.HostLink.send(b.flip());
+	}
+
 	/** Every client tick. */
 	static void tick(Minecraft minecraft, boolean linked) {
 		joinFriend(minecraft);
+		followHost(minecraft);
 		if (!STARTED_BY_HOST || quitting) {
 			return;
 		}
