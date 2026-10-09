@@ -1125,11 +1125,40 @@ public final class HostDriver {
 	 * damage stays on (Steve has no long-fall boots: water-bucket clutch, see chamberKit), and
 	 * commands are allowed, as "Open to LAN, allow cheats" would.
 	 */
+	/**
+	 * Friends in the same world: with PORTALCRAFT_LAN_PORT set (or -Dportalcraft.lanPort), the
+	 * world this Minecraft hosts is opened to the network on that port, as "Open to LAN" does, once.
+	 * Each friend's own Portal starts a Minecraft that joins it instead of opening a world of its
+	 * own (its portalcraft.ini: --quickPlayMultiplayer host:port), and everyone is in one Minecraft
+	 * world: they see each other as Steve and share the blocks. Each Portal still has its own
+	 * cubes, doors and portals.
+	 */
+	private static void openToFriends(net.minecraft.client.server.IntegratedServer server) {
+		String text = System.getProperty("portalcraft.lanPort", System.getenv("PORTALCRAFT_LAN_PORT"));
+		if (text == null || text.isBlank() || server.isPublished()) {
+			return;
+		}
+		int port;
+		try {
+			port = Integer.parseInt(text.trim());
+		} catch (NumberFormatException e) {
+			LOG.warn("PortalCraft: PORTALCRAFT_LAN_PORT is not a port: {}", text);
+			return;
+		}
+		server.execute(() -> {
+			if (!server.isPublished()) {
+				boolean ok = server.publishServer(net.minecraft.server.MinecraftServer.MultiplayerScope.LAN, true, port);
+				LOG.info("PortalCraft: this world is {} to friends on port {}", ok ? "open" : "NOT open (the port is taken?)", port);
+			}
+		});
+	}
+
 	private static void freezeDaylight(Minecraft minecraft) {
 		var server = minecraft.getSingleplayerServer();
 		if (server == null) {
 			return;
 		}
+		openToFriends(server);
 		server.execute(() -> {
 			if (!server.getWorldData().isAllowCommands()) {
 				server.setWorldAllowCommands(true);

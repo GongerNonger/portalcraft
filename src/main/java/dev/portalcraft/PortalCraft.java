@@ -72,6 +72,21 @@ public class PortalCraft implements ModInitializer {
 			}
 		});
 
+		// Everyone who joins has the portal gun. (The Minecraft that hosts the world used to hand it
+		// to its own player from the client side, which a friend joining that world never got.)
+		net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			ServerPlayer player = handler.getPlayer();
+			server.execute(() -> {
+				// (Only in a world whose Minecraft a Portal is linked to: in plain Minecraft the gun is crafted.)
+				if (dev.portalcraft.host.HostLink.current() == null) {
+					return;
+				}
+				if (!player.getInventory().contains(new net.minecraft.world.item.ItemStack(PORTAL_GUN))) {
+					player.getInventory().add(new net.minecraft.world.item.ItemStack(PORTAL_GUN));
+				}
+			});
+		});
+
 		// Holding the gun, left click shoots instead of mining.
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) ->
 			player.getItemInHand(hand).is(PORTAL_GUN) ? InteractionResult.FAIL : InteractionResult.PASS
