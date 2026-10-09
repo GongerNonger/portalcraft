@@ -62,7 +62,12 @@ final class HostLifecycle {
 		long now = System.currentTimeMillis();
 		// From whatever screen it is at, not only the title screen: a new Minecraft folder starts on
 		// its first-run screens, and a dropped connection leaves the "disconnected" one up.
-		if (now < nextJoin || minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.ConnectScreen) {
+		// (Not from the screens a connection under way goes through, though: tried again from those
+		// eight seconds in, each attempt cut the one before it off, and the host saw "lost connection".)
+		var screen = minecraft.gui.screen();
+		boolean idle = screen == null || screen instanceof net.minecraft.client.gui.screens.TitleScreen
+			|| screen instanceof net.minecraft.client.gui.screens.DisconnectedScreen || screen.getClass().getSimpleName().contains("Onboarding");
+		if (now < nextJoin || !idle || minecraft.getConnection() != null) {
 			return;
 		}
 		nextJoin = now + 8000;
