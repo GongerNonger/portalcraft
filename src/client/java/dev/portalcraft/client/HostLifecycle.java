@@ -54,9 +54,21 @@ final class HostLifecycle {
 	private static final String JOIN = System.getProperty("portalcraft.join", System.getenv("PORTALCRAFT_JOIN"));
 	private static long nextJoin;
 	private static int joinLogs;
+	private static boolean leftOwnWorld;
 
 	private static void joinFriend(Minecraft minecraft) {
-		if (JOIN == null || JOIN.isBlank() || minecraft.level != null || minecraft.gui.overlay() != null) {
+		if (JOIN == null || JOIN.isBlank() || minecraft.gui.overlay() != null) {
+			return;
+		}
+		// Started straight into a world of its own (the installed game's launcher opens the
+		// PortalCraft world): out of it first, saved, and then on to the friend's.
+		if (minecraft.level != null && minecraft.getSingleplayerServer() != null && !leftOwnWorld) {
+			leftOwnWorld = true;
+			LOG.info("PortalCraft: leaving this world to join the one at {}", JOIN.trim());
+			minecraft.disconnect(new net.minecraft.client.gui.screens.TitleScreen(), false);
+			return;
+		}
+		if (minecraft.level != null) {
 			return;
 		}
 		long now = System.currentTimeMillis();

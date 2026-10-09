@@ -115,8 +115,16 @@ if (-not $NoShortcuts -and -not $env:PORTALCRAFT_HOME) { # (a test install leave
 		$link.IconLocation = "$(Join-Path $portal 'hl2.exe'),0"
 		$link.Description = "Play Portal as Steve (checks for a newer PortalCraft first)"
 		$link.Save()
+		# ... and one that first asks how to play: alone, hosting for friends, or joining one.
+		$with = $shell.CreateShortcut((Join-Path $folder "PortalCraft with friends.lnk"))
+		$with.TargetPath = $link.TargetPath
+		$with.Arguments = $link.Arguments + " -Friends"
+		$with.WorkingDirectory = $dest
+		$with.IconLocation = $link.IconLocation
+		$with.Description = "Host a PortalCraft world for friends, or join a friend's"
+		$with.Save()
 	}
-	Write-Host "Put a PortalCraft shortcut on the desktop and in the Start menu"
+	Write-Host "Put PortalCraft and PortalCraft with friends shortcuts on the desktop and in the Start menu"
 }
 if (-not $Quiet) {
 	Write-Host ""
