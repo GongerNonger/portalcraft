@@ -1147,6 +1147,12 @@ public final class HostDriver {
 		}
 		server.execute(() -> {
 			if (!server.isPublished()) {
+				// Development clients have no Minecraft account (offline, "Steve", "Alex"): with the
+				// world checking accounts, as it does and should for real players, they are turned
+				// away ("Invalid session"). Only in a development run is the check off.
+				if (Boolean.getBoolean("portalcraft.dev")) {
+					server.setUsesAuthentication(false);
+				}
 				boolean ok = server.publishServer(net.minecraft.server.MinecraftServer.MultiplayerScope.LAN, true, port);
 				LOG.info("PortalCraft: this world is {} to friends on port {}", ok ? "open" : "NOT open (the port is taken?)", port);
 			}
