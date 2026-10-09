@@ -372,6 +372,14 @@ public final class HostDriver {
 		sendState(minecraft);
 	}
 
+	/** In a friend's world: its server is told the fall so far no longer counts (it was still counted after a portal). */
+	private static void tellFriendsServerFallReset() {
+		if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(dev.portalcraft.net.HostEffectPayload.TYPE)) {
+			net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
+				new dev.portalcraft.net.HostEffectPayload(dev.portalcraft.net.HostEffectPayload.RESET_FALL, 0.0F));
+		}
+	}
+
 	private static int crossingsLogged;
 	private static int diagFallLogs;
 	private static net.minecraft.world.entity.Pose lastPose;
@@ -618,6 +626,8 @@ public final class HostDriver {
 					sp.resetFallDistance();
 				}
 			});
+		} else {
+			tellFriendsServerFallReset();
 		}
 		if (crossingsLogged++ < 40) {
 			LOG.info("PortalCraft: Steve went through {} host portal(s) (#{}): out at {} (host {}, moved {} to fit) with velocity {}, by the point {} above his feet (half his hull is {})",
@@ -1473,6 +1483,8 @@ public final class HostDriver {
 					sp.resetFallDistance();
 				}
 			});
+		} else {
+			tellFriendsServerFallReset();
 		}
 		if (far) {
 			LOG.info("PortalCraft: host moved the player to {} (velocity {})", pos, velocity);

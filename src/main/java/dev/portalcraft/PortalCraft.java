@@ -50,6 +50,32 @@ public class PortalCraft implements ModInitializer {
 
 		PayloadTypeRegistry.serverboundPlay().register(FirePayload.TYPE, FirePayload.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(EnterPortalPayload.TYPE, EnterPortalPayload.CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(dev.portalcraft.net.HostEffectPayload.TYPE, dev.portalcraft.net.HostEffectPayload.CODEC);
+
+		// What a friend's own Portal did to their Steve (HostEffectPayload). Only in a world a Portal
+		// is linked to, and only ever to the player who sent it.
+		ServerPlayNetworking.registerGlobalReceiver(dev.portalcraft.net.HostEffectPayload.TYPE, (payload, context) -> {
+			ServerPlayer player = context.player();
+			if (dev.portalcraft.host.HostLink.current() == null || !player.isAlive()) {
+				return;
+			}
+			switch (payload.kind()) {
+				case dev.portalcraft.net.HostEffectPayload.RESET_FALL -> player.resetFallDistance();
+				case dev.portalcraft.net.HostEffectPayload.HURT, dev.portalcraft.net.HostEffectPayload.KILL -> {
+					boolean killing = payload.kind() == dev.portalcraft.net.HostEffectPayload.KILL;
+					float damage = killing ? Float.MAX_VALUE : payload.amount();
+					if (!(damage > 0.0F)) {
+						return;
+					}
+					var key = net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE, id(killing ? "test_kill" : "test"));
+					var type = player.level().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE).getOrThrow(key);
+					player.setInvulnerableTime(0);
+					player.hurtServer(player.level(), new net.minecraft.world.damagesource.DamageSource(type), damage);
+				}
+				default -> {
+				}
+			}
+		});
 
 		ServerPlayNetworking.registerGlobalReceiver(FirePayload.TYPE, (payload, context) -> {
 			ServerPlayer player = context.player();

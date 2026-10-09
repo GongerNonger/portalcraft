@@ -64,7 +64,15 @@ final class HostHealth {
 		pending = 0.0F;
 		kill = false;
 		sinceApplied = 0;
-		if (server == null || player.isDeadOrDying()) {
+		if (player.isDeadOrDying()) {
+			return;
+		}
+		if (server == null) {
+			// In a friend's world: its server does it (HostEffectPayload).
+			if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(dev.portalcraft.net.HostEffectPayload.TYPE)) {
+				net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new dev.portalcraft.net.HostEffectPayload(
+					killing ? dev.portalcraft.net.HostEffectPayload.KILL : dev.portalcraft.net.HostEffectPayload.HURT, killing ? 0.0F : damage));
+			}
 			return;
 		}
 		var uuid = player.getUUID();
