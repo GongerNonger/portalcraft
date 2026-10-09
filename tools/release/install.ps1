@@ -104,7 +104,7 @@ Copy-Item (Join-Path $here "PortalCraft.ps1") $dest -Force
 Copy-Item (Join-Path $here "find-portal.ps1") $dest -Force
 Copy-Item (Join-Path $here "README.txt") $dest -Force
 Copy-Item (Join-Path $bundle "bundle-version.txt") (Join-Path $dest "version.txt") -Force
-if (-not $NoShortcuts) {
+if (-not $NoShortcuts -and -not $env:PORTALCRAFT_HOME) { # (a test install leaves the real desktop alone)
 	$shell = New-Object -ComObject WScript.Shell
 	$targets = @([Environment]::GetFolderPath("Desktop"), [Environment]::GetFolderPath("Programs"))
 	foreach ($folder in $targets) {
