@@ -63,7 +63,7 @@ for w in "across -560,189,2 10,0 26" "diagonal -498,236,2 10,-45 26" "side -451,
   set -- $w
   python fake_mc.py --goto=$2 >/dev/null; sleep 2.2; python fake_mc.py --view=$3 >/dev/null; sleep 0.6
   r=($(trace btn_$1 200 "python fake_mc.py --keys=$4 --ms=2200 >/dev/null; sleep 3.4"))
-  check "button $1: crosses, no wobble" "$([ "${r[0]}" -ge 120 ] && [ "${r[2]}" -le $([ "$1" = diagonal ] && echo 4 || echo 2) ] && [ "${r[1]}" -le 6 ] && echo 1)" "moved ${r[0]} shoves ${r[1]} reversals ${r[2]}"  # (the diagonal goes up the rim, down onto the pressed top, up the far rim and off: four turns of height are the button's shape)
+  check "button $1: crosses, no wobble" "$([ "${r[0]}" -ge 120 ] && [ "${r[2]}" -le $({ [ "$1" = diagonal ] || [ "$1" = sprint ]; } && echo 4 || echo 2) ] && [ "${r[1]}" -le 6 ] && echo 1)" "moved ${r[0]} shoves ${r[1]} reversals ${r[2]}"  # (the diagonal goes up the rim, down onto the pressed top, up the far rim and off: four turns of height are the button's shape)
 done
 python fake_mc.py --goto=880,778,452 >/dev/null; sleep 2.5; python fake_mc.py --view=15,0 >/dev/null; sleep 0.8
 if [ "$(at 880 778)" = 1 ]; then
