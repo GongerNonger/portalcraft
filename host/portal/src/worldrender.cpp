@@ -932,12 +932,15 @@ void __fastcall hkDrawTranslucentSurfaces(void* self, void* /*edx*/, void* list,
 	g_translucentOriginal(self, list, sortIndex, flags, shadowDepth);
 }
 
-// An experiment, off unless Portal is started with -pcearlysolid: our solids straight after the
-// view's opaque world (IVRenderView::DrawWorldLists, slot 13) instead of at its first translucent
-// world surface. A moving platform's laser beams and other see-through entities are drawn from the
-// far leaves forward, some before that first surface, and a block drawn after a beam covers it;
-// this early they can't. But with it every block showed a rim while the camera moved (cause not
-// found; the view's matrix is the same at both points), so it is not the default.
+// Our solids go in straight after the view's opaque world (IVRenderView::DrawWorldLists, slot 13),
+// not at its first translucent world surface. Portal's see-through entities are drawn from the far
+// leaves forward, some before that first surface, and the engine copies the frame for refracting
+// glass before it too: a block drawn that late covered a moving platform's laser beams, and didn't
+// show at all behind a pane of refracting glass. (When this was first tried every block showed a
+// rim while the camera moved, and it was left off; recorded frame by frame on today's code, with
+// the view drawn by its own setup's matrix, there is none. -pclatesolid puts the old order back.)
+// Our translucent triangles stay at the first translucent surface: water drawn before Portal's
+// solid props would have them show through it untinted.
 using DrawWorldListsFn = void(__thiscall*)(void* self, void* list, unsigned long flags, float waterZAdjust);
 DrawWorldListsFn g_worldListsOriginal = nullptr;
 
@@ -1081,9 +1084,10 @@ bool init(overlay::LogFn log, sdk::CreateInterfaceFn engineFactory) {
 	hook(vt, 39, reinterpret_cast<void*>(&hkPush2DView), reinterpret_cast<void**>(&g_push2dOriginal));
 	hook(vt, 40, reinterpret_cast<void*>(&hkPopView), reinterpret_cast<void**>(&g_popOriginal));
 	hook(vt, 18, reinterpret_cast<void*>(&hkDrawTranslucentSurfaces), reinterpret_cast<void**>(&g_translucentOriginal));
-	if (std::strstr(GetCommandLineA(), "-pcearlysolid")) {
+	if (std::strstr(GetCommandLineA(), "-pclatesolid")) {
+		log("world: -pclatesolid: solids drawn at the view's first translucent surface (the old order)");
+	} else {
 		hook(vt, 13, reinterpret_cast<void*>(&hkDrawWorldLists), reinterpret_cast<void**>(&g_worldListsOriginal));
-		log("world: -pcearlysolid: solids drawn straight after the opaque world (experiment)");
 	}
 	if (std::strstr(GetCommandLineA(), "-pclatetranslucent")) {
 		g_lateTranslucent = true;

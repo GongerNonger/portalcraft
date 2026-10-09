@@ -1,6 +1,6 @@
 #!/bin/bash
 # restart.sh [save|map] [mapname] : graceful restart of this pair's Portal + Minecraft (PCI picks the pair, see env.sh).
-#   PCEXTRA  extra hl2.exe launch options (e.g. -pcearlysolid)
+#   PCEXTRA  extra hl2.exe launch options (e.g. -pclatesolid)
 #   PCDLL    the plugin build to install (pair 0 only; default: the main checkout's)
 . C:/tmp/portalcraft/run/devtests/env.sh
 cd $TOOLS
