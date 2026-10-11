@@ -6,6 +6,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#include <cmath>
 #include <windows.h>
 #include <d3d9.h>
 #include <tmmintrin.h>
@@ -241,6 +242,105 @@ void draw(IDirect3DDevice9* dev, bool intoCurrentTarget) {
 	backBuffer->Release();
 }
 
+// ---- "CRAFT" beside Portal's title ----------------------------------------------------------
+// Portal's menus (the title screen, the pause screen) show the game's name, "Portal", in its own
+// thin type. "CRAFT" goes after it in Minecraft's: the block letters of its chat font, five dots by
+// seven, white with the dark shadow Minecraft sets a dot down and to the right of its text.
+// Where Portal puts its title is in its menu layout, in parts of the screen's height (read off a
+// screenshot: at 1280x720 the capital P stands from y 300 to 365 and the word ends at x 305).
+bool g_title = false;
+
+void drawTitle(IDirect3DDevice9* dev) {
+	if (!g_title) {
+		return;
+	}
+	IDirect3DSurface9* backBuffer = nullptr;
+	if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer))) {
+		return;
+	}
+	D3DSURFACE_DESC bb;
+	backBuffer->GetDesc(&bb);
+	if (!g_state && FAILED(dev->CreateStateBlock(D3DSBT_ALL, &g_state))) {
+		backBuffer->Release();
+		return;
+	}
+	static const char* const kLetters[5][7] = {
+		{".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."}, // C
+		{"####.", "#...#", "#...#", "####.", "#...#", "#...#", "#...#"}, // R
+		{".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"}, // A
+		{"#####", "#....", "#....", "###..", "#....", "#....", "#...."}, // F
+		{"#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."}, // T
+	};
+	struct V {
+		float x, y, z, rhw;
+		DWORD color;
+	};
+	static V verts[2 * 5 * 35 * 6];
+	int n = 0;
+	const float H = float(bb.Height);
+	const float dot = std::floor(H * (65.0f / 720.0f) / 7.0f + 0.5f); // one dot of a letter, in whole pixels
+	const float left = std::floor(H * (322.0f / 720.0f)), top = std::floor(H * (365.0f / 720.0f)) - 7.0f * dot;
+	for (int pass = 0; pass < 2; pass++) { // the shadow, then the letters over it
+		const float shift = pass == 0 ? dot : 0.0f;
+		const DWORD color = pass == 0 ? 0xFF3F3F3Fu : 0xFFFFFFFFu;
+		for (int letter = 0; letter < 5; letter++) {
+			for (int row = 0; row < 7; row++) {
+				for (int col = 0; col < 5; col++) {
+					if (kLetters[letter][row][col] != '#') {
+						continue;
+					}
+					float x0 = left + (float(letter) * 6.0f + float(col)) * dot + shift - 0.5f, y0 = top + float(row) * dot + shift - 0.5f;
+					float x1 = x0 + dot, y1 = y0 + dot;
+					V quad[6] = {{x0, y0, 0, 1, color}, {x1, y0, 0, 1, color}, {x0, y1, 0, 1, color}, {x1, y0, 0, 1, color}, {x1, y1, 0, 1, color}, {x0, y1, 0, 1, color}};
+					std::memcpy(verts + n, quad, sizeof quad);
+					n += 6;
+				}
+			}
+		}
+	}
+	g_state->Capture();
+	IDirect3DSurface9* oldTarget = nullptr;
+	dev->GetRenderTarget(0, &oldTarget);
+	IDirect3DSurface9* oldDepth = nullptr;
+	dev->GetDepthStencilSurface(&oldDepth);
+	dev->SetRenderTarget(0, backBuffer);
+	dev->SetDepthStencilSurface(nullptr);
+	D3DVIEWPORT9 vp = {0, 0, bb.Width, bb.Height, 0.0f, 1.0f};
+	dev->SetViewport(&vp);
+	dev->SetVertexShader(nullptr);
+	dev->SetPixelShader(nullptr);
+	dev->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+	dev->SetTexture(0, nullptr);
+	dev->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+	dev->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+	dev->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+	dev->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+	dev->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+	dev->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+	dev->SetRenderState(D3DRS_ZENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+	dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+	dev->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+	dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+	dev->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+	dev->SetRenderState(D3DRS_LIGHTING, FALSE);
+	dev->SetRenderState(D3DRS_FOGENABLE, FALSE);
+	dev->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+	dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+	bool began = SUCCEEDED(dev->BeginScene());
+	dev->DrawPrimitiveUP(D3DPT_TRIANGLELIST, n / 3, verts, sizeof(V));
+	if (began) {
+		dev->EndScene();
+	}
+	dev->SetRenderTarget(0, oldTarget);
+	dev->SetDepthStencilSurface(oldDepth);
+	if (oldTarget) oldTarget->Release();
+	if (oldDepth) oldDepth->Release();
+	g_state->Apply();
+	backBuffer->Release();
+}
+
 // Other in-game overlays (Steam, Discord) hook Present too, sometimes after us and sometimes by
 // swapping the device onto a copied vtable; the EndFrame watchdog re-attaches us when that happens.
 // If a chain ever calls back into us (their saved "original" is our hook), the inner call goes
@@ -253,6 +353,7 @@ HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst
 	}
 	g_presentDepth++;
 	draw(dev, false);
+	drawTitle(dev);
 	HRESULT hr = forDevice(dev)->present(dev, src, dst, wnd, dirty);
 	g_presentDepth--;
 	return hr;
@@ -264,6 +365,7 @@ HRESULT WINAPI hkPresentEx(IDirect3DDevice9Ex* dev, const RECT* src, const RECT*
 	}
 	g_presentDepth++;
 	draw(dev, false);
+	drawTitle(dev);
 	HRESULT hr = forDevice(dev)->presentEx(dev, src, dst, wnd, dirty, flags);
 	g_presentDepth--;
 	return hr;
@@ -479,6 +581,10 @@ void hookEndFrame(LogFn log) {
 
 void* device() {
 	return g_gameDevice;
+}
+
+void setTitle(bool shown) {
+	g_title = shown;
 }
 
 bool overlayFresh() {

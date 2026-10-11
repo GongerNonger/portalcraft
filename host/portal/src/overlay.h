@@ -9,4 +9,7 @@ bool init(LogFn log);
 void* device();
 // Minecraft is publishing frames right now (linked and in game).
 bool overlayFresh();
+// One of Portal's menus with its title on it (the title screen, the pause screen) is up: "CRAFT" is
+// drawn after the title, in Minecraft's letters.
+void setTitle(bool shown);
 } // namespace overlay

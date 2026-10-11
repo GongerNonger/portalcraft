@@ -2635,6 +2635,35 @@ bool openingSceneHere() {
 	return here;
 }
 
+// Portal's game menu is on screen (the title screen over its background map, or the pause screen):
+// IEngineVGui::IsGameUIVisible (engine.dll "VEngineVGui001", after its destructor and GetPanel).
+// Asked under a guard, and never again if it faults.
+bool gameMenuUp() {
+	static void* vgui = nullptr;
+	static int state = 0; // 0 not looked for, 1 found, -1 not there or faulted
+	if (state == 0) {
+		vgui = engineInterface("engine.dll", "VEngineVGui001");
+		state = vgui ? 1 : -1;
+		logf("menu: VEngineVGui001 %p", vgui);
+	}
+	if (state != 1) {
+		return false;
+	}
+	__try {
+		bool up = sdk::vcall<bool>(vgui, 2);
+		static int last = -1;
+		if (int(up) != last) {
+			last = int(up);
+			logf("menu: game menu %s", up ? "up" : "away");
+		}
+		return up;
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		state = -1;
+		logf("menu: asking whether the game menu is up faulted: not asked again");
+		return false;
+	}
+}
+
 // The opening scene is over in seven seconds, and Minecraft takes most of a minute to start: begun
 // with Portal, the green portal opened on an empty vault and nobody fell out of it. A level that
 // has the scene is paused in its first moments until Minecraft is linked (or four minutes have
@@ -3562,6 +3591,7 @@ public:
 		bridgeHealth();
 		updateScripted();
 		holdOpeningForMinecraft();
+		overlay::setTitle(g_inLevel && gameMenuUp());
 		updateStanding();
 		g_haveMoverAtFrame = g_setMover != 0 && moverNow(g_setMover, &g_moverAtFrame);
 		updateBlockPhysics();
