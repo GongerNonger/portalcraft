@@ -203,7 +203,7 @@ uint32_t modulate(uint32_t color, uint32_t tint) {
 // vertex, so a face shades smoothly and the two triangles of a quad never disagree (lit per
 // triangle, they made a checkerboard). The sample is pulled a little in from the corner, which can
 // sit right on a Portal wall, and taken a few units out in front of the face.
-void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVertex* src, uint32_t count, const sdk::Vector& offset) {
+void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVertex* src, uint32_t count, const sdk::Vector& offset, bool particles = false) {
 	size_t base = out.size();
 	out.insert(out.end(), src, src + count);
 	for (uint32_t i = 0; i + 2 < count; i += 3) {
@@ -211,6 +211,11 @@ void appendLit(std::vector<pcproto::WorldVertex>& out, const pcproto::WorldVerte
 		// A glowing block (lava, glowstone): Minecraft marks its vertices with alpha 254. It is a
 		// light, so Portal's light and shadow stay off it.
 		if ((t[0].color >> 24) == 0xFE && (t[1].color >> 24) == 0xFE && (t[2].color >> 24) == 0xFE) {
+			continue;
+		}
+		// A glowing particle (a flame, a firework's spark, an end rod's glint): particles fade, so theirs
+		// is the lowest bit of the alpha, clear on all three.
+		if (particles && !((t[0].color | t[1].color | t[2].color) & 0x01000000u)) {
 			continue;
 		}
 		float ux = t[1].x - t[0].x, uy = t[1].y - t[0].y, uz = t[1].z - t[0].z;
@@ -596,7 +601,7 @@ void drawTimed(IDirect3DDevice9* dev, const float* m, bool throughPortal, int pa
 			g_litEntities.clear();
 			appendLit(g_litEntities, entities, eTotal, sdk::Vector{});
 			appendLit(g_litEntities, avatar, aTotal, haveFeet ? feet : sdk::Vector{});
-			appendLit(g_litEntities, particles, pSolid + pTranslucent, sdk::Vector{});
+			appendLit(g_litEntities, particles, pSolid + pTranslucent, sdk::Vector{}, true);
 			g_litEntities.insert(g_litEntities.end(), particles + pSolid + pTranslucent, particles + pSolid + pTranslucent + cracks); // multiplied: unlit
 			appendLit(g_litEntities, mobs, mSolid + mTranslucent, sdk::Vector{});
 			appendLit(g_litEntities, avatarMobs, amSolid + amTranslucent, haveFeet ? feet : sdk::Vector{});

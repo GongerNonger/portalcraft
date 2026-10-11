@@ -1114,6 +1114,7 @@ public final class EntityExporter {
 			private final float[] uv = new float[8];
 			private final int[] colors = new int[4];
 			private int corner;
+			private int dimmest; // the least block light among this quad's corners so far
 
 			void start(WorldFormat.Vertices out, double ox, double oy, double oz, boolean translucent) {
 				this.out = out;
@@ -1153,10 +1154,17 @@ public final class EntityExporter {
 			/** setLight is each particle vertex's last call (QuadParticleRenderState.renderVertex). */
 			@Override
 			public VertexConsumer setUv2(int u, int v) {
+				// A particle Minecraft draws at full block light whatever is around it (a flame, a firework's
+				// spark, an end rod's glint, lava's drip) is a light of its own: the host is told so in the
+				// lowest bit of each vertex's alpha (clear: glowing, the host's lighting stays off it; set: lit
+				// by the host), which leaves the particle's fade as it was to the eye.
+				this.dimmest = this.corner == 0 ? u : Math.min(this.dimmest, u);
 				if (++this.corner == 4) {
 					this.corner = 0;
+					boolean glowing = this.dimmest >= 224;
 					for (int k : WorldFormat.QUAD_TRIANGLES) {
-						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], this.colors[k], this.uv[k * 2], this.uv[k * 2 + 1]);
+						int color = glowing ? this.colors[k] & 0xFEFFFFFF : this.colors[k] | 0x01000000;
+						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], color, this.uv[k * 2], this.uv[k * 2 + 1]);
 					}
 				}
 				return this;
