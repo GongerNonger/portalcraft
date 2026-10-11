@@ -229,6 +229,9 @@ public final class EntityExporter {
 				pose.translate(offset.x, offset.y, offset.z);
 				CAPTURE.begin(at);
 				renderer.submit(state, pose, CAPTURE, AVATAR_CAMERA);
+				if (state.displayFireAnimation) {
+					CAPTURE.submitFlame(pose, state, net.minecraft.util.Mth.rotationAroundAxis(net.minecraft.util.Mth.Y_AXIS, AVATAR_CAMERA.orientation, new Quaternionf()));
+				}
 				if (LOGGED_TYPES.add(e.getType())) {
 					int got = CAPTURE.total() - java.util.Arrays.stream(before).sum();
 					LOG.info("PortalCraft: exporting {} ({}): {} vertices", e.getType(), renderer.getClass().getSimpleName(), got);
@@ -483,6 +486,9 @@ public final class EntityExporter {
 			int[] before = CAPTURE.counts();
 			CAPTURE.beginAvatar(avatarRenderer.getModel());
 			raw.submit(state, pose, CAPTURE, AVATAR_CAMERA);
+			if (state.displayFireAnimation) { // (EntityRenderDispatcher adds the flames after the renderer has run: so do we)
+				CAPTURE.submitFlame(pose, state, net.minecraft.util.Mth.rotationAroundAxis(net.minecraft.util.Mth.Y_AXIS, AVATAR_CAMERA.orientation, new Quaternionf()));
+			}
 			CAPTURE.endAvatar();
 			if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
 				// What he holds is too much for the mesh (a resource pack's gun of thousands of small
@@ -932,6 +938,32 @@ public final class EntityExporter {
 
 		@Override
 		public void submitFlame(PoseStack poseStack, EntityRenderState renderState, Quaternionf rotation) {
+			// The flames on something burning, as FlameFeatureRenderer builds them: sheets of the two
+			// fire sprites one behind another up its height, turned to face the camera.
+			var atlases = Minecraft.getInstance().getAtlasManager();
+			TextureAtlasSprite fire1 = atlases.get(net.minecraft.client.resources.model.ModelBakery.FIRE_0);
+			TextureAtlasSprite fire2 = atlases.get(net.minecraft.client.resources.model.ModelBakery.FIRE_1);
+			WorldFormat.Vertices out = this.range(fire1, true); // (blended: the sprites are mostly holes)
+			if (out == null) {
+				return;
+			}
+			float s = renderState.boundingBoxWidth * 1.4F;
+			float h = renderState.boundingBoxHeight / s;
+			Matrix4f m = new Matrix4f(poseStack.last().pose()).scale(s).rotate(rotation).translate(0.0F, 0.0F, 0.3F - (int) h * 0.02F);
+			float r = 0.5F, yo = 0.0F, zo = 0.0F;
+			for (int sheet = 0; h > 0.0F; sheet++) {
+				TextureAtlasSprite tex = sheet % 2 == 0 ? fire1 : fire2;
+				boolean flip = sheet / 2 % 2 == 0;
+				float u0 = flip ? tex.getU1() : tex.getU0(), u1 = flip ? tex.getU0() : tex.getU1(), v0 = tex.getV0(), v1 = tex.getV1();
+				float[][] corners = {{-r, -yo, u1, v1}, {r, -yo, u0, v1}, {r, 1.4F - yo, u0, v0}, {-r, 1.4F - yo, u1, v0}};
+				for (int k : WorldFormat.QUAD_TRIANGLES) {
+					this.vertex(out, m, corners[k][0], corners[k][1], zo, 0xFFFFFFFF, corners[k][2], corners[k][3]);
+				}
+				h -= 0.45F;
+				yo -= 0.45F;
+				r *= 0.9F;
+				zo -= 0.03F;
+			}
 		}
 
 		@Override
