@@ -17,7 +17,7 @@ if /i "%~1"=="on" set "MODE=swirl"
 if /i "%~1"=="closed" set "MODE=closed"
 if defined MODE (
 	if exist "%PACK%\materials\models\portals\portal-blue-color.vtf" rmdir /s /q "%PACK%"
-	uv run -q --no-project --with vpk --with numpy python tools\green-portals\make_green_portals.py "%PORTAL%" "%PACK%" %MODE% || exit /b 1
+	uv run -q --no-project --with vpk --with numpy --with srctools python tools\green-portals\make_green_portals.py "%PORTAL%" "%PACK%" %MODE% || exit /b 1
 	echo Green portals are on. Restart Portal to see them.
 	exit /b 0
 )

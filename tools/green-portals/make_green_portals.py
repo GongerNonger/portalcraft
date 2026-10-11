@@ -13,7 +13,7 @@ still works as a portal.
 With "swirl", the portals are the show's: a turning green spiral with a soft wobbling edge
 (swirl.py draws it), in place of Portal's own overlay material, and not seen through either.
 
-    uv run --no-project --with vpk --with numpy python tools/green-portals/make_green_portals.py <Portal folder> <out folder> [closed|swirl]
+    uv run --no-project --with vpk --with numpy --with srctools python tools/green-portals/make_green_portals.py <Portal folder> <out folder> [closed|swirl]
 """
 import colorsys
 import re
@@ -123,6 +123,9 @@ def swirl(out: Path) -> None:
     for name, rates in zip(OVERLAYS, (("-70", "110"), ("70", "-110"))):
         (out / name).write_text(SWIRL_VMT % rates, encoding="latin1", newline="")
         print("wrote", out / name)
+    import particles
+
+    particles.write(vpk.open(str(Path(sys.argv[1]) / "portal" / "portal_pak_dir.vpk")), out, art.vtf)
 
 
 def main() -> None:
