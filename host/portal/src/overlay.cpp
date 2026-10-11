@@ -25,6 +25,7 @@ namespace {
 
 LogFn g_log = nullptr;
 IDirect3DDevice9* g_gameDevice = nullptr;
+bool g_menuUp = false; // Portal's own menu is up over a level (setTitle)
 HANDLE g_mapping = nullptr;
 uint8_t* g_shm = nullptr;
 pcproto::OverlayHeader* g_header = nullptr;
@@ -109,7 +110,7 @@ void upload(const uint8_t* src, UINT w, UINT h) {
 // onto the back buffer when presenting (with anti-aliasing that resolve would erase anything drawn
 // on the back buffer directly). Otherwise draw onto the back buffer (from Present).
 void draw(IDirect3DDevice9* dev, bool intoCurrentTarget) {
-	if (!g_header) {
+	if (!g_header || g_menuUp) { // (under Portal's own menu Minecraft's hand and HUD are put away: they were drawn over it)
 		return;
 	}
 	IDirect3DSurface9* backBuffer = nullptr;
@@ -249,9 +250,13 @@ void draw(IDirect3DDevice9* dev, bool intoCurrentTarget) {
 // Where Portal puts its title is in its menu layout, in parts of the screen's height (read off a
 // screenshot: at 1280x720 the capital P stands from y 300 to 365 and the word ends at x 305).
 bool g_title = false;
+// A Minecraft screen that wants a pointer is open (an inventory, a chest): Portal has let go of the
+// mouse, but the window shows no cursor of its own while a level runs, so one is drawn here: the
+// usual arrow, at the mouse.
+bool g_pointer = false;
 
 void drawTitle(IDirect3DDevice9* dev) {
-	if (!g_title) {
+	if (!g_title && !g_pointer) {
 		return;
 	}
 	IDirect3DSurface9* backBuffer = nullptr;
@@ -275,12 +280,12 @@ void drawTitle(IDirect3DDevice9* dev) {
 		float x, y, z, rhw;
 		DWORD color;
 	};
-	static V verts[2 * 5 * 35 * 6];
+	static V verts[(2 * 5 * 35 + 12 * 17) * 6];
 	int n = 0;
 	const float H = float(bb.Height);
 	const float dot = std::floor(H * (65.0f / 720.0f) / 7.0f + 0.5f); // one dot of a letter, in whole pixels
 	const float left = std::floor(H * (322.0f / 720.0f)), top = std::floor(H * (365.0f / 720.0f)) - 7.0f * dot;
-	for (int pass = 0; pass < 2; pass++) { // the shadow, then the letters over it
+	for (int pass = 0; pass < 2 && g_title; pass++) { // the shadow, then the letters over it
 		const float shift = pass == 0 ? dot : 0.0f;
 		const DWORD color = pass == 0 ? 0xFF3F3F3Fu : 0xFFFFFFFFu;
 		for (int letter = 0; letter < 5; letter++) {
@@ -297,6 +302,37 @@ void drawTitle(IDirect3DDevice9* dev) {
 				}
 			}
 		}
+	}
+	if (g_pointer && !g_title) { // (Portal's own menu has its own cursor)
+		static const char* const kArrow[17] = {
+			"X           ", "XX          ", "X.X         ", "X..X        ", "X...X       ", "X....X      ", "X.....X     ", "X......X    ", "X.......X   ",
+			"X........X  ", "X.....XXXXX ", "X..X..X     ", "X.X X..X    ", "XX  X..X    ", "X    X..X   ", "     X..X   ", "      XX    ",
+		};
+		D3DDEVICE_CREATION_PARAMETERS made = {};
+		POINT at = {};
+		RECT client = {};
+		if (SUCCEEDED(dev->GetCreationParameters(&made)) && made.hFocusWindow && GetCursorPos(&at) && ScreenToClient(made.hFocusWindow, &at) &&
+			GetClientRect(made.hFocusWindow, &client) && client.right > 0 && client.bottom > 0) {
+			const float size = H >= 1300.0f ? 2.0f : 1.0f; // (twice the size on a tall screen)
+			const float px = float(at.x) * float(bb.Width) / float(client.right), py = float(at.y) * float(bb.Height) / float(client.bottom);
+			for (int row = 0; row < 17; row++) {
+				for (int col = 0; col < 12; col++) {
+					char c = kArrow[row][col];
+					if (c == ' ') {
+						continue;
+					}
+					const DWORD color = c == 'X' ? 0xFF000000u : 0xFFFFFFFFu;
+					float x0 = px + float(col) * size - 0.5f, y0 = py + float(row) * size - 0.5f, x1 = x0 + size, y1 = y0 + size;
+					V quad[6] = {{x0, y0, 0, 1, color}, {x1, y0, 0, 1, color}, {x0, y1, 0, 1, color}, {x1, y0, 0, 1, color}, {x1, y1, 0, 1, color}, {x0, y1, 0, 1, color}};
+					std::memcpy(verts + n, quad, sizeof quad);
+					n += 6;
+				}
+			}
+		}
+	}
+	if (n == 0) {
+		backBuffer->Release();
+		return;
 	}
 	g_state->Capture();
 	IDirect3DSurface9* oldTarget = nullptr;
@@ -585,6 +621,11 @@ void* device() {
 
 void setTitle(bool shown) {
 	g_title = shown;
+	g_menuUp = shown;
+}
+
+void setPointer(bool shown) {
+	g_pointer = shown;
 }
 
 bool overlayFresh() {

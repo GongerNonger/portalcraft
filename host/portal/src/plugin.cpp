@@ -3190,6 +3190,7 @@ void hookActivateMouse() {
 
 void updateMouseCapture() {
 	bool want = mcReady() && (g_mc.flags & pcproto::kMcScreen) && g_inLevel;
+	overlay::setPointer(want);
 	if (!g_clientDll) {
 		g_clientDll = engineInterface("client.dll", "VClient017");
 		if (!g_clientDll) {
