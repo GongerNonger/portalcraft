@@ -118,6 +118,8 @@ public final class LightExporter {
 	// ---- glowing particles -----------------------------------------------------------------------
 	private static final long SPARK_MS = 33;
 	private static final int SPARK_CELL_BLOCKS = 2;
+	/** How bright a particles' light is against a block's of the same level (at a block's brightness a burst of sparks whited out the wall behind it). */
+	private static final double SPARK_GAIN = 0.22;
 	/** This frame's glowing particles, merged per 2-block cell: the same sums as a block cluster's. */
 	private static final Long2ObjectOpenHashMap<Cluster> SPARKS = new Long2ObjectOpenHashMap<>();
 	private static List<Cluster> blockLights;
@@ -154,10 +156,10 @@ public final class LightExporter {
 		List<Cluster> all = new ArrayList<>(blocks);
 		for (Cluster c : SPARKS.values()) {
 			double w = c.sum[3];
-			double level = Math.clamp(2.0 + 2.2 * (Math.log1p(w * 30.0) / Math.log(2.0)), 2.0, 12.0);
+			double level = Math.clamp(1.5 + 1.5 * (Math.log1p(w * 30.0) / Math.log(2.0)), 1.5, 8.0);
 			// in a block cluster's terms: position and colour sums weighted by the level, sum[3] the weight, sum[4] the level
 			Cluster light = new Cluster(c.cell, new double[] {c.sum[0] / w * level, c.sum[1] / w * level, c.sum[2] / w * level, level, level},
-				new int[] {(int) (c.rgb[0] / 256.0 / w * level), (int) (c.rgb[1] / 256.0 / w * level), (int) (c.rgb[2] / 256.0 / w * level)});
+				new int[] {(int) (c.rgb[0] / 256.0 / w * level * SPARK_GAIN), (int) (c.rgb[1] / 256.0 / w * level * SPARK_GAIN), (int) (c.rgb[2] / 256.0 / w * level * SPARK_GAIN)});
 			all.add(light);
 		}
 		hadSparks = !SPARKS.isEmpty();
