@@ -62,11 +62,26 @@ public final class LightExporter {
 	/** Once per render frame (from WorldExporter.frame): send the lights near the player, 4 times a second. */
 	static void frame(Minecraft minecraft) {
 		long now = System.currentTimeMillis();
-		if (now < nextSend || minecraft.player == null) {
+		if (minecraft.player == null) {
+			return;
+		}
+		// Glowing particles come and go by the frame: while there are any (and once more after the
+		// last, to put their lights out) the lights are sent as often as the screen is drawn, up to
+		// 30 times a second. The blocks' lights alone, four times a second as before.
+		boolean sparks = !SPARKS.isEmpty();
+		if (now < nextSend && !((sparks || hadSparks) && now >= nextSparkSend)) {
+			if (now - sparksSince > 100) {
+				SPARKS.clear(); // (not sent this frame: not kept for the next either)
+			}
+			return;
+		}
+		nextSparkSend = now + SPARK_MS;
+		Vec3 player = minecraft.player.position();
+		if (now < nextSend && blockLights != null) {
+			send(withSparks(blockLights, player));
 			return;
 		}
 		nextSend = now + UPDATE_MS;
-		Vec3 player = minecraft.player.position();
 		double range2 = RANGE_BLOCKS * RANGE_BLOCKS;
 		Long2ObjectOpenHashMap<Cluster> cells = new Long2ObjectOpenHashMap<>();
 		for (Long2ObjectMap.Entry<int[]> e : SECTIONS.long2ObjectEntrySet()) {
@@ -96,8 +111,62 @@ public final class LightExporter {
 				c.rgb[2] += (rgb & 0xFF) * level;
 			}
 		}
-		List<Cluster> all = new ArrayList<>(cells.values());
+		blockLights = new ArrayList<>(cells.values());
+		send(withSparks(blockLights, player));
+	}
+
+	// ---- glowing particles -----------------------------------------------------------------------
+	private static final long SPARK_MS = 33;
+	private static final int SPARK_CELL_BLOCKS = 2;
+	/** This frame's glowing particles, merged per 2-block cell: the same sums as a block cluster's. */
+	private static final Long2ObjectOpenHashMap<Cluster> SPARKS = new Long2ObjectOpenHashMap<>();
+	private static List<Cluster> blockLights;
+	private static boolean hadSparks;
+	private static long nextSparkSend, sparksSince;
+
+	/**
+	 * EntityExporter: a glowing particle (or the flames on something burning) at a Minecraft position,
+	 * of colour rgb, weighing its size on screen times how opaque it is. Its cell's light grows with
+	 * what is in it: one spark a faint glow a few blocks wide, a firework's burst a bright one.
+	 */
+	static void spark(double x, double y, double z, int rgb, double weight) {
+		if (!(weight > 0.0)) {
+			return;
+		}
+		if (SPARKS.isEmpty()) {
+			sparksSince = System.currentTimeMillis();
+		}
+		long cell = net.minecraft.core.BlockPos.asLong(Math.floorDiv((int) Math.floor(x), SPARK_CELL_BLOCKS), Math.floorDiv((int) Math.floor(y), SPARK_CELL_BLOCKS),
+			Math.floorDiv((int) Math.floor(z), SPARK_CELL_BLOCKS));
+		Cluster c = SPARKS.computeIfAbsent(cell, k -> new Cluster(k, new double[5], new int[3]));
+		c.sum[0] += x * weight;
+		c.sum[1] += y * weight;
+		c.sum[2] += z * weight;
+		c.sum[3] += weight;
+		// (kept as the weight's own sums: turned into a level, and the colour sums scaled to match, when sent)
+		c.rgb[0] += (int) ((rgb >> 16 & 0xFF) * weight * 256.0);
+		c.rgb[1] += (int) ((rgb >> 8 & 0xFF) * weight * 256.0);
+		c.rgb[2] += (int) ((rgb & 0xFF) * weight * 256.0);
+	}
+
+	/** The blocks' lights and this frame's sparks together; the sparks are taken (the next frame brings its own). */
+	private static List<Cluster> withSparks(List<Cluster> blocks, Vec3 player) {
+		List<Cluster> all = new ArrayList<>(blocks);
+		for (Cluster c : SPARKS.values()) {
+			double w = c.sum[3];
+			double level = Math.clamp(2.0 + 2.2 * (Math.log1p(w * 30.0) / Math.log(2.0)), 2.0, 12.0);
+			// in a block cluster's terms: position and colour sums weighted by the level, sum[3] the weight, sum[4] the level
+			Cluster light = new Cluster(c.cell, new double[] {c.sum[0] / w * level, c.sum[1] / w * level, c.sum[2] / w * level, level, level},
+				new int[] {(int) (c.rgb[0] / 256.0 / w * level), (int) (c.rgb[1] / 256.0 / w * level), (int) (c.rgb[2] / 256.0 / w * level)});
+			all.add(light);
+		}
+		hadSparks = !SPARKS.isEmpty();
+		SPARKS.clear();
 		all.sort((a, b) -> Double.compare(score(b, player), score(a, player)));
+		return all;
+	}
+
+	private static void send(List<Cluster> all) {
 		int n = Math.min(MAX_LIGHTS, all.size());
 		if (n == 0 && sentEmpty) {
 			return;

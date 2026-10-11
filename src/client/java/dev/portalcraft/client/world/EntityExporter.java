@@ -954,6 +954,9 @@ public final class EntityExporter {
 			float s = renderState.boundingBoxWidth * 1.4F * FLAME_SIZE;
 			float h = renderState.boundingBoxHeight / s;
 			Matrix4f m = new Matrix4f(poseStack.last().pose()).scale(s).rotate(rotation).translate(0.0F, 0.0F, 0.3F - (int) h * 0.02F);
+			m.transformPosition(0.0F, 0.6F, 0.0F, this.p);
+			Vec3 feet = this.avatarModel != null && Minecraft.getInstance().player != null ? Minecraft.getInstance().player.position() : Vec3.ZERO; // (the avatar is captured about his feet)
+			LightExporter.spark(feet.x + this.ox + this.p.x, feet.y + this.oy + this.p.y, feet.z + this.oz + this.p.z, 0xFF9A40, 0.35); // what burns lights the room
 			float r = 0.5F, yo = 0.0F, zo = 0.0F;
 			for (int sheet = 0; h > 0.0F; sheet++) {
 				TextureAtlasSprite tex = sheet % 2 == 0 ? fire1 : fire2;
@@ -1100,12 +1103,42 @@ public final class EntityExporter {
 				if (out == null) {
 					continue;
 				}
-				this.particleQuads.start(out, this.ox, this.oy, this.oz, layer.translucent());
+				this.particleQuads.start(out, this.ox, this.oy, this.oz, layer.translucent(), layer.textureAtlasLocation().equals(TextureAtlas.LOCATION_PARTICLES));
 				particles.buildLayer(layer, this.particleQuads);
 			}
 		}
 
 		/** Particle quads: four corners (camera-relative) with uv and colour; two triangles each. */
+		private static final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap SPRITE_COLORS = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+
+		/** What a particle sprite looks like as one colour (0xRRGGBB): the mean of its pixels that aren't clear, from the particle atlas, by its uv corners. */
+		private static int spriteColor(float ua, float va, float ub, float vb) {
+			WorldAtlas atlas = particleAtlas;
+			if (atlas == null) {
+				return 0xFFFFFF;
+			}
+			int x0 = Math.clamp((int) (Math.min(ua, ub) * atlas.width), 0, atlas.width - 1), x1 = Math.clamp((int) Math.ceil(Math.max(ua, ub) * atlas.width), x0 + 1, atlas.width);
+			int y0 = Math.clamp((int) (Math.min(va, vb) * atlas.height), 0, atlas.height - 1), y1 = Math.clamp((int) Math.ceil(Math.max(va, vb) * atlas.height), y0 + 1, atlas.height);
+			long key = (long) x0 | (long) y0 << 16 | (long) x1 << 32 | (long) y1 << 48;
+			if (SPRITE_COLORS.containsKey(key)) {
+				return SPRITE_COLORS.get(key);
+			}
+			long r = 0, g = 0, b = 0, n = 0;
+			for (int y = y0; y < y1; y++) {
+				for (int x = x0; x < x1; x++) {
+					int px = atlas.pixels[y * atlas.width + x]; // bytes R, G, B, A
+					int a = px >>> 24;
+					r += (px & 0xFF) * a;
+					g += (px >> 8 & 0xFF) * a;
+					b += (px >> 16 & 0xFF) * a;
+					n += a;
+				}
+			}
+			int color = n == 0 ? 0xFFFFFF : (int) (r / n) << 16 | (int) (g / n) << 8 | (int) (b / n);
+			SPRITE_COLORS.put(key, color);
+			return color;
+		}
+
 		private static final class ParticleQuads implements VertexConsumer {
 			private WorldFormat.Vertices out;
 			private double ox, oy, oz;
@@ -1115,8 +1148,10 @@ public final class EntityExporter {
 			private final int[] colors = new int[4];
 			private int corner;
 			private int dimmest; // the least block light among this quad's corners so far
+			private boolean lights; // these quads are from the particle atlas: a glowing one is a light in the host too
 
-			void start(WorldFormat.Vertices out, double ox, double oy, double oz, boolean translucent) {
+			void start(WorldFormat.Vertices out, double ox, double oy, double oz, boolean translucent, boolean lights) {
+				this.lights = lights;
 				this.out = out;
 				this.ox = ox;
 				this.oy = oy;
@@ -1162,6 +1197,16 @@ public final class EntityExporter {
 				if (++this.corner == 4) {
 					this.corner = 0;
 					boolean glowing = this.dimmest >= 224;
+					if (glowing && this.lights) {
+						// A light in the host where it is: its colour the tint times what its sprite looks
+						// like, its weight its size (the quad's diagonal squared, in blocks) times how solid.
+						double dx = this.xyz[6] - this.xyz[0], dy = this.xyz[7] - this.xyz[1], dz = this.xyz[8] - this.xyz[2];
+						int tint = this.colors[0], sprite = spriteColor(this.uv[0], this.uv[1], this.uv[4], this.uv[5]);
+						int rgb = ((tint >> 16 & 0xFF) * (sprite >> 16 & 0xFF) / 255) << 16 | ((tint >> 8 & 0xFF) * (sprite >> 8 & 0xFF) / 255) << 8
+							| (tint & 0xFF) * (sprite & 0xFF) / 255;
+						LightExporter.spark((this.xyz[0] + this.xyz[6]) / 2, (this.xyz[1] + this.xyz[7]) / 2, (this.xyz[2] + this.xyz[8]) / 2, rgb,
+							(dx * dx + dy * dy + dz * dz) / 2.0 * (tint >>> 24) / 255.0);
+					}
 					for (int k : WorldFormat.QUAD_TRIANGLES) {
 						int color = glowing ? this.colors[k] & 0xFEFFFFFF : this.colors[k] | 0x01000000;
 						this.out.add(this.xyz[k * 3], this.xyz[k * 3 + 1], this.xyz[k * 3 + 2], color, this.uv[k * 2], this.uv[k * 2 + 1]);
