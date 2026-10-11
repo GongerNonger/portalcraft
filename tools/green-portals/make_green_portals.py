@@ -10,7 +10,10 @@ as a swirl of its colour, fading it out as the pair links (the PortalStatic mate
 two overlay materials are written with that held at full, so a linked portal keeps the swirl. It
 still works as a portal.
 
-    uv run --no-project --with vpk python tools/green-portals/make_green_portals.py <Portal folder> <out folder> [closed]
+With "swirl", the portals are the show's: a turning green spiral with a soft wobbling edge
+(swirl.py draws it), in place of Portal's own overlay material, and not seen through either.
+
+    uv run --no-project --with vpk --with numpy python tools/green-portals/make_green_portals.py <Portal folder> <out folder> [closed|swirl]
 """
 import colorsys
 import re
@@ -66,6 +69,62 @@ def closed(vmt: str) -> str:
     return vmt
 
 
+SWIRL_VMT = """"UnlitGeneric"
+{
+	// PortalCraft: the Rick-and-Morty portal. Two layers of a spiral, turned against each other.
+	"$basetexture" "models/portals/pc_swirl"
+	"$translucent" "1"
+	"$detail" "models/portals/pc_swirl_detail"
+	"$detailscale" "1"
+	"$detailblendmode" "0"
+	"$detailblendfactor" "1"
+	"$center" "[0.5 0.5]"
+	"$turn" "0"
+	"$turnback" "0"
+	"Proxies"
+	{
+		"LinearRamp"
+		{
+			"rate" "%s"
+			"initialValue" "0"
+			"resultVar" "$turn"
+		}
+		"TextureTransform"
+		{
+			"centerVar" "$center"
+			"rotateVar" "$turn"
+			"resultVar" "$basetexturetransform"
+		}
+		"LinearRamp"
+		{
+			"rate" "%s"
+			"initialValue" "0"
+			"resultVar" "$turnback"
+		}
+		"TextureTransform"
+		{
+			"centerVar" "$center"
+			"rotateVar" "$turnback"
+			"resultVar" "$detailtexturetransform"
+		}
+	}
+}
+"""
+CLAMPED = 0x4 | 0x8 | 0x100 | 0x200 | 0x2000  # clamp s, clamp t, no mipmaps, no lod, eight-bit alpha
+
+
+def swirl(out: Path) -> None:
+    sys.path.insert(0, str(Path(__file__).parent))
+    import swirl as art
+
+    folder = out / "materials/models/portals"
+    (folder / "pc_swirl.vtf").write_bytes(art.vtf(art.body(), CLAMPED))
+    (folder / "pc_swirl_detail.vtf").write_bytes(art.vtf(art.detail(), CLAMPED))
+    for name, rates in zip(OVERLAYS, (("-70", "110"), ("70", "-110"))):
+        (out / name).write_text(SWIRL_VMT % rates, encoding="latin1", newline="")
+        print("wrote", out / name)
+
+
 def main() -> None:
     portal, out = Path(sys.argv[1]), Path(sys.argv[2])
     pak = vpk.open(str(portal / "portal" / "portal_pak_dir.vpk"))
@@ -74,6 +133,8 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(green(pak[name].read()))
         print("wrote", target)
+    if "swirl" in sys.argv[3:]:
+        swirl(out)
     if "closed" in sys.argv[3:]:
         for name in OVERLAYS:
             target = out / name
