@@ -45,6 +45,7 @@ DROP = (-576, -338, 252)  # the player's feet, his head just under the portal
 CAMERA = (-626, -398, 166)  # on the vault's floor, in a corner
 AIM = (-574, -338, 276)  # what it looks at: between the portal and where he lands
 APPEAR, FALL, GONE, RELEASE = 2.2, 3.4, 5.6, 6.6  # seconds after the map starts
+OPEN_LEAD = 0.15  # the opening sound starts this long before the portal shows
 
 SWIRL_VMT = """"UnlitGeneric"
 {
@@ -183,7 +184,7 @@ def entity(**pairs) -> str:
     return "{\n" + "\n".join(lines) + "\n}\n"
 
 
-def entities(text: str) -> str:
+def entities(text: str, heard: list[str]) -> str:
     blocks = re.findall(r"\{[^{}]*\}\n?", text)
     if "".join(blocks).strip() != text.strip("\0\n ").strip():
         raise SystemExit("the map's entity list isn't laid out as expected")
@@ -215,7 +216,7 @@ def entities(text: str) -> str:
         StartDisabled=1, solid=0, disableshadows=1, rendercolor="255 255 255", renderamt=255, fademindist=-1, fadescale=1))
     out.append(entity(classname="info_particle_system", targetname="pc_intro_rim", effect_name="pc_intro_rim", origin=vec(PORTAL), angles="0 0 0", start_active=0))
     out.append(entity(classname="point_teleport", targetname="pc_intro_drop", target="!player", origin=vec(DROP), angles="0 200 0"))
-    for name in sounds.NAMES:  # (48: silent till told to play, and played once)
+    for name in heard:  # (48: silent till told to play, and played once)
         out.append(entity(classname="ambient_generic", targetname=f"pc_intro_sound_{name}", message=f"portalcraft/intro_{name}.wav", origin=vec(PORTAL), spawnflags=48,
             health=10, radius=1500, pitch=100, pitchstart=100))
     out.append(entity(classname="logic_auto", spawnflags=1, origin=vec(CAMERA), outputs=[
@@ -223,22 +224,19 @@ def entities(text: str) -> str:
         ("OnMapSpawn", "blackout,Kill,,0,-1"),
         ("OnMapSpawn", f"pc_intro_portal,Enable,,{APPEAR},-1"),
         ("OnMapSpawn", f"pc_intro_rim,Start,,{APPEAR},-1"),
-        ("OnMapSpawn", f"pc_intro_sound_open,PlaySound,,{APPEAR},-1"),
         ("OnMapSpawn", f"pc_intro_drop,Teleport,,{FALL},-1"),
-        ("OnMapSpawn", f"pc_intro_sound_pass,PlaySound,,{FALL},-1"),
-        ("OnMapSpawn", f"pc_intro_sound_close,PlaySound,,{GONE - 0.65:g},-1"),
         ("OnMapSpawn", f"pc_intro_rim,Stop,,{GONE - 0.4:g},-1"),
         ("OnMapSpawn", f"pc_intro_portal,Disable,,{GONE},-1"),
         ("OnMapSpawn", f"pc_intro_camera,Disable,,{RELEASE},-1"),
         ("OnMapSpawn", "bed_cover,SetAnimation,closing,9,-1"),
-    ]))
+    ] + [("OnMapSpawn", f"pc_intro_sound_{name},PlaySound,,{at:g},-1") for name, at in (("open", APPEAR - OPEN_LEAD), ("pass", FALL), ("close", GONE - 0.65)) if name in heard]))
     return "".join(out)
 
 
-def lump(bsp: bytes) -> bytes:
+def lump(bsp: bytes, heard: list[str]) -> bytes:
     ofs, length = struct.unpack_from("<ii", bsp, 8)
     revision = struct.unpack_from("<i", bsp, 8 + 64 * 16)[0]
-    text = entities(bsp[ofs:ofs + length].decode("latin1").rstrip("\0")).encode("latin1") + b"\0"
+    text = entities(bsp[ofs:ofs + length].decode("latin1").rstrip("\0"), heard).encode("latin1") + b"\0"
     return struct.pack("<iiiii", 20, 0, 0, len(text), revision) + text
 
 
@@ -264,11 +262,11 @@ def main() -> None:
     effects.mkdir(parents=True)
     (effects / "pc_intro_glob.vtf").write_bytes(swirl.vtf(particles.glob(), CLAMPED))
     (effects / "pc_intro_glob.vmt").write_text(GLOB_VMT, newline="")
-    sounds.write(pack / "sound" / "portalcraft")
+    heard = sounds.write(pack / "sound" / "portalcraft")
     (pack / "particles").mkdir()
     (pack / "particles" / "portals.pcf").write_bytes(rim(pak))
     model(portal, pack, HERE / "build")
-    lmp.write_bytes(lump((game / "maps" / f"{MAP}.bsp").read_bytes()))
+    lmp.write_bytes(lump((game / "maps" / f"{MAP}.bsp").read_bytes(), heard))
     print("The opening is on: Steve drops out of a green portal in chamber 00. Restart Portal.")
 
 

@@ -2,7 +2,8 @@
 
 Our own, in the manner of a cartoon portal (a wet, wobbling sweep with bubbles in it), not anyone's
 recording. To use recordings of your own instead, put them beside this file as open.wav, pass.wav
-and close.wav (44.1 kHz, 16-bit): make_intro.py takes those when they are there.
+and close.wav (44.1 kHz, 16-bit, any of the three): make_intro.py takes those when they are there,
+and only those. They stay on this PC (.gitignore).
 
     uv run --no-project --with numpy python tools/intro/sounds.py <out folder>   (writes the three to listen to)
 """
@@ -88,12 +89,14 @@ def wav(samples: np.ndarray) -> bytes:
     return b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, RATE, RATE * 2, 2, 16) + b"data" + struct.pack("<I", len(data)) + data
 
 
-def write(folder: Path) -> None:
-    """The three into folder as intro_<name>.wav: recordings beside this file if there are any, else made."""
+def write(folder: Path) -> list[str]:
+    """The sounds into folder as intro_<name>.wav, and which were written: recordings beside this file
+    if there are any (those only: ours are not mixed in with someone's set), else the three made here."""
     folder.mkdir(parents=True, exist_ok=True)
-    for name in NAMES:
-        own = Path(__file__).parent / f"{name}.wav"
-        (folder / f"intro_{name}.wav").write_bytes(own.read_bytes() if own.exists() else wav(make(name)))
+    own = [name for name in NAMES if (Path(__file__).parent / f"{name}.wav").exists()]
+    for name in own or NAMES:
+        (folder / f"intro_{name}.wav").write_bytes((Path(__file__).parent / f"{name}.wav").read_bytes() if own else wav(make(name)))
+    return list(own or NAMES)
 
 
 if __name__ == "__main__":
