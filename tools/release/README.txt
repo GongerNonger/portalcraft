@@ -16,6 +16,9 @@ Install:
 
 Always start it with the PortalCraft shortcut: that is what keeps it up to date.
 
+Your skin: you play as the skin on your Minecraft account. To play as any other skin, open
+"PortalCraft skin" in the Start menu and pick the skin's PNG file (the installer offers this too).
+
 Playing:
   - You move, mine, build and fight as Steve, with Minecraft's physics, inventory and HUD.
     Portal's portals, buttons, cubes and turrets work as they do in Portal.

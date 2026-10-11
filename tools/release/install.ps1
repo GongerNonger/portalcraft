@@ -10,6 +10,7 @@
 #   -Portal <folder>   Portal's install folder, if Steam's library list doesn't find it
 #   -Quiet             no closing notes (the launcher updating itself)
 #   -NoShortcuts       no desktop or Start menu shortcut
+# A first install (not -Quiet) ends by offering a custom skin (PortalCraft.ps1 -Skin).
 # PORTALCRAFT_HOME, if set, is where Minecraft goes instead of %LOCALAPPDATA%\PortalCraft, and
 # PORTALCRAFT_PORTAL the Portal folder (tests: a release installed without touching the real ones).
 param([string]$Portal, [switch]$Quiet, [switch]$NoShortcuts)
@@ -124,7 +125,23 @@ if (-not $NoShortcuts -and -not $env:PORTALCRAFT_HOME) { # (a test install leave
 		$with.Description = "Host a PortalCraft world for friends, or join a friend's"
 		$with.Save()
 	}
+	# ... and one, in the Start menu only, to change the skin you play as.
+	$skin = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Programs")) "PortalCraft skin.lnk"))
+	$skin.TargetPath = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+	$skin.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$(Join-Path $dest 'PortalCraft.ps1')`" -Skin -NoStart"
+	$skin.WorkingDirectory = $dest
+	$skin.IconLocation = "$(Join-Path $portal 'hl2.exe'),0"
+	$skin.Description = "Choose the Minecraft skin you play PortalCraft as"
+	$skin.Save()
 	Write-Host "Put PortalCraft and PortalCraft with friends shortcuts on the desktop and in the Start menu"
+}
+if (-not $Quiet -and -not $env:PORTALCRAFT_HOME) {
+	# Optional: a skin of your choosing. (Not asked on an update, or in a test install.)
+	Add-Type -AssemblyName System.Windows.Forms
+	$answer = [System.Windows.Forms.MessageBox]::Show("PortalCraft is installed.`n`nDo you want to choose a custom skin to play as?`n`nOptional: without one you play as the skin on your Minecraft account. You can change it later with 'PortalCraft skin' in the Start menu.", "PortalCraft", "YesNo", "Question")
+	if ($answer -eq "Yes") {
+		& (Join-Path $dest "PortalCraft.ps1") -Skin -NoStart
+	}
 }
 if (-not $Quiet) {
 	Write-Host ""

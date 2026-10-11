@@ -4,9 +4,11 @@
 # answering in a few seconds: Portal starts with what is installed.
 #   -Friends   first ask how to play: alone, hosting for friends, or joining a friend's address
 #              (the "PortalCraft with friends" shortcut); the answer is kept for every later start
+#   -Skin      first ask which skin to play as: a PNG of your choosing, or your Minecraft account's
+#              (the "PortalCraft skin" shortcut, and the installer's last step)
 #   -NoStart   check and update only (tests)
 # PORTALCRAFT_REPO, if set, is the GitHub repository to ask instead (tests).
-param([switch]$Friends, [switch]$NoStart)
+param([switch]$Friends, [switch]$Skin, [switch]$NoStart)
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $here = $PSScriptRoot
@@ -164,6 +166,107 @@ function Set-FriendsInIni {
 	Set-Content -Path $ini -Value $kept -Encoding ascii
 }
 
+# ---- the skin to play as --------------------------------------------------------------------------
+# The mod plays as a skin PNG in the instance's config folder when there is one (portalcraft-skin.png,
+# or portalcraft-skin-slim.png for the slim-armed model), and as the signed-in account's skin when
+# there is not.
+function Show-SkinDialog {
+	Add-Type -AssemblyName System.Windows.Forms
+	Add-Type -AssemblyName System.Drawing
+	$config = Join-Path $here "Prism\instances\PortalCraft\.minecraft\config"
+	$wideFile = Join-Path $config "portalcraft-skin.png"
+	$slimFile = Join-Path $config "portalcraft-skin-slim.png"
+	$state = @{ Picked = $null }
+	$form = New-Object System.Windows.Forms.Form
+	$form.Text = "PortalCraft: your skin"
+	$form.ClientSize = New-Object System.Drawing.Size(430, 330)
+	$form.FormBorderStyle = "FixedDialog"; $form.MaximizeBox = $false; $form.MinimizeBox = $false
+	$form.StartPosition = "CenterScreen"
+	$intro = New-Object System.Windows.Forms.Label
+	$intro.SetBounds(16, 12, 400, 50)
+	$intro.Text = "Play as any Minecraft skin. Pick the skin's PNG file (the 64x64 picture skin sites let you download), or keep the skin on your Minecraft account."
+	$now = New-Object System.Windows.Forms.Label
+	$now.SetBounds(16, 66, 400, 20)
+	$preview = New-Object System.Windows.Forms.PictureBox
+	$preview.SetBounds(16, 92, 128, 128)
+	$preview.SizeMode = "Zoom"; $preview.BorderStyle = "FixedSingle"
+	$choose = New-Object System.Windows.Forms.Button
+	$choose.SetBounds(160, 92, 180, 30); $choose.Text = "Choose a skin file..."
+	$wide = New-Object System.Windows.Forms.RadioButton
+	$wide.SetBounds(160, 134, 250, 22); $wide.Text = "Wide arms (the Steve shape)"; $wide.Checked = $true
+	$slim = New-Object System.Windows.Forms.RadioButton
+	$slim.SetBounds(160, 158, 250, 22); $slim.Text = "Slim arms (the Alex shape)"
+	$note = New-Object System.Windows.Forms.Label
+	$note.SetBounds(160, 186, 260, 48); $note.ForeColor = [System.Drawing.Color]::Firebrick
+	$use = New-Object System.Windows.Forms.Button
+	$use.SetBounds(16, 240, 190, 32); $use.Text = "Play as this skin"; $use.Enabled = $false
+	$account = New-Object System.Windows.Forms.Button
+	$account.SetBounds(220, 240, 194, 32); $account.Text = "Play as my account's skin"
+	$close = New-Object System.Windows.Forms.Button
+	$close.SetBounds(324, 286, 90, 28); $close.Text = "Close"
+	$form.Controls.AddRange(@($intro, $now, $preview, $choose, $wide, $slim, $note, $use, $account, $close))
+	$show = {
+		param($path)
+		# (read into memory: the file is not held open, and can be replaced or removed after)
+		$bytes = [System.IO.File]::ReadAllBytes($path)
+		$image = [System.Drawing.Image]::FromStream((New-Object System.IO.MemoryStream(, $bytes)))
+		if ($preview.Image) { $preview.Image.Dispose() }
+		$preview.Image = $image
+		return $image
+	}
+	$describe = {
+		if (Test-Path $slimFile) { $now.Text = "Now: your own skin (slim arms)."; $slim.Checked = $true; [void](& $show $slimFile) }
+		elseif (Test-Path $wideFile) { $now.Text = "Now: your own skin (wide arms)."; $wide.Checked = $true; [void](& $show $wideFile) }
+		else { $now.Text = "Now: the skin on your Minecraft account." }
+	}
+	& $describe
+	$choose.Add_Click({
+		$open = New-Object System.Windows.Forms.OpenFileDialog
+		$open.Filter = "Minecraft skin (*.png)|*.png"
+		$open.Title = "Choose a Minecraft skin"
+		if ($open.ShowDialog($form) -ne "OK") { return }
+		$note.Text = ""
+		try {
+			$image = & $show $open.FileName
+			if ($image.Width -ne 64 -or ($image.Height -ne 64 -and $image.Height -ne 32)) {
+				$note.Text = "That picture is $($image.Width)x$($image.Height). A Minecraft skin is 64x64 (or 64x32 for an old one)."
+				$use.Enabled = $false
+				return
+			}
+			$state.Picked = $open.FileName
+			$use.Enabled = $true
+		} catch {
+			$note.Text = "That file couldn't be read as a picture."
+			$use.Enabled = $false
+		}
+	})
+	$use.Add_Click({
+		if (-not $state.Picked) { return }
+		New-Item -ItemType Directory -Force $config | Out-Null
+		$bytes = [System.IO.File]::ReadAllBytes($state.Picked)
+		Remove-Item $wideFile, $slimFile -ErrorAction SilentlyContinue
+		$target = if ($slim.Checked) { $slimFile } else { $wideFile }
+		[System.IO.File]::WriteAllBytes($target, $bytes)
+		Note "skin: $($state.Picked) -> $target"
+		$note.Text = ""
+		& $describe
+		$now.Text += " Restart PortalCraft to see it."
+	})
+	$account.Add_Click({
+		Remove-Item $wideFile, $slimFile -ErrorAction SilentlyContinue
+		if ($preview.Image) { $preview.Image.Dispose(); $preview.Image = $null }
+		$state.Picked = $null; $use.Enabled = $false; $note.Text = ""
+		Note "skin: the account's"
+		& $describe
+	})
+	$close.Add_Click({ $form.Close() })
+	[void]$form.ShowDialog()
+}
+
+if ($Skin) {
+	Show-SkinDialog
+	if ($NoStart) { return } # (the skin shortcut: nothing else to do)
+}
 if ($Friends -and -not (Show-FriendsDialog)) { return }
 try { Update-PortalCraft } catch { Note "update check failed: $($_.Exception.Message)" }
 try { Set-FriendsInIni } catch { Note "couldn't write the friends setting: $($_.Exception.Message)" }
