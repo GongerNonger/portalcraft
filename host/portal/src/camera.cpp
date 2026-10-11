@@ -184,6 +184,7 @@ using BoolFn = bool(__thiscall*)(void* self);
 // Minecraft's third-person distance is 4 blocks.
 constexpr float kDistance = 160.0f; // Minecraft's third-person distance for a player Steve's size, in units
 constexpr float kHull = 6.0f;
+constexpr float kHeadRoom = 28.0f; // the camera this close to the eye is inside Steve's head (20 units across, and the near plane)
 
 bool g_sprinting = false; // Minecraft has Steve sprinting (setSprinting)
 bool g_grounded = false; // Minecraft has Steve on the ground (setGrounded)
@@ -300,7 +301,13 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 	float distance = g_mcDistance > 0.0f && g_mcDistance < kDistance ? g_mcDistance : kDistance;
 	Vector want{eye.x + forward.x * distance * sign, eye.y + forward.y * distance * sign, eye.z + forward.z * distance * sign};
 	float f = traceFraction(eye, want, kHull);
-	origin = {eye.x + (want.x - eye.x) * f, eye.y + (want.y - eye.y) * f, eye.z + (want.z - eye.z) * f};
+	// Backed against a wall (or facing one, in front view) the camera has nowhere to go and ended up
+	// inside Steve's head, looking at the inside of his face. With less than a head's room, the view
+	// stays his own eyes' until there is some.
+	if (distance * f < kHeadRoom) {
+		return;
+	}
+	origin ={eye.x + (want.x - eye.x) * f, eye.y + (want.y - eye.y) * f, eye.z + (want.z - eye.z) * f};
 	if (g_mode == 2) {
 		angles.x = -angles.x; // look back at the player
 		angles.y += 180.0f;

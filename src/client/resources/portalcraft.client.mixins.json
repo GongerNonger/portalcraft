@@ -16,7 +16,8 @@
 		"TextureAtlasAccessor",
 		"SkinTextureDownloaderInvoker",
 		"AbstractClientPlayerSkinMixin",
-		"FirstPersonGunRecoilMixin"
+		"FirstPersonGunRecoilMixin",
+		"GunArmPoseMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1
