@@ -103,6 +103,10 @@ public final class EntityExporter {
 	/** Items within this many blocks of the player are published. */
 	private static final double RANGE_BLOCKS = 64.0;
 	private static final int FULL_BRIGHT = 0xF000F0;
+	/** A vertex colour the host takes as a light of its own (alpha 254, as lava's and glowstone's): its lighting stays off it. */
+	private static final int GLOWING = 0xFEFFFFFF;
+	/** Flames on something burning, against Minecraft's own size for them: its sheets stood wider and taller than Steve in the host. */
+	private static final float FLAME_SIZE = 0.72F;
 
 	private static final ItemCapture CAPTURE = new ItemCapture();
 	private static final ItemEntityRenderState STATE = new ItemEntityRenderState();
@@ -947,7 +951,7 @@ public final class EntityExporter {
 			if (out == null) {
 				return;
 			}
-			float s = renderState.boundingBoxWidth * 1.4F;
+			float s = renderState.boundingBoxWidth * 1.4F * FLAME_SIZE;
 			float h = renderState.boundingBoxHeight / s;
 			Matrix4f m = new Matrix4f(poseStack.last().pose()).scale(s).rotate(rotation).translate(0.0F, 0.0F, 0.3F - (int) h * 0.02F);
 			float r = 0.5F, yo = 0.0F, zo = 0.0F;
@@ -957,7 +961,7 @@ public final class EntityExporter {
 				float u0 = flip ? tex.getU1() : tex.getU0(), u1 = flip ? tex.getU0() : tex.getU1(), v0 = tex.getV0(), v1 = tex.getV1();
 				float[][] corners = {{-r, -yo, u1, v1}, {r, -yo, u0, v1}, {r, 1.4F - yo, u0, v0}, {-r, 1.4F - yo, u1, v0}};
 				for (int k : WorldFormat.QUAD_TRIANGLES) {
-					this.vertex(out, m, corners[k][0], corners[k][1], zo, 0xFFFFFFFF, corners[k][2], corners[k][3]);
+					this.vertex(out, m, corners[k][0], corners[k][1], zo, GLOWING, corners[k][2], corners[k][3]);
 				}
 				h -= 0.45F;
 				yo -= 0.45F;
