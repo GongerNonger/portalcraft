@@ -5,9 +5,15 @@ Reads the portal colour ramps out of Portal's own package and turns their hue to
 Valve's own, byte for byte, but for the colour of each pixel. Nothing of Valve's is kept in the
 repository: the folder is made on this PC from this PC's Portal.
 
-    uv run --no-project --with vpk python tools/green-portals/make_green_portals.py <Portal folder> <out folder>
+With "closed", the portals also can't be seen through: Portal draws a portal that has no partner
+as a swirl of its colour, fading it out as the pair links (the PortalStatic material proxy). The
+two overlay materials are written with that held at full, so a linked portal keeps the swirl. It
+still works as a portal.
+
+    uv run --no-project --with vpk python tools/green-portals/make_green_portals.py <Portal folder> <out folder> [closed]
 """
 import colorsys
+import re
 import struct
 import sys
 from pathlib import Path
@@ -49,6 +55,17 @@ def green(data: bytes) -> bytes:
     return bytes(out)
 
 
+OVERLAYS = ["materials/models/portals/portalstaticoverlay_1.vmt", "materials/models/portals/portalstaticoverlay_2.vmt"]
+
+
+def closed(vmt: str) -> str:
+    vmt, n = re.subn(r'("\$PortalStatic"\s+)"[0-9.]+"', r'\g<1>"1.0"', vmt, count=1)
+    vmt, m = re.subn(r'"PortalStatic"\s*\{[^}]*\}', "", vmt, count=1)
+    if n != 1 or m != 1:
+        raise ValueError("the overlay material isn't laid out as expected")
+    return vmt
+
+
 def main() -> None:
     portal, out = Path(sys.argv[1]), Path(sys.argv[2])
     pak = vpk.open(str(portal / "portal" / "portal_pak_dir.vpk"))
@@ -57,6 +74,11 @@ def main() -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(green(pak[name].read()))
         print("wrote", target)
+    if "closed" in sys.argv[3:]:
+        for name in OVERLAYS:
+            target = out / name
+            target.write_text(closed(pak[name].read().decode("latin1")), encoding="latin1", newline="")
+            print("wrote", target)
 
 
 if __name__ == "__main__":
