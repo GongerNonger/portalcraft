@@ -26,6 +26,8 @@ void setPortals(const float* blue, const float* orange, bool linked);
 // Whether Portal may draw its viewmodel (its portal gun) at all.
 void setViewModel(bool allowed);
 
+// A scene's own camera has the view (not the player's eyes): Steve is drawn, as in third person.
+void setScene(bool scene);
 void setHideBody(bool hide);
 // True while the camera is pulled out of the player's head this frame.
 bool thirdPerson();

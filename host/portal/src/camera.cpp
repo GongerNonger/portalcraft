@@ -44,6 +44,7 @@ void* g_trace = nullptr;      // EngineTraceClient003: 4 TraceRay(const Ray_t&, 
 
 int g_mode = 0;
 float g_mcDistance = 0.0f;
+bool g_scene = false;    // a scene's camera has the view (setScene)
 bool g_third = false;    // this frame's view is third person
 bool g_feetValid = false;
 Vector g_feet{};
@@ -230,6 +231,14 @@ void __fastcall hkOverrideView(void* self, void* /*edx*/, void* setupRaw) {
 		}
 	}
 	if (!eyeOverFeet) {
+		// A scene's own camera (a point_viewcontrol: the ending, an opening) looks at the player from
+		// outside: the view is left as the scene has it, and Steve is drawn where Portal's player is.
+		if (g_scene) {
+			g_feet = feet;
+			g_feetValid = true;
+			g_third = true;
+			return;
+		}
 		if (g_setupMisses++ == 0) {
 			g_log("camera: view (%.1f %.1f %.1f) isn't over the player's feet (%.1f %.1f %.1f): leaving it alone (logged once)", origin.x, origin.y,
 				origin.z, feet.x, feet.y, feet.z);
@@ -497,6 +506,10 @@ void setGrounded(bool grounded, float verticalSpeed) {
 		lastOn = now;
 	}
 	g_grounded = now - lastOn < 150 && std::fabs(verticalSpeed) < 120.0f;
+}
+
+void setScene(bool scene) {
+	g_scene = scene;
 }
 
 void setSprinting(bool sprinting) {

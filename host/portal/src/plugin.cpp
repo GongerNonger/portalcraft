@@ -848,6 +848,12 @@ void updatePortalCentre() {
 constexpr int FL_FROZEN = 1 << 5, FL_ATCONTROLS = 1 << 6;
 bool g_scripted = false;
 
+// Our own opening scene (tools/intro: Steve dropped out of a green portal under a camera that looks
+// on) is in this map: its portal prop is. Its camera is then one that looks at the player from
+// outside, and Steve is drawn. (Which entity has the view isn't sent anywhere this plugin reads,
+// and under Valve's own cameras, the waking up in the bed for one, he is not to be seen.)
+bool openingSceneHere();
+
 void updateScripted() {
 	uint8_t* base = playerFields();
 	bool scripted = false;
@@ -866,6 +872,7 @@ void updateScripted() {
 	if (base && g_pl.vehicle >= 0 && !scripted) {
 		scripted = *reinterpret_cast<uint32_t*>(base + g_pl.vehicle) != 0xFFFFFFFFu;
 	}
+	camera::setScene(scripted && openingSceneHere());
 	if (scripted != g_scripted) {
 		logf("scripted scene %s", scripted ? "started: Portal has the player" : "over: Minecraft drives again");
 		g_scripted = scripted;
@@ -2588,6 +2595,31 @@ bool guardedColRead(void* col, sdk::Vector* origin, int* solid) {
 	} __except (EXCEPTION_EXECUTE_HANDLER) {
 		return false;
 	}
+}
+
+bool openingSceneHere() {
+	static int wait = 0;
+	static bool here = false;
+	if (--wait > 0) {
+		return here;
+	}
+	wait = 66; // looked for again every second or so: a new map, a save loaded
+	here = false;
+	if (g_colState != 1 || !g_modelInfo) {
+		return false;
+	}
+	__try {
+		for (int i = 2; i < 2048 && !here; i++) {
+			void* e = edictAt(i);
+			void* col = edictInUse(e) ? collideableOf(e) : nullptr;
+			void* model = col ? sdk::vcall<void*>(col, kColModel) : nullptr;
+			const char* name = model ? sdk::vcall<const char*>(g_modelInfo, 3, model) : nullptr;
+			here = name && std::strstr(name, "portalcraft/pc_portal");
+		}
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+		here = false;
+	}
+	return here;
 }
 
 void checkCollideableLayout() {

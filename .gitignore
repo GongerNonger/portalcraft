@@ -13,3 +13,4 @@ host/portal/build/
 .tools/
 dist/
 __pycache__/
+tools/intro/build/
