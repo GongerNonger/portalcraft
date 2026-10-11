@@ -132,9 +132,7 @@ public class PortalCraft implements ModInitializer {
 				if (dev.portalcraft.host.HostLink.current() == null) {
 					return;
 				}
-				if (!player.getInventory().contains(new net.minecraft.world.item.ItemStack(PORTAL_GUN))) {
-					player.getInventory().add(new net.minecraft.world.item.ItemStack(PORTAL_GUN));
-				}
+				dev.portalcraft.host.GunGrant.sync(player, dev.portalcraft.host.HostLink.current().gunLevel());
 			});
 		});
 

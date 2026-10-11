@@ -1858,11 +1858,12 @@ void updateGunGate() {
 // colour. Read through the weapon's own send table, so nothing here depends on the build.
 uint8_t g_shots = 0;
 uint32_t g_gunEffect = 0xFFFFFFFFu; // the gun's m_EffectState (2: holding an object), for Minecraft's grab animations
+uint8_t g_gunLevel = 0; // what the player has of the gun (HostState.gunEffect, third byte): 0 unknown, 1 no gun, 2 the blue-only one, 3 both portals
 uint8_t g_gunFizzles = 0;            // times an emancipation grid has fizzled the gun (HostState.gunEffect, second byte)
 
 void watchGunShots(int buttons) {
 	static void* weaponTable = nullptr;
-	static int nextPrimary = -1, nextSecondary = -1, effectState = -1, effectsMax1 = -1, effectsMax2 = -1;
+	static int nextPrimary = -1, nextSecondary = -1, effectState = -1, effectsMax1 = -1, effectsMax2 = -1, canFire1 = -1, canFire2 = -1;
 	static uint32_t lastWeapon = 0xFFFFFFFFu;
 	static float lastP = 0.0f, lastS = 0.0f;
 	uint8_t* base = playerFields();
@@ -1872,6 +1873,7 @@ void watchGunShots(int buttons) {
 	uint32_t handle = *reinterpret_cast<uint32_t*>(base + g_pl.activeWeapon);
 	if (handle == 0xFFFFFFFFu) {
 		lastWeapon = handle;
+		g_gunLevel = 1; // nothing in his hands: the chambers before the gun's pedestal
 		return;
 	}
 	void* e = edictAt(int(handle & 0xFFF));
@@ -1891,6 +1893,9 @@ void watchGunShots(int buttons) {
 		effectState = findProp(sc->table, "m_EffectState", 0);
 		effectsMax1 = findProp(sc->table, "m_fEffectsMaxSize1", 0);
 		effectsMax2 = findProp(sc->table, "m_fEffectsMaxSize2", 0);
+		canFire1 = findProp(sc->table, "m_bCanFirePortal1", 0);
+		canFire2 = findProp(sc->table, "m_bCanFirePortal2", 0);
+		logf("weapon: m_bCanFirePortal1 %d m_bCanFirePortal2 %d", canFire1, canFire2);
 		logf("weapon: m_fEffectsMaxSize1 %d m_fEffectsMaxSize2 %d", effectsMax1, effectsMax2);
 		logf("weapon: %s m_flNextPrimaryAttack %d m_flNextSecondaryAttack %d m_EffectState %d", sc->name, nextPrimary, nextSecondary, effectState);
 	}
@@ -1906,6 +1911,14 @@ void watchGunShots(int buttons) {
 			logf("gun fizzle %u (glow %.0f %.0f)", unsigned(g_gunFizzles), m1, m2);
 		}
 		lastMax = most;
+	}
+	// Which portals the gun fires: the first gun fires blue only, the upgrade both.
+	if (canFire1 >= 0 && canFire2 >= 0) {
+		uint8_t level = weapon[canFire2] ? 3 : weapon[canFire1] ? 2 : 1;
+		if (level != g_gunLevel) {
+			logf("gun level %u -> %u (1 none, 2 blue only, 3 both)", unsigned(g_gunLevel), unsigned(level));
+		}
+		g_gunLevel = level;
 	}
 	uint32_t effectBefore = g_gunEffect;
 	if (effectState >= 0) {
@@ -3308,7 +3321,7 @@ void sendState() {
 	}
 	s.teleportKind = g_teleportKind;
 	s.shots = g_shots;
-	s.gunEffect = (g_gunEffect & 0xFFu) | (uint32_t(g_gunFizzles) << 8); // its state (0xFF: unknown), and its fizzles
+	s.gunEffect = (g_gunEffect & 0xFFu) | (uint32_t(g_gunFizzles) << 8) | (uint32_t(g_gunLevel) << 16); // its state (0xFF: unknown), and its fizzles
 	if (g_inLevel && g_haveOrigin && GetTickCount() - g_baseVelocityAt < 250) {
 		s.baseVelocity = {g_baseVelocity.x, g_baseVelocity.y, g_baseVelocity.z};
 	}

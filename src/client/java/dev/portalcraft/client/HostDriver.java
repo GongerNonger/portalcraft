@@ -204,6 +204,10 @@ public final class HostDriver {
 		HostCollision.setPortals(s.portals());
 		PlayerCrossings.matched(s.crossMatched());
 		gunFollowsHostShots(minecraft, s.shots());
+		if (s.gunLevel() != lastGunLevel && minecraft.player != null && s.inGame()) {
+			lastGunLevel = s.gunLevel(); // the gun picked up from its pedestal, or upgraded
+			giveGun(minecraft, minecraft.player, lastGunLevel);
+		}
 		// Portal's gun holding an object (its effect state 2): Steve's opens its claws and holds, then lets go.
 		dev.portalcraft.client.gun.GunAnimation.holding(s.gunEffect() == 2);
 		// The gun's fizzle, when Portal's own gun fizzles: an emancipation grid taking its portals
@@ -276,7 +280,8 @@ public final class HostDriver {
 			respawned = false;
 			teleportAck = s.teleportSeq();
 			minecraft.getTutorial().setStep(TutorialSteps.NONE);
-			giveGun(minecraft, player);
+			giveGun(minecraft, player, s.gunLevel());
+			lastGunLevel = s.gunLevel();
 			freezeDaylight(minecraft);
 			player.refreshDimensions(); // host-sized hull (see AvatarDimensionsMixin)
 			LOG.info("PortalCraft: player hull {} x {} blocks", player.getBbWidth(), player.getBbHeight());
@@ -1225,8 +1230,11 @@ public final class HostDriver {
 		});
 	}
 
-	/** Steve starts with the portal gun; while he holds it, clicks fire the host's real portals. */
-	private static void giveGun(Minecraft minecraft, LocalPlayer player) {
+	/** The host's gun as last heard (HostState.gunLevel), to notice it changing. */
+	private static int lastGunLevel = -2;
+
+	/** Steve's portal gun follows the host's (GunGrant); while he holds it, clicks fire the host's real portals. */
+	private static void giveGun(Minecraft minecraft, LocalPlayer player, int level) {
 		var server = minecraft.getSingleplayerServer();
 		if (server == null) {
 			return;
@@ -1234,8 +1242,8 @@ public final class HostDriver {
 		var uuid = player.getUUID();
 		server.execute(() -> {
 			ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
-			if (sp != null && !sp.getInventory().contains(new ItemStack(PortalCraft.PORTAL_GUN))) {
-				sp.getInventory().add(new ItemStack(PortalCraft.PORTAL_GUN));
+			if (sp != null) {
+				dev.portalcraft.host.GunGrant.sync(sp, level);
 			}
 		});
 	}

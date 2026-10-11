@@ -61,7 +61,7 @@ public final class Proto {
 		int seq, int flags, String map, float yaw, float pitch, Vec3 origin, Vec3 velocity,
 		int teleportSeq, Vec3 teleportOrigin, Vec3 teleportVelocity, byte[] keys, int mouse, int wheel, int teleportKind, HostPortal[] portals,
 		float cursorX, float cursorY, @org.jspecify.annotations.Nullable Crossing crossing, int crossMatched, int shots,
-		Vec3 handLight, int gunEffect, int moveBase, int gunFizzles, Vec3 baseVelocity, float playerCentre, int moverIndex, Vec3 moverOrigin
+		Vec3 handLight, int gunEffect, int moveBase, int gunFizzles, Vec3 baseVelocity, float playerCentre, int moverIndex, Vec3 moverOrigin, int gunLevel
 	) {
 		public boolean inGame() {
 			return (flags & HOST_IN_GAME) != 0;
@@ -138,7 +138,7 @@ public final class Proto {
 		Vec3 moverOrigin = vec(b); // ... and where it is
 		return new HostState(seq, flags, map, yaw, pitch, origin, velocity, teleportSeq, tpOrigin, tpVelocity, keys, mouse, wheel, teleportKind, portals, cursorX,
 			cursorY, crossValid ? new Crossing(crossBase, rot, move) : null, crossMatched, shots, handLight, gunEffect, crossBase, gunFizzles, baseVelocity,
-			playerCentre, moverIndex, moverOrigin);
+			playerCentre, moverIndex, moverOrigin, ((gun >>> 16) & 0xFF) - 1); // gunLevel: -1 unknown (an older plugin), 0 no gun, 1 blue only, 2 both
 	}
 
 	/** One solid host entity (protocol HostEntity); positions in host units. */

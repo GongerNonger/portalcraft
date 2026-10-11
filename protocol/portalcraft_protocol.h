@@ -110,7 +110,7 @@ struct HostState {
 	// PCH6: the host gun's effect state (Portal's m_EffectState: 0 none, 1 ready, 2 holding an
 	// object), or 0xFFFFFFFF when unknown. Minecraft's gun plays Portal's pickup and release
 	// animations as it starts and stops holding.
-	uint32_t gunEffect; // low byte: the gun's m_EffectState (2: holding an object; 0xFF unknown); second byte: a count of its fizzles
+	uint32_t gunEffect; // low byte: the gun's m_EffectState (2: holding an object; 0xFF unknown); second byte: a count of its fizzles; third byte: what the player has of the gun (0 unknown, 1 none, 2 blue only, 3 both portals)
 	// PCH7: the push the host's map has on its player now (a trigger_push: an air current, a conveyor),
 	// units/s, or zero. The host writes its player where Minecraft's is every tick, so the push never
 	// moves it; Minecraft applies it instead, as the host's own movement would: sideways it carries the
