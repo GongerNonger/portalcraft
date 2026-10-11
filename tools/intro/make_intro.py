@@ -5,7 +5,7 @@ Portal's waking up in the bed.
 
 What "on" writes, all of it made on this PC from this PC's Portal, none of it over a file of Valve's:
 
-    portal/custom/pc-intro/                   the green portal: a flat model, its turning-spiral material,
+    portal/custom/pc-intro/                   the green portal: a flat model, its turning-spiral material, its three sounds,
                                               and the globs round its rim (a particle system of its own)
     portal/maps/testchmb_a_00_l_0.lmp         the chamber's entities with the opening changed (a "lump
                                               file": the engine reads it in place of the map's own list)
@@ -34,6 +34,7 @@ import vpk
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent / "green-portals"))
 import particles  # noqa: E402
+import sounds  # noqa: E402
 import swirl  # noqa: E402
 
 MAP = "testchmb_a_00"
@@ -214,12 +215,18 @@ def entities(text: str) -> str:
         StartDisabled=1, solid=0, disableshadows=1, rendercolor="255 255 255", renderamt=255, fademindist=-1, fadescale=1))
     out.append(entity(classname="info_particle_system", targetname="pc_intro_rim", effect_name="pc_intro_rim", origin=vec(PORTAL), angles="0 0 0", start_active=0))
     out.append(entity(classname="point_teleport", targetname="pc_intro_drop", target="!player", origin=vec(DROP), angles="0 200 0"))
+    for name in sounds.NAMES:  # (48: silent till told to play, and played once)
+        out.append(entity(classname="ambient_generic", targetname=f"pc_intro_sound_{name}", message=f"portalcraft/intro_{name}.wav", origin=vec(PORTAL), spawnflags=48,
+            health=10, radius=1500, pitch=100, pitchstart=100))
     out.append(entity(classname="logic_auto", spawnflags=1, origin=vec(CAMERA), outputs=[
         ("OnMapSpawn", "pc_intro_camera,Enable,,0,-1"),
         ("OnMapSpawn", "blackout,Kill,,0,-1"),
         ("OnMapSpawn", f"pc_intro_portal,Enable,,{APPEAR},-1"),
         ("OnMapSpawn", f"pc_intro_rim,Start,,{APPEAR},-1"),
+        ("OnMapSpawn", f"pc_intro_sound_open,PlaySound,,{APPEAR},-1"),
         ("OnMapSpawn", f"pc_intro_drop,Teleport,,{FALL},-1"),
+        ("OnMapSpawn", f"pc_intro_sound_pass,PlaySound,,{FALL},-1"),
+        ("OnMapSpawn", f"pc_intro_sound_close,PlaySound,,{GONE - 0.65:g},-1"),
         ("OnMapSpawn", f"pc_intro_rim,Stop,,{GONE - 0.4:g},-1"),
         ("OnMapSpawn", f"pc_intro_portal,Disable,,{GONE},-1"),
         ("OnMapSpawn", f"pc_intro_camera,Disable,,{RELEASE},-1"),
@@ -257,6 +264,7 @@ def main() -> None:
     effects.mkdir(parents=True)
     (effects / "pc_intro_glob.vtf").write_bytes(swirl.vtf(particles.glob(), CLAMPED))
     (effects / "pc_intro_glob.vmt").write_text(GLOB_VMT, newline="")
+    sounds.write(pack / "sound" / "portalcraft")
     (pack / "particles").mkdir()
     (pack / "particles" / "portals.pcf").write_bytes(rim(pak))
     model(portal, pack, HERE / "build")
