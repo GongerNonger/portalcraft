@@ -136,9 +136,20 @@ How it fits together:
 | Body | hides Chell (render mode) | in third person (F5) sends Steve, posed, with his skin and what he holds; Portal draws him at its player's feet |
 | F5 | moves its camera behind/in front of the player (client-mode `OverrideView` hook, no cheats), stopped by its walls | cycles the view as usual; sends how far its own camera gets, so the host's stops at placed blocks too |
 
-Your skin: a signed-in Minecraft (the release's Prism) shows your own. The dev client plays
-offline as Steve; put a skin PNG at `run\config\portalcraft-skin.png` (`portalcraft-skin-slim.png`
-for the slim model) to play as yourself, in Minecraft and in Portal's third person.
+### Playing as your own skin
+
+- **Installed from a release:** nothing to do. You signed in to Minecraft in Prism, so you play as
+  the skin on your Minecraft account. Change it the usual way (minecraft.net or the official
+  launcher) and it follows.
+- **Any skin you like, account or not:** save the skin as a PNG (the standard 64x64 skin file, the
+  kind skin sites let you download) under one of these names, then restart:
+  - `portalcraft-skin.png` for the wide-armed (Steve) model
+  - `portalcraft-skin-slim.png` for the slim-armed (Alex) model
+
+  in the `config` folder: `%LOCALAPPDATA%\PortalCraft\Prism\instances\PortalCraft\.minecraft\config` for a
+  release install, `run\config` in this repository for the dev client. Delete the file to go back.
+
+It is the skin you see in third person (F5), through portals, and in the chamber 00 opening.
 
 Link: UDP on 127.0.0.1 ports 27515/27516, layout in `protocol/portalcraft_protocol.h`.
 Logs: `Portal\portal\addons\portalcraft.log` and Minecraft's `run\logs\latest.log`.

@@ -2622,6 +2622,34 @@ bool openingSceneHere() {
 	return here;
 }
 
+// The opening scene is over in seven seconds, and Minecraft takes most of a minute to start: begun
+// with Portal, the green portal opened on an empty vault and nobody fell out of it. A level that
+// has the scene is paused in its first moments until Minecraft is linked (or four minutes have
+// gone by: then it is not coming).
+void holdOpeningForMinecraft() {
+	static bool held = false, wasInLevel = false;
+	static int frames = 0;
+	static DWORD since = 0;
+	if (g_inLevel && !wasInLevel) {
+		frames = 0;
+	}
+	wasInLevel = g_inLevel;
+	if (!held) {
+		if (g_inLevel && frames++ < 130 && !mcReady() && openingSceneHere()) {
+			sdk::serverCommand(g_engineServer, "setpause\n");
+			held = true;
+			since = GetTickCount();
+			logf("opening scene held (paused) until Minecraft is linked");
+		}
+		return;
+	}
+	if (mcReady() || !g_inLevel || GetTickCount() - since > 240000) {
+		sdk::serverCommand(g_engineServer, "unpause\n");
+		held = false;
+		logf("opening scene let go after %.1f s%s", (GetTickCount() - since) / 1000.0, mcReady() ? "" : " (Minecraft not linked)");
+	}
+}
+
 void checkCollideableLayout() {
 	if (g_colState != 0 || !g_playerInfoMgr || !g_edicts) {
 		return;
@@ -3520,6 +3548,7 @@ public:
 		launcher::frame(mcReady(), g_inLevel, checkedBuild("engine.dll") ? g_engineClient : nullptr);
 		bridgeHealth();
 		updateScripted();
+		holdOpeningForMinecraft();
 		updateStanding();
 		g_haveMoverAtFrame = g_setMover != 0 && moverNow(g_setMover, &g_moverAtFrame);
 		updateBlockPhysics();
