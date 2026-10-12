@@ -3,7 +3,8 @@
 Our own, in the manner of a cartoon portal (a wet, wobbling sweep with bubbles in it), not anyone's
 recording. To use recordings of your own instead, put them beside this file as open.wav, pass.wav
 and close.wav (44.1 kHz, 16-bit, any of the three): make_intro.py takes those when they are there,
-and only those. They stay on this PC (.gitignore).
+and only those. The three here are cut from the show's portal sound (see THIRD-PARTY-NOTICES.md): delete
+them to get the ones made below.
 
     uv run --no-project --with numpy python tools/intro/sounds.py <out folder>   (writes the three to listen to)
 """

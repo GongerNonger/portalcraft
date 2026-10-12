@@ -114,8 +114,8 @@ green-portals on    :: every portal a turning green spiral with globs round its 
 green-portals off   :: Portal's own blue and orange
 ```
 
-The opening's portal makes sounds of its own (`tools/intro/sounds.py`); recordings put beside that
-file as `open.wav`, `pass.wav` and `close.wav` are used instead.
+The opening's portal sounds are `open.wav`, `pass.wav` and `close.wav` in `tools/intro` (samples of
+Rick and Morty's portal sound). Delete them and `tools/intro/sounds.py` synthesizes its own.
 
 ## Building
 

@@ -48,3 +48,10 @@ Mojang/Microsoft. This is a fan project, not affiliated with either. You need to
 - The Prism instance setup (`tools/minecraft-bundle`) follows SkyCraft's (MIT, above).
 
 Minecraft itself is not bundled: Prism downloads it from Mojang for a player who owns it.
+
+## Sound samples
+
+- `tools/intro/open.wav`, `pass.wav` and `close.wav` are short samples of the portal sound effect from
+  *Rick and Morty* (Adult Swim), used for the chamber 00 opening. They are not PortalCraft's own and
+  the MIT license above does not cover them. Delete the three files and `tools/intro/sounds.py`
+  synthesizes replacements that are.
