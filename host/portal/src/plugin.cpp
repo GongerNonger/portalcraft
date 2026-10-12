@@ -2610,13 +2610,17 @@ bool guardedColRead(void* col, sdk::Vector* origin, int* solid) {
 	}
 }
 
+int g_openingWait = 0; // (0 at a level's start: looked for at once)
+// Frames of this level with the player in it. Set to 0 where a level starts: counted from one level's
+// end to the next's start instead, the title screen's own map had used them all up before a new game.
+int g_openingFrames = 0;
+
 bool openingSceneHere() {
-	static int wait = 0;
 	static bool here = false;
-	if (--wait > 0) {
+	if (--g_openingWait > 0) {
 		return here;
 	}
-	wait = 66; // looked for again every second or so: a new map, a save loaded
+	g_openingWait = 66; // looked for again every second or so: a new map, a save loaded
 	here = false;
 	if (g_colState != 1 || !g_modelInfo) {
 		return false;
@@ -2669,19 +2673,27 @@ bool gameMenuUp() {
 // has the scene is paused in its first moments until Minecraft is linked (or four minutes have
 // gone by: then it is not coming).
 void holdOpeningForMinecraft() {
-	static bool held = false, wasInLevel = false;
-	static int frames = 0;
+	static bool held = false;
 	static DWORD since = 0;
-	if (g_inLevel && !wasInLevel) {
-		frames = 0;
-	}
-	wasInLevel = g_inLevel;
 	if (!held) {
-		if (g_inLevel && frames++ < 130 && !mcReady() && openingSceneHere()) {
+		// (Counted from when the player is in the level: a new game from the title screen spends more
+		// than the two seconds loading first, and the scene then ran with nobody in it.)
+		if (g_inLevel && collideablesChecked() && g_openingFrames++ < 130 && !mcReady() && openingSceneHere()) {
 			sdk::serverCommand(g_engineServer, "setpause\n");
 			held = true;
 			since = GetTickCount();
 			logf("opening scene held (paused) until Minecraft is linked");
+		}
+		return;
+	}
+	// Kept paused: started from the title screen, the game lets itself go again as its menu closes, and
+	// the scene ran on with nobody in it (seen: held at the level's first frame, over 15 seconds before
+	// Minecraft linked).
+	static int again = 0;
+	if (!mcReady() && g_inLevel && GetTickCount() - since <= 240000) {
+		if (g_engineClient && !sdk::clientIsPaused(g_engineClient) && ++again >= 4) {
+			again = 0;
+			sdk::serverCommand(g_engineServer, "setpause\n");
 		}
 		return;
 	}
@@ -3550,6 +3562,8 @@ public:
 		g_po = PortalOffsets{};
 		g_portalCount = 0;
 		g_colState = 0;
+		g_openingWait = 0;
+		g_openingFrames = 0;
 		g_entityCount = 0;
 		std::memset(g_lastEntityOrigin, 0, sizeof g_lastEntityOrigin);
 		g_replayNext = g_replayCount = 0; // a recording is of one level: a replay can't cross a level change
