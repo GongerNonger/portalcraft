@@ -965,6 +965,9 @@ void __fastcall hkDrawWorldLists(void* self, void* /*edx*/, void* list, unsigned
 void __fastcall hkPopView(void* self, void* /*edx*/, void* frustum) {
 	if (g_viewDepth > 0) {
 		g_viewDepth--;
+		if (g_viewDepth == 0 && g_views[0].isMain) {
+			overlay::titleInScene(); // (the main view is done: Portal's menus are painted after this)
+		}
 		if (g_viewDepth < kMaxViews && g_views[g_viewDepth].throughPortal && g_renderView) {
 			auto* dev = static_cast<IDirect3DDevice9*>(overlay::device());
 			float worldToProjection[16];

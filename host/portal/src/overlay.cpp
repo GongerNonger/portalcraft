@@ -255,12 +255,15 @@ bool g_title = false;
 // usual arrow, at the mouse.
 bool g_pointer = false;
 
-void drawTitle(IDirect3DDevice9* dev) {
-	if (!g_title && !g_pointer) {
+// inScene: called as the main 3D view is finished, into what it is drawn to, before Portal paints its
+// menus: the title's letters go in there, so a menu's own boxes (new game, quit) are over them and not
+// under. Otherwise, from Present, onto the finished frame: the pointer only, which is over everything.
+void drawTitle(IDirect3DDevice9* dev, bool inScene) {
+	if (inScene ? !g_title : !g_pointer || g_title) {
 		return;
 	}
 	IDirect3DSurface9* backBuffer = nullptr;
-	if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer))) {
+	if (FAILED(inScene ? dev->GetRenderTarget(0, &backBuffer) : dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &backBuffer)) || !backBuffer) {
 		return;
 	}
 	D3DSURFACE_DESC bb;
@@ -285,7 +288,7 @@ void drawTitle(IDirect3DDevice9* dev) {
 	const float H = float(bb.Height);
 	const float dot = std::floor(H * (65.0f / 720.0f) / 7.0f + 0.5f); // one dot of a letter, in whole pixels
 	const float left = std::floor(H * (322.0f / 720.0f)), top = std::floor(H * (365.0f / 720.0f)) - 7.0f * dot;
-	for (int pass = 0; pass < 2 && g_title; pass++) { // the shadow, then the letters over it
+	for (int pass = 0; pass < 2 && inScene; pass++) { // the shadow, then the letters over it
 		const float shift = pass == 0 ? dot : 0.0f;
 		const DWORD color = pass == 0 ? 0xFF3F3F3Fu : 0xFFFFFFFFu;
 		for (int letter = 0; letter < 5; letter++) {
@@ -303,7 +306,7 @@ void drawTitle(IDirect3DDevice9* dev) {
 			}
 		}
 	}
-	if (g_pointer && !g_title) { // (Portal's own menu has its own cursor)
+	if (!inScene) { // (not under Portal's own menu, which has its own cursor: checked above)
 		static const char* const kArrow[17] = {
 			"X           ", "XX          ", "X.X         ", "X..X        ", "X...X       ", "X....X      ", "X.....X     ", "X......X    ", "X.......X   ",
 			"X........X  ", "X.....XXXXX ", "X..X..X     ", "X.X X..X    ", "XX  X..X    ", "X    X..X   ", "     X..X   ", "      XX    ",
@@ -389,7 +392,7 @@ HRESULT WINAPI hkPresent(IDirect3DDevice9* dev, const RECT* src, const RECT* dst
 	}
 	g_presentDepth++;
 	draw(dev, false);
-	drawTitle(dev);
+	drawTitle(dev, false);
 	HRESULT hr = forDevice(dev)->present(dev, src, dst, wnd, dirty);
 	g_presentDepth--;
 	return hr;
@@ -401,7 +404,7 @@ HRESULT WINAPI hkPresentEx(IDirect3DDevice9Ex* dev, const RECT* src, const RECT*
 	}
 	g_presentDepth++;
 	draw(dev, false);
-	drawTitle(dev);
+	drawTitle(dev, false);
 	HRESULT hr = forDevice(dev)->presentEx(dev, src, dst, wnd, dirty, flags);
 	g_presentDepth--;
 	return hr;
@@ -622,6 +625,12 @@ void* device() {
 void setTitle(bool shown) {
 	g_title = shown;
 	g_menuUp = shown;
+}
+
+void titleInScene() {
+	if (auto* dev = static_cast<IDirect3DDevice9*>(device())) {
+		drawTitle(dev, true);
+	}
 }
 
 void setPointer(bool shown) {
