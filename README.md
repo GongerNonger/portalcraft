@@ -101,6 +101,22 @@ separate for now: a friend can't stand on your button or walk through your porta
 In `portalcraft.ini` this is a `[Friends]` section with `host_port=25590` or
 `join=address:port`. Two players can be run on one PC for testing (`tools/devtests/coop.sh`).
 
+## Extras: the green portal
+
+Two switches, run from this repository (they need [uv](https://docs.astral.sh/uv/) and build
+everything from your own Portal, so nothing of Valve's is in here). Portal reads them when it
+starts: restart it after.
+
+```bat
+opening on          :: chamber 00 opens with Steve dropping out of a green portal in the vault's ceiling
+opening off         :: ... or as Valve made it, waking up in the bed
+green-portals on    :: every portal a turning green spiral with globs round its rim
+green-portals off   :: Portal's own blue and orange
+```
+
+The opening's portal makes sounds of its own (`tools/intro/sounds.py`); recordings put beside that
+file as `open.wav`, `pass.wav` and `close.wav` are used instead.
+
 ## Building
 
 ```bat
