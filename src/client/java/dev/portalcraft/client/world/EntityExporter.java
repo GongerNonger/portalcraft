@@ -193,11 +193,73 @@ public final class EntityExporter {
 			taken++;
 		}
 		addOthers(minecraft, level, partial, player, range2);
+		addBlockEntities(minecraft, level, partial, player);
 		addParticles(minecraft, partial);
 		addCracks(minecraft, level, player, range2);
 		addAvatar(minecraft, partial);
 		MOBS.flush();
 		publish(taken);
+	}
+
+	private static final double BLOCK_ENTITY_RANGE = 40.0;
+	private static boolean blockEntityFailureLogged;
+	private static final java.util.Set<net.minecraft.world.level.block.entity.BlockEntityType<?>> LOGGED_BLOCK_ENTITIES = new java.util.HashSet<>();
+
+	/**
+	 * The blocks Minecraft draws with a renderer of their own instead of a block model, so the world
+	 * mesh never has them: chests, shulker boxes, beds, signs, banners, heads, bells, conduits, pots,
+	 * the books on lecterns and enchanting tables, a spawner's spinning mob. Each is run through its
+	 * own BlockEntityRenderer into the capture, as a mob is (their textures go into the mob atlas,
+	 * sprite by sprite), every frame, so a chest's lid opens and a bell swings. The end portal and
+	 * gateway are left to the world mesh (WorldExporter.MeshBuilder.stars); signs' writing isn't sent.
+	 */
+	private static void addBlockEntities(Minecraft minecraft, ClientLevel level, float partial, Vec3 player) {
+		var dispatcher = minecraft.getBlockEntityRenderDispatcher();
+		dispatcher.prepare(minecraft.gameRenderer.mainCamera().position()); // (Minecraft does this as it draws its level, which it doesn't while linked)
+		int r = (int) Math.ceil(BLOCK_ENTITY_RANGE / 16.0);
+		int pcx = net.minecraft.core.SectionPos.blockToSectionCoord(player.x), pcz = net.minecraft.core.SectionPos.blockToSectionCoord(player.z);
+		double range2 = BLOCK_ENTITY_RANGE * BLOCK_ENTITY_RANGE;
+		for (int cx = pcx - r; cx <= pcx + r; cx++) {
+			for (int cz = pcz - r; cz <= pcz + r; cz++) {
+				var chunk = level.getChunkSource().getChunk(cx, cz, false);
+				if (chunk == null) {
+					continue;
+				}
+				for (var be : chunk.getBlockEntities().values()) {
+					var type = be.getType();
+					if (be.getBlockState().is(net.minecraft.world.level.block.Blocks.END_PORTAL) || be.getBlockState().is(net.minecraft.world.level.block.Blocks.END_GATEWAY)) {
+						continue;
+					}
+					Vec3 at = Vec3.atLowerCornerOf(be.getBlockPos());
+					if (at.add(0.5, 0.5, 0.5).distanceToSqr(player) > range2) {
+						continue;
+					}
+					int[] before = CAPTURE.counts();
+					try {
+						var state = dispatcher.tryExtractRenderState(be, partial, null, false);
+						if (state == null) {
+							continue;
+						}
+						CAPTURE.begin(at);
+						dispatcher.submit(state, new PoseStack(), CAPTURE, AVATAR_CAMERA);
+						if (LOGGED_BLOCK_ENTITIES.add(type)) {
+							LOG.info("PortalCraft: exporting block entity {}: {} vertices", net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type),
+								CAPTURE.total() - java.util.Arrays.stream(before).sum());
+						}
+					} catch (RuntimeException ex) {
+						CAPTURE.truncate(before);
+						if (!blockEntityFailureLogged) {
+							blockEntityFailureLogged = true;
+							LOG.warn("PortalCraft: couldn't export a {} (logged once): {}", net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type), ex.toString());
+						}
+					}
+					if (CAPTURE.total() > WorldFormat.ENTITY_MAX_VERTICES) {
+						CAPTURE.truncate(before);
+						return;
+					}
+				}
+			}
+		}
 	}
 
 	/** Fills the camera state renderers face things towards (thrown items, name tags) from Minecraft's camera. */
@@ -998,8 +1060,12 @@ public final class EntityExporter {
 				model.renderToBuffer(poseStack, this.skinQuads, lightCoords, overlayCoords, tintedColor);
 				return;
 			}
-			Identifier texture = MobAtlas.textureOf(renderType);
-			float[] rect = texture == null ? null : MOBS.rect(Minecraft.getInstance(), texture);
+			// A model textured from one sprite of an atlas (a chest's, a bed's, a sign's, a banner's pattern):
+			// that sprite alone goes into the mob atlas, and the model's own UVs, which are the sprite's,
+			// land in it. Otherwise the render type's whole texture (a mob's).
+			Identifier texture = uvMapping instanceof net.minecraft.client.renderer.texture.TextureAtlasSprite ? null : MobAtlas.textureOf(renderType);
+			float[] rect = uvMapping instanceof net.minecraft.client.renderer.texture.TextureAtlasSprite sprite ? MOBS.rect(sprite)
+				: texture == null ? null : MOBS.rect(Minecraft.getInstance(), texture);
 			if (rect == null) {
 				return;
 			}

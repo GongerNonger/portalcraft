@@ -81,7 +81,34 @@ final class MobAtlas {
 			return null;
 		}
 		try {
-			int w = image.getWidth(), h = image.getHeight();
+			return this.pack(texture, image, image.getWidth(), image.getHeight());
+		} finally {
+			if (owned) {
+				image.close();
+			}
+		}
+	}
+
+	/** {u0, v0, uScale, vScale} of one sprite of a texture atlas (its first frame), adding it if new. */
+	float @Nullable [] rect(net.minecraft.client.renderer.texture.TextureAtlasSprite sprite) {
+		var contents = sprite.contents();
+		Identifier key = sprite.atlasLocation().withSuffix("/" + contents.name().getNamespace() + "/" + contents.name().getPath());
+		float[] r = this.rects.get(key);
+		if (r != null) {
+			return r == MISSING ? null : r;
+		}
+		NativeImage image = ((dev.portalcraft.client.mixin.SpriteContentsAccessor) (Object) contents).portalcraft$originalImage();
+		if (image == null) {
+			this.rects.put(key, MISSING);
+			return null;
+		}
+		return this.pack(key, image, contents.width(), contents.height());
+	}
+
+	/** The first w x h pixels of `image` into the atlas under `key`. */
+	private float @Nullable [] pack(Identifier texture, NativeImage image, int w, int h) {
+		float[] r;
+		{
 			if (w > SIZE || h > SIZE) {
 				this.rects.put(texture, MISSING);
 				return null;
@@ -110,10 +137,6 @@ final class MobAtlas {
 			this.dirty = true;
 			LOG.info("PortalCraft: mob atlas + {} ({}x{} at {},{})", texture, w, h, x0, y0);
 			return r;
-		} finally {
-			if (owned) {
-				image.close();
-			}
 		}
 	}
 
