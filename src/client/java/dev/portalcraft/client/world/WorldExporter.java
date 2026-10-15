@@ -280,6 +280,10 @@ public final class WorldExporter {
 					if (state.getRenderShape() == RenderShape.MODEL) {
 						BlockPos at = pos.immutable();
 						blockRenderer.tesselateBlock(MESH, x, y, z, level, at, state, models.get(state), state.getSeed(at));
+					} else if (state.is(net.minecraft.world.level.block.Blocks.END_PORTAL)) {
+						MESH.stars(x, y, z, false);
+					} else if (state.is(net.minecraft.world.level.block.Blocks.END_GATEWAY)) {
+						MESH.stars(x, y, z, true);
 					}
 				}
 			}
@@ -392,6 +396,30 @@ public final class WorldExporter {
 			this.solid.clear();
 			this.translucent.clear();
 			this.fqCount = 0;
+		}
+
+		// ---- the end portal's and the end gateway's starfield ----
+		// Minecraft draws these with a renderer of their own (a screen-space shader), not a block
+		// model, so they had no faces here and the portal was invisible in the host: they go out as
+		// faces of our own animated star texture (portalcraft:block/end_portal_stars), glowing. The
+		// portal is the slab Minecraft's renderer draws, its top and bottom only; the gateway a cube.
+		void stars(int x, int y, int z, boolean cube) {
+			net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = Minecraft.getInstance().getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS)
+				.getSprite(dev.portalcraft.PortalCraft.id("block/end_portal_stars"));
+			float u0 = sprite.getU0(), u1 = sprite.getU1(), v0 = sprite.getV0(), v1 = sprite.getV1();
+			float lo = cube ? 0.0F : 0.375F, hi = cube ? 1.0F : 0.75F;
+			float[][][] faces = cube ? new float[][][] {
+				{{0, hi, 0}, {1, hi, 0}, {1, hi, 1}, {0, hi, 1}}, {{0, lo, 1}, {1, lo, 1}, {1, lo, 0}, {0, lo, 0}},
+				{{0, lo, 0}, {1, lo, 0}, {1, hi, 0}, {0, hi, 0}}, {{1, lo, 1}, {0, lo, 1}, {0, hi, 1}, {1, hi, 1}},
+				{{0, lo, 1}, {0, lo, 0}, {0, hi, 0}, {0, hi, 1}}, {{1, lo, 0}, {1, lo, 1}, {1, hi, 1}, {1, hi, 0}}}
+				: new float[][][] {{{0, hi, 0}, {1, hi, 0}, {1, hi, 1}, {0, hi, 1}}, {{0, lo, 1}, {1, lo, 1}, {1, lo, 0}, {0, lo, 0}}};
+			float[][] uv = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
+			for (float[][] f : faces) {
+				for (int k : WorldFormat.QUAD_TRIANGLES) {
+					this.solid.add(this.ox + (double) (x + f[k][0]), this.oy + (double) (y + f[k][1]), this.oz + (double) (z + f[k][2]), WorldFormat.GLOW_COLOR, uv[k][0],
+						uv[k][1]);
+				}
+			}
 		}
 
 		// ---- block quads ----
