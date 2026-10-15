@@ -1109,7 +1109,11 @@ public final class EntityExporter {
 			this.movingParts.clear();
 			this.movingRandom.setSeed(state.getSeed(movingBlockRenderState.randomSeedPos));
 			model.collectParts(this.movingRandom, this.movingParts);
+			int from = this.blockSolid.count();
 			this.blockParts(poseStack, this.movingParts, new int[0], false);
+			if (state.getLightEmission() >= WorldFormat.GLOW_EMISSION) { // (an end rod or glowstone a piston is pushing: still a light)
+				this.blockSolid.glow(from);
+			}
 		}
 
 		/** Primed TNT, block displays, minecart contents: the block model's quads at the pose. */

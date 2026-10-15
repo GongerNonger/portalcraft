@@ -252,6 +252,13 @@ public final class WorldFormat {
 			}
 		}
 
+		/** Marks vertices from {@code from} on as a light of their own (GLOW_COLOR): a glowing block on the move. */
+		public void glow(int from) {
+			for (int i = Math.max(0, from); i < this.count; i++) {
+				this.data[i * VERTEX_INTS + 3] = GLOW_COLOR;
+			}
+		}
+
 		/** A copy trimmed to the vertices in use. */
 		public int[] toArray() {
 			return Arrays.copyOf(this.data, this.count * VERTEX_INTS);
