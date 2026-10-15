@@ -3493,6 +3493,32 @@ struct PerfFrame {
 	}
 };
 
+// Holding something, Portal's gun draws three crackling beams between its prongs, as beams of their
+// own between points of its first-person model (sprites/grav_beam_noz). That model isn't drawn
+// while Steve holds the Minecraft gun, but it is still posed where Portal's gun would be, and the
+// beams crackled in the air beside the voxel gun's prongs. A material of ours in place of that one
+// draws nothing: Portal\portal\custom\portalcraft, which the game mounts as it starts (so written
+// here once, it takes from the next start). The third-person beams (sprites/grav_beam) are untouched.
+void hideFirstPersonGunBeams() {
+	std::string game = std::string(g_logDir) + "../"; // (the plugin is in portal\addons)
+	std::string dir = game + "custom";
+	for (const char* part : {"/portalcraft", "/materials", "/sprites"}) {
+		CreateDirectoryA(dir.c_str(), nullptr);
+		dir += part;
+	}
+	CreateDirectoryA(dir.c_str(), nullptr);
+	std::string file = dir + "/grav_beam_noz.vmt";
+	if (GetFileAttributesA(file.c_str()) != INVALID_FILE_ATTRIBUTES) {
+		return;
+	}
+	if (FILE* f = std::fopen(file.c_str(), "w")) {
+		std::fputs("// PortalCraft: Portal's first-person gun beams, drawn by nothing (see hideFirstPersonGunBeams)\n"
+			"\"UnlitGeneric\"\n{\n\t\"$basetexture\" \"sprites/grav_beam\"\n\t\"$additive\" \"1\"\n\t\"$color\" \"[0 0 0]\"\n\t\"$ignorez\" \"1\"\n}\n", f);
+		std::fclose(f);
+		logf("gun: wrote %s (Portal's first-person gun beams hidden from the next start)", file.c_str());
+	}
+}
+
 class Plugin {
 public:
 	virtual bool Load(sdk::CreateInterfaceFn interfaceFactory, sdk::CreateInterfaceFn gameServerFactory) {
@@ -3504,6 +3530,7 @@ public:
 			std::strcpy(slash + 1, instance::named("portalcraft", ".log").c_str());
 		}
 		g_log = std::fopen(path, "w");
+		hideFirstPersonGunBeams();
 		if (instance::number() > 0) {
 			logf("instance %d (-pcinstance): link ports %d and %d, log %s", instance::number(), instance::hostPort(), instance::mcPort(), path);
 		}
