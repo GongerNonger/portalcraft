@@ -1104,7 +1104,9 @@ public final class HostDriver {
 			LOG.info("PortalCraft: level start on host entity #{}: Steve is held {} units from it (Minecraft {} it)", holdMover, holdOffset,
 				copy != null ? "has" : "doesn't have");
 		}
-		boolean waitingForIt = holdMover != 0 && copy == null && now - mapLoadedAt < 8000;
+		// (Up to half a minute: a slower PC streams the lift to Minecraft later than this one does, and a
+		// playtester fell through lifts that hadn't arrived in the 8 seconds this used to wait.)
+		boolean waitingForIt = holdMover != 0 && copy == null && now - mapLoadedAt < 30000;
 		if (now >= holdWithHostUntil && !waitingForIt) {
 			holdWithHostUntil = 0;
 			holdMover = 0;
@@ -1113,7 +1115,7 @@ public final class HostDriver {
 		Vec3 at = holdAt;
 		if (holdMover != 0) {
 			Vec3 frame = copy != null ? copy : s.moverIndex() == holdMover ? s.moverOrigin() : null;
-			at = frame != null ? Units.toMc(frame.add(holdOffset)) : player.position();
+			at = frame != null ? Units.toMc(frame.add(holdOffset)) : holdAt; // (where he started, until the lift is known: not left to fall)
 			if (frame != null) {
 				RIDE.attach(holdMover, frame);
 				rideAirTicks = 0;
