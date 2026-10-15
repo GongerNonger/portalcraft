@@ -13,6 +13,10 @@ Minecraft 26.3 (Fabric).
 | ![A pig and a portal, TNT in hand](docs/screenshots/pig-tnt-and-portals.jpg) | |
 | Mobs and TNT next to Portal's portals | |
 
+![Steve's voxel portal gun: drawn, firing a blue portal, then an orange one, then holding a cube](docs/screenshots/voxel-gun.gif)
+
+Steve's portal gun, voxelized from Portal's own model: it is drawn as it comes out, kicks and glows the colour of each shot, and opens its claws to hold a cube.
+
 ## The portal gun in plain Minecraft
 
 Fire two linked portals onto any solid surface and walk, fall or fling through them, with momentum
