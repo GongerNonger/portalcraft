@@ -2464,6 +2464,54 @@
                     "gain": 1.0
                   }
                 ]
+              },
+              {
+                "type": "minecraft:range_dispatch",
+                "property": "portalcraft:arc_frame",
+                "entries": [
+                  {
+                    "threshold": 0,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_0"
+                    }
+                  },
+                  {
+                    "threshold": 1,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_1"
+                    }
+                  },
+                  {
+                    "threshold": 2,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_2"
+                    }
+                  },
+                  {
+                    "threshold": 3,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_3"
+                    }
+                  },
+                  {
+                    "threshold": 4,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_4"
+                    }
+                  },
+                  {
+                    "threshold": 5,
+                    "model": {
+                      "type": "minecraft:model",
+                      "model": "portalcraft:item/portal_gun_arcs/arc_5"
+                    }
+                  }
+                ]
               }
             ]
           }
