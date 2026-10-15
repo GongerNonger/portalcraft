@@ -21,12 +21,12 @@ from PIL import Image
 FRAMES = 6
 HOLD_FRAME = 112  # GunAnimation: PICKUP base 100 + its last frame (11) + 1
 # In the holding pose (portal_gun_pickup/bend_12), model pixels: the three prongs' tips, and the
-# barrel's mouth between them, where Portal's own beams meet (its "muzzle" attachment).
+# point in front of the barrel between them where the three arcs meet (Portal's own beams meet at its "muzzle").
 TIPS = [(2.0, 1.8, -9.3), (13.8, 2.4, -10.4), (10.4, 11.4, -9.2)]
-MOUTH = (8.5, 5.5, -2.6)
+MOUTH = (8.6, 5.4, -7.2)
 STEP = 0.32  # one voxel of an arc every this far along it
-SIZE = 0.38  # and this big
-JITTER = 0.9  # how far an arc wanders off the straight line, at most, in the middle
+SIZE = 0.46  # and this big
+JITTER = 1.5  # how far an arc wanders off the straight line, at most, in the middle
 
 
 def arc(rng: random.Random, a, b):
