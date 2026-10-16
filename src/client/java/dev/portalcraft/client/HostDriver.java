@@ -848,6 +848,8 @@ public final class HostDriver {
 	 * The box reaches into a linked portal's hole (HostCollision.holes): free of anything solid, and
 	 * the way out of the map. Pushed out of a cube that stood by a portal, Steve was put there, out
 	 * past the wall, and had to jump into the void to come back.
+	 * (Only from outside one: in the middle of a crossing he is in the hole already, and a push that
+	 * left him there was all that got him clear of the cube he was carrying through.)
 	 */
 	private static boolean inPortalHole(AABB box) {
 		for (AABB hole : HostCollision.holes()) {
@@ -870,7 +872,7 @@ public final class HostDriver {
 		for (double step : PUSH_STEPS) {
 			for (double[] way : PUSH_WAYS) {
 				Vec3 by = new Vec3(way[0] * step, way[1] * step, way[2] * step);
-				if (player.level().noCollision(player, body.move(by)) && !inPortalHole(body.move(by))) {
+				if (player.level().noCollision(player, body.move(by)) && (inPortalHole(body) || !inPortalHole(body.move(by)))) {
 					if (pushLogs++ < 30) {
 						LOG.info("PortalCraft: Steve was inside a prop at {} (host {}): pushed by {}", player.position(), Units.toSrc(player.position()), by);
 					}
