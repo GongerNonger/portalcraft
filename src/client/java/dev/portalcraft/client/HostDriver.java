@@ -1074,6 +1074,40 @@ public final class HostDriver {
 		holdWithHostUntil = System.currentTimeMillis() + 2500;
 		holdAt = at;
 		holdMover = 0;
+		holdFitted = false;
+	}
+
+	/** This level start's hold has been checked for room (fit). */
+	private static boolean holdFitted;
+
+	/**
+	 * Where Steve fits nearest `at`: `at` itself if nothing is in the way, else the nearest place within
+	 * three quarters of a block, round about it, that is clear. Portal puts its player where Chell fits
+	 * (a level's start in an elevator: where the one before left her, carried over), and Steve is a
+	 * little wider: by an elevator's wall he started a hair inside it, and Minecraft, which lets
+	 * nothing move against a shape it is already inside, let him sink through the elevator's floor
+	 * and fall down its shaft.
+	 */
+	private static Vec3 fit(LocalPlayer player, Vec3 at) {
+		var level = player.level();
+		var dims = player.getDimensions(player.getPose());
+		if (level.noCollision(player, dims.makeBoundingBox(at))) {
+			return at;
+		}
+		for (double r = 0.03; r <= 0.75; r += 0.03) {
+			for (int k = 0; k < 24; k++) {
+				double a = k * Math.PI / 12.0;
+				Vec3 c = at.add(Math.cos(a) * r, 0.0, Math.sin(a) * r);
+				if (level.noCollision(player, dims.makeBoundingBox(c))) {
+					return c;
+				}
+			}
+			Vec3 up = at.add(0.0, r * 0.5, 0.0); // (or a little higher: the floor itself in the way)
+			if (level.noCollision(player, dims.makeBoundingBox(up))) {
+				return up;
+			}
+		}
+		return at;
 	}
 
 	/**
@@ -1119,6 +1153,21 @@ public final class HostDriver {
 			if (frame != null) {
 				RIDE.attach(holdMover, frame);
 				rideAirTicks = 0;
+			}
+		}
+		if (!holdFitted && (holdMover == 0 || copy != null)) {
+			// Once, when what he stands in is there to be fitted against: moved to where he fits, and held there.
+			holdFitted = true;
+			Vec3 fitted = fit(player, at);
+			if (fitted != at) {
+				Vec3 by = fitted.subtract(at);
+				LOG.info("PortalCraft: level start: Steve doesn't fit where Portal put him; moved {} blocks to where he does", by);
+				if (holdMover != 0) {
+					holdOffset = holdOffset.add(new Vec3(by.x * Units.PER_BLOCK, -by.z * Units.PER_BLOCK, by.y * Units.PER_BLOCK)); // (a host-units offset)
+				} else {
+					holdAt = fitted;
+				}
+				at = fitted;
 			}
 		}
 		if (player.position().distanceToSqr(at) < 30.0 * 30.0) {
