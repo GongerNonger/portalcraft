@@ -1155,13 +1155,17 @@ public final class HostDriver {
 				rideAirTicks = 0;
 			}
 		}
-		if (!holdFitted && (holdMover == 0 || copy != null)) {
-			// Once, when what he stands in is there to be fitted against: moved to where he fits, and held there.
-			holdFitted = true;
+		if (holdMover == 0 || copy != null) {
+			// Every tick of the hold, against whatever Minecraft has around him by then: its copy of the lift's
+			// collision comes a tick or more after the lift itself, and checked once at the start (nothing there
+			// yet) he was left a hair inside the floor, and sank through it when the hold let go.
 			Vec3 fitted = fit(player, at);
 			if (fitted != at) {
 				Vec3 by = fitted.subtract(at);
-				LOG.info("PortalCraft: level start: Steve doesn't fit where Portal put him; moved {} blocks to where he does", by);
+				if (!holdFitted) {
+					holdFitted = true;
+					LOG.info("PortalCraft: level start: Steve doesn't fit where Portal put him; moved {} blocks to where he does", by);
+				}
 				if (holdMover != 0) {
 					holdOffset = holdOffset.add(new Vec3(by.x * Units.PER_BLOCK, -by.z * Units.PER_BLOCK, by.y * Units.PER_BLOCK)); // (a host-units offset)
 				} else {
