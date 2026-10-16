@@ -844,6 +844,20 @@ public final class HostDriver {
 	 * Minecraft's blocks, below), not the host's own geometry: used on anything solid, it took Steve coming out of a ceiling portal a little off-centre (his
 	 * shoulder in the ceiling beside it) and pushed him up, back through the portal.
 	 */
+	/**
+	 * The box reaches into a linked portal's hole (HostCollision.holes): free of anything solid, and
+	 * the way out of the map. Pushed out of a cube that stood by a portal, Steve was put there, out
+	 * past the wall, and had to jump into the void to come back.
+	 */
+	private static boolean inPortalHole(AABB box) {
+		for (AABB hole : HostCollision.holes()) {
+			if (hole.intersects(box)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void pushOutOfSolids(LocalPlayer player) {
 		AABB body = player.getBoundingBox().deflate(0.02);
 		// ... and Minecraft's own blocks, which Portal knows nothing about: a move of Portal's (a
@@ -856,7 +870,7 @@ public final class HostDriver {
 		for (double step : PUSH_STEPS) {
 			for (double[] way : PUSH_WAYS) {
 				Vec3 by = new Vec3(way[0] * step, way[1] * step, way[2] * step);
-				if (player.level().noCollision(player, body.move(by))) {
+				if (player.level().noCollision(player, body.move(by)) && !inPortalHole(body.move(by))) {
 					if (pushLogs++ < 30) {
 						LOG.info("PortalCraft: Steve was inside a prop at {} (host {}): pushed by {}", player.position(), Units.toSrc(player.position()), by);
 					}
@@ -1098,12 +1112,12 @@ public final class HostDriver {
 			for (int k = 0; k < 24; k++) {
 				double a = k * Math.PI / 12.0;
 				Vec3 c = at.add(Math.cos(a) * r, 0.0, Math.sin(a) * r);
-				if (level.noCollision(player, dims.makeBoundingBox(c))) {
+				if (level.noCollision(player, dims.makeBoundingBox(c)) && !inPortalHole(dims.makeBoundingBox(c))) {
 					return c;
 				}
 			}
 			Vec3 up = at.add(0.0, r * 0.5, 0.0); // (or a little higher: the floor itself in the way)
-			if (level.noCollision(player, dims.makeBoundingBox(up))) {
+			if (level.noCollision(player, dims.makeBoundingBox(up)) && !inPortalHole(dims.makeBoundingBox(up))) {
 				return up;
 			}
 		}
