@@ -1345,13 +1345,11 @@ public final class HostDriver {
 		}
 		toldTheKeys = true;
 		player.sendSystemMessage(net.minecraft.network.chat.Component.literal(KEYS_HINT));
-		player.sendOverlayMessage(net.minecraft.network.chat.Component.literal(KEYS_HINT_SHORT));
 	}
 
 	private static boolean toldTheKeys;
 	private static final long KEYS_HINT_DELAY_MS = 4000;
 	static final String KEYS_HINT = "PortalCraft: Tab opens your inventory. E is Portal's use key (cubes, buttons). Esc is Portal's menu.";
-	private static final String KEYS_HINT_SHORT = "Tab: inventory    E: use";
 
 	private static void loadMap(String name) {
 		if (name.equals(HostCollision.mapName())) {
