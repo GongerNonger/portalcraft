@@ -68,7 +68,8 @@ use the **PortalCraft** shortcut it puts on their desktop. The setup installs th
 Portal and a portable Prism Launcher with the PortalCraft instance (Minecraft 26.3, Fabric, Fabric
 API, the mod, the voxel portal gun, the void world) into `%LOCALAPPDATA%\PortalCraft`, and points
 `portalcraft.ini` at it. The first start opens Prism to sign in with a Microsoft account that owns
-Minecraft; after that Minecraft starts hidden with Portal.
+Minecraft; after that Minecraft starts hidden with Portal. In Portal the inventory is on **Tab**, not
+E (E is Portal's use key): see [Controls](#controls).
 
 The shortcut keeps them current: it asks GitHub for the newest release, installs it if it is newer
 than theirs (the sign-in, the world and every setting are kept), and then starts Portal.
@@ -142,6 +143,22 @@ physics; Portal draws everything and keeps its own portal gun, portals and telep
    `Portal\portal\addons\portalcraft.ini`; `start_with_portal=0` there to start Minecraft yourself.
 2. Click into the Portal window. WASD/space/shift/ctrl go to Minecraft; the mouse is Portal's.
 3. Walk into a pair of open portals: Portal teleports you, Minecraft follows with your momentum.
+
+### Controls
+
+| Key | Does |
+|---|---|
+| **Tab** | **Minecraft's inventory** (E in plain Minecraft) |
+| E | Portal's use: pick up a cube, press a button |
+| WASD, Space, Shift, Ctrl | move, jump, sneak, sprint (Minecraft's) |
+| Mouse | look (Portal's) |
+| Left / right click | with the portal gun in hand: the blue / orange portal; otherwise Minecraft's attack / place |
+| 1-9, mouse wheel | the hotbar |
+| Esc | closes a Minecraft screen if one is open, otherwise Portal's menu |
+| F5 | third person |
+
+E stays Portal's because Portal needs it for cubes and buttons, so the inventory moved to Tab. The game
+says so a few seconds into the first level.
 
 How it fits together:
 

@@ -201,6 +201,7 @@ public final class HostDriver {
 			resync = true; // either side may have restarted: start from where the host's player is now
 		}
 		loadMap(s.map());
+		tellTheKeys(minecraft);
 		HostCollision.setPortals(s.portals());
 		PlayerCrossings.matched(s.crossMatched());
 		gunFollowsHostShots(minecraft, s.shots());
@@ -1331,6 +1332,26 @@ public final class HostDriver {
 			window.setWindowed(w, h);
 		}
 	}
+
+	/**
+	 * Once a session, a few seconds into the first level: Tab is the inventory. E is Portal's use (cubes, buttons) and
+	 * never reaches Minecraft, so a player who presses E for the inventory gets nothing and nothing says why
+	 * (issue #2, "HOW OPEN THE INVENTORY... I TRY MY E").
+	 */
+	private static void tellTheKeys(Minecraft minecraft) {
+		LocalPlayer player = minecraft.player;
+		if (toldTheKeys || player == null || System.currentTimeMillis() - mapLoadedAt < KEYS_HINT_DELAY_MS) {
+			return;
+		}
+		toldTheKeys = true;
+		player.sendSystemMessage(net.minecraft.network.chat.Component.literal(KEYS_HINT));
+		player.sendOverlayMessage(net.minecraft.network.chat.Component.literal(KEYS_HINT_SHORT));
+	}
+
+	private static boolean toldTheKeys;
+	private static final long KEYS_HINT_DELAY_MS = 4000;
+	static final String KEYS_HINT = "PortalCraft: Tab opens your inventory. E is Portal's use key (cubes, buttons). Esc is Portal's menu.";
+	private static final String KEYS_HINT_SHORT = "Tab: inventory    E: use";
 
 	private static void loadMap(String name) {
 		if (name.equals(HostCollision.mapName())) {
